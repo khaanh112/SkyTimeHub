@@ -8,8 +8,8 @@ import {
   Length,
   Matches,
 } from 'class-validator';
-import { UserRole } from '../../common/enums/roles.enum';
-import { UserStatus } from '../../common/enums/user-status.enum';
+import { UserRole } from '@common/enums/roles.enum';
+import { UserStatus } from '@common/enums/user-status.enum';
 
 export class CreateUserDto {
   @IsOptional()
@@ -33,9 +33,7 @@ export class CreateUserDto {
   @IsEnum(UserStatus)
   status?: UserStatus;
 
-  @IsOptional()
-  @IsInt()
-  departmentId?: number;
+  
 
   @IsOptional()
   @IsString()

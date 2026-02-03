@@ -8,24 +8,18 @@ import { APP_GUARD } from '@nestjs/core';
 // Modules
 import { UsersModule } from '../users/users.module';
 
-// Controllers
 import { AuthController } from './controllers/auth.controller';
 
-// Services
 import { AuthService } from './services/auth.service';
 import { TokenService } from './services/token.service';
 import { RefreshTokenService } from './services/refresh-token.service';
 import { ZohoAuthService } from './services/zoho-auth.service';
 
-// Strategies
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { ZohoStrategy } from './strategies/zoho.strategy';
 
-// Guards
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-
-// Entities
-import { RefreshToken } from '../entity/refresh-token.entity';
+import { RefreshToken } from '@entities/refresh-token.entity';
 
 @Module({
   imports: [

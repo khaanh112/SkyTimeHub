@@ -1,16 +1,17 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseInterceptors, UploadedFile, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { User } from '../entity/users.entity';
+import { User } from '@entities/users.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ImportUserRow } from './dto/import-user.dto';
 import { Roles } from '../authorization';
-import { UserRole } from '../common/enums/roles.enum';
+import { UserRole } from '@common/enums/roles.enum';
 import { CurrentUser } from '../authentication/decorators/current-user.decorator';
 import { ExcelService } from '../import/excel.service';
 import { ApiTags } from '@nestjs/swagger/dist/decorators/api-use-tags.decorator';
-import { ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+
 
 
 @ApiTags('Users') 

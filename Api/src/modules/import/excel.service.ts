@@ -1,13 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
-import { UserRole } from '../common/enums/roles.enum';
+import { UserRole } from '@common/enums/roles.enum';
 import { ImportExecuteResult, ImportUserRow } from '../users/dto/import-user.dto';
 import { ImportPreviewResult } from '../users/dto/import-user.dto';
 import { UsersService } from '../users/users.service';
-import { UserStatus } from 'src/common/enums/user-status.enum';
-import { CreateUserDto } from 'src/users/dto/create-user.dto';
-import { In, Repository } from 'typeorm';
-import { User } from '../entity/users.entity';
+import { UserStatus } from '@common/enums/user-status.enum';
+import { CreateUserDto } from '@modules/users/dto/create-user.dto';
+import {  Repository } from 'typeorm';
+import { User } from '@entities/users.entity';
 import { InjectRepository } from '@nestjs/typeorm/dist/common/typeorm.decorators';
 
 @Injectable()
@@ -381,7 +381,6 @@ export class ExcelService {
             email: row.email,
             username: row.username,
             role: row.role as UserRole,
-            departmentId: row.departmentId,
             position: row.position,
             phone: row.phone,
             joinDate: row.joinDate ? new Date(row.joinDate) : undefined,

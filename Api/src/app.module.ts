@@ -4,15 +4,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { APP_GUARD } from '@nestjs/core';
 import { getDatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
-
 // Feature Modules
-import { UsersModule } from './users/users.module';
-import { AuthenticationModule } from './authentication/authentication.module';
-import { AuthorizationModule } from './authorization/authorization.module';
+import { UsersModule } from '@modules/users/users.module';
+import { AuthenticationModule } from '@modules/authentication/authentication.module';
+import { AuthorizationModule } from '@modules/authorization/authorization.module';
 
-// Guards
-import { JwtAuthGuard } from './authentication/guards/jwt-auth.guard';
-import { RolesGuard } from './authorization/guards/roles.guard';
+import { JwtAuthGuard } from '@modules/authentication/guards/jwt-auth.guard';
+import { RolesGuard } from '@modules/authorization/guards/roles.guard';
 
 @Module({
   imports: [

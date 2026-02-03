@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { User } from '../entity/users.entity';
-import { RefreshToken } from '../entity/refresh-token.entity';
+import { User } from '../entities/users.entity';
+import { RefreshToken } from '../entities/refresh-token.entity';
 
 export const getDatabaseConfig = (configService: ConfigService): TypeOrmModuleOptions => ({
   type: 'postgres',

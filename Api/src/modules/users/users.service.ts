@@ -4,12 +4,12 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { User } from '../entity/users.entity';
+import { User } from '@entities/users.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UserStatus } from '../common/enums/user-status.enum';
+import { UserStatus } from '@common/enums/user-status.enum';
 
 import * as crypto from 'crypto';
 
