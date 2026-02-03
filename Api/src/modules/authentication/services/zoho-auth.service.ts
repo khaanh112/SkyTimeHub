@@ -3,10 +3,9 @@ import { UsersService } from '../../users/users.service';
 import { TokenService } from './token.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { LoginResponseDto } from '../dto/login-response.dto';
-import { UserStatus } from '../../common/enums/user-status.enum';
+import { UserStatus } from '@common/enums/user-status.enum';
 import { ZohoProfileDto } from '../dto/zoho-profile.dto';
-
-
+import { User } from '@/entities/users.entity';
 
 @Injectable()
 export class ZohoAuthService {
@@ -39,7 +38,7 @@ export class ZohoAuthService {
     };
   }
 
-  private async findOrCreateUser(profile: ZohoProfileDto): Promise<any> {
+  private async findOrCreateUser(profile: ZohoProfileDto): Promise<User> {
     const { email, firstName, lastName } = profile;
 
     let user = await this.usersService.getUserByEmail(email);

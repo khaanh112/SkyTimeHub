@@ -1,12 +1,14 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
-import { User } from '../../entity/users.entity';
-import { UsersService } from '../../users/users.service';
+import { Injectable, Logger, HttpStatus } from '@nestjs/common';
+import { User } from '@entities/users.entity';
+import { UsersService } from '@modules/users/users.service';
 import { TokenService } from './token.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { ZohoAuthService } from './zoho-auth.service';
 import { LoginResponseDto } from '../dto/login-response.dto';
-import { UserStatus } from '../../common/enums/user-status.enum';
+import { UserStatus } from '@common/enums/user-status.enum';
 import { ZohoProfileDto } from '../dto/zoho-profile.dto';
+import { AppException } from '@common/exceptions/app.exception';
+import { ErrorCode } from '@common/enums/errror-code.enum';
 
 @Injectable()
 export class AuthService {
@@ -42,7 +44,7 @@ export class AuthService {
   async loginWithEmail(email: string): Promise<LoginResponseDto> {
     try {
       this.logger.log(`Attempting login with email: ${email}`);
-      
+
       // Find or create user by email
       let user = await this.usersService.getUserByEmail(email);
 
@@ -61,7 +63,11 @@ export class AuthService {
 
       if (user.status !== UserStatus.ACTIVE) {
         this.logger.warn(`User account not active: ${user.id}, status: ${user.status}`);
-        throw new UnauthorizedException('User account is not active, contact HR department.');
+        throw new AppException(
+          ErrorCode.ACCOUNT_INACTIVE,
+          'User account is not active, contact HR department.',
+          HttpStatus.UNAUTHORIZED,
+        );
       }
 
       // Generate tokens
@@ -110,20 +116,32 @@ export class AuthService {
 
       if (!storedToken) {
         this.logger.warn(`Invalid refresh token for user: ${payload.sub}`);
-        throw new UnauthorizedException('Invalid refresh token');
+        throw new AppException(
+          ErrorCode.INVALID_REFRESH_TOKEN,
+          'Invalid refresh token',
+          HttpStatus.UNAUTHORIZED,
+        );
       }
 
       if (this.refreshTokenService.isTokenExpired(storedToken)) {
         this.logger.warn(`Refresh token expired for user: ${payload.sub}`);
         await this.refreshTokenService.revokeToken(storedToken.id);
-        throw new UnauthorizedException('Refresh token expired');
+        throw new AppException(
+          ErrorCode.REFRESH_TOKEN_EXPIRED,
+          'Refresh token expired',
+          HttpStatus.UNAUTHORIZED,
+        );
       }
 
       const user = await this.usersService.getUser(payload.sub);
 
       if (!user || user.status !== UserStatus.ACTIVE) {
         this.logger.warn(`User not active: ${payload.sub}`);
-        throw new UnauthorizedException('User not active');
+        throw new AppException(
+          ErrorCode.ACCOUNT_INACTIVE,
+          'User not active',
+          HttpStatus.UNAUTHORIZED,
+        );
       }
 
       const tokens = await this.tokenService.generateTokens(user);
@@ -139,10 +157,14 @@ export class AuthService {
       return tokens;
     } catch (error) {
       this.logger.error(`Error refreshing token: ${error.message}`, error.stack);
-      if (error instanceof UnauthorizedException) {
+      if (error instanceof AppException) {
         throw error;
       }
-      throw new UnauthorizedException('Invalid or expired refresh token');
+      throw new AppException(
+        ErrorCode.INVALID_REFRESH_TOKEN,
+        'Invalid or expired refresh token',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
   }
 
@@ -168,11 +190,19 @@ export class AuthService {
     const user = await this.usersService.getUser(userId);
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     if (user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('User account is not active');
+      throw new AppException(
+        ErrorCode.ACCOUNT_INACTIVE,
+        'User account is not active',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     return user;

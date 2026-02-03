@@ -9,6 +9,7 @@ import {
   HttpStatus,
   HttpCode,
   Param,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -18,16 +19,20 @@ import { Public } from '../decorators/public.decorator';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { RefreshTokenDto, LoginEmailDto } from '../dto';
 import { ActivateAccountDto } from '../dto/activate-account.dto';
-import { ApiOperation, ApiTags, ApiResponse } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { SuccessResponseDto } from '@/common/dto/success-response.dto';
+import { AppException, ErrorCode } from '@/common';
+
 
 @Controller('auth')
 @ApiTags('Authentication')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
   ) {}
-
 
   @Public()
   @Get('zoho')
@@ -58,14 +63,12 @@ export class AuthController {
     return res.redirect(redirectUrl);
   }
 
- 
   //login with email
   @Public()
   @Post('login/email')
   @ApiOperation({ summary: 'Login with email (for testing)' })
   @ApiResponse({ status: 200, description: 'User logged in successfully.' })
   async loginWithEmail(@Body() dto: LoginEmailDto) {
-    
     return this.authService.loginWithEmail(dto.email);
   }
 
@@ -87,30 +90,49 @@ export class AuthController {
   // =====================================================
 
   @Post('logout')
-  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout user' })
   @ApiResponse({ status: 200, description: 'User logged out successfully.' })
-  async logout(@CurrentUser('id') userId: number) {
+  async logout(@CurrentUser('id') userId: number, @CurrentUser() fullUser: any) {
+    this.logger.log(`Logout endpoint called`);
+    this.logger.log(`CurrentUser decorator returned userId: ${userId}`);
+    this.logger.log(`Full user object: ${JSON.stringify(fullUser)}`);
+    
     if (!userId) {
-      return {
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'Invalid user session',
-      };
+      this.logger.error(`Logout failed - No userId found in request`);
+      throw new AppException (
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
 
-    await this.authService.logout(userId);
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'Logged out successfully',
-    };
+    this.logger.log(`Calling auth.service.logout for userId: ${userId}`);
+    const result = await this.authService.logout(userId);
+    this.logger.log(`Logout successful for userId: ${userId}`);
+    return new SuccessResponseDto(result, 'User logged out successfully');
   }
 
-
   @Get('me')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'Current user profile retrieved successfully.' })
-  async getCurrentUser(@CurrentUser() user: any) {
-    return user;
+  async getCurrentUser(@CurrentUser() user: any, @Req() req: any) {
+    this.logger.log(`Get current user endpoint called`);
+    this.logger.log(`CurrentUser decorator returned: ${JSON.stringify(user)}`);
+    this.logger.log(`Request user object: ${JSON.stringify(req.user)}`);
+    
+    if (!user) {
+      this.logger.error(`No user found in request`);
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not authenticated',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    
+    this.logger.log(`Returning user profile for userId: ${user.id}`);
+    return new SuccessResponseDto(user, 'Current user profile retrieved successfully');
   }
 
   // =====================================================
@@ -123,10 +145,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Activate user account' })
   @ApiResponse({ status: 200, description: 'User account activated successfully.' })
   async activateAccount(@Param() dto: ActivateAccountDto) {
-    return this.authService.activateAccount(dto.token);
+    const result = await this.authService.activateAccount(dto.token);
+    return new SuccessResponseDto(result, 'User account activated successfully');
   }
 
   @Post('resend-activation')
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resend activation email' })
   @ApiResponse({ status: 200, description: 'Activation email sent successfully.' })
@@ -136,9 +160,7 @@ export class AuthController {
     // TODO: Send activation email here
     // await this.emailService.sendActivationEmail(result.user.email, result.token);
 
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'Activation email sent successfully',
-    };
-  }
+    return new SuccessResponseDto(result, 'Activation email sent successfully');
+  };
+  
 }

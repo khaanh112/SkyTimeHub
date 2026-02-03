@@ -6,7 +6,7 @@ import { ImportPreviewResult } from '../users/dto/import-user.dto';
 import { UsersService } from '../users/users.service';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { CreateUserDto } from '@modules/users/dto/create-user.dto';
-import {  Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { User } from '@entities/users.entity';
 import { InjectRepository } from '@nestjs/typeorm/dist/common/typeorm.decorators';
 

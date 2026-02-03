@@ -1,15 +1,12 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, HttpStatus } from '@nestjs/common';
 import { User } from '@entities/users.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserStatus } from '@common/enums/user-status.enum';
+import { AppException } from '@common/exceptions/app.exception';
+import { ErrorCode } from '@common/enums/errror-code.enum';
 
 import * as crypto from 'crypto';
 
@@ -47,18 +44,19 @@ export class UsersService {
   }
 
   async getUsers(): Promise<User[]> {
-    return await this.usersRepository.find({
-   
-    });
+    return await this.usersRepository.find({});
   }
 
   async getUser(id: number): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { id },
-     
     });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
     return user;
   }
@@ -79,7 +77,11 @@ export class UsersService {
     // Check if email already exists
     const existingUser = await this.usersRepository.findOne({ where: { email: user.email } });
     if (existingUser) {
-      throw new ConflictException('User with this email already exists');
+      throw new AppException(
+        ErrorCode.EMAIL_ALREADY_EXISTS,
+        'User with this email already exists',
+        HttpStatus.CONFLICT,
+      );
     }
 
     // Check if employeeId already exists (if provided)
@@ -88,7 +90,11 @@ export class UsersService {
         where: { employeeId: user.employeeId },
       });
       if (existingEmployee) {
-        throw new ConflictException('User with this employee ID already exists');
+        throw new AppException(
+          ErrorCode.EMPLOYEE_ID_ALREADY_EXISTS,
+          'User with this employee ID already exists',
+          HttpStatus.CONFLICT,
+        );
       }
     }
 
@@ -111,14 +117,22 @@ export class UsersService {
   async updateUser(id: number, user: UpdateUserDto): Promise<User> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
     if (!existingUser) {
-      throw new NotFoundException('User not found');
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     // Check if email is being updated and already exists
     if (user.email && user.email !== existingUser.email) {
       const emailExists = await this.usersRepository.findOne({ where: { email: user.email } });
       if (emailExists) {
-        throw new ConflictException('User with this email already exists');
+        throw new AppException(
+          ErrorCode.EMAIL_ALREADY_EXISTS,
+          'User with this email already exists',
+          HttpStatus.CONFLICT,
+        );
       }
     }
 
@@ -128,7 +142,11 @@ export class UsersService {
         where: { employeeId: user.employeeId },
       });
       if (employeeIdExists) {
-        throw new ConflictException('User with this employee ID already exists');
+        throw new AppException(
+          ErrorCode.EMPLOYEE_ID_ALREADY_EXISTS,
+          'User with this employee ID already exists',
+          HttpStatus.CONFLICT,
+        );
       }
     }
 
@@ -138,12 +156,20 @@ export class UsersService {
 
   async updateRefreshToken(userId: number, refreshTokenHash: string | null): Promise<void> {
     if (!userId) {
-      throw new BadRequestException('User ID is required');
+      throw new AppException(
+        ErrorCode.USER_ID_REQUIRED,
+        'User ID is required',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     await this.usersRepository.update({ id: userId }, { refreshTokenHash });
@@ -152,7 +178,11 @@ export class UsersService {
   async deleteUser(id: number): Promise<void> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
     if (!existingUser) {
-      throw new NotFoundException('User not found');
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
     await this.usersRepository.delete(id);
   }
@@ -166,7 +196,11 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new BadRequestException('Invalid activation token');
+      throw new AppException(
+        ErrorCode.INVALID_ACTIVATION_TOKEN,
+        'Invalid activation token',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     // Update user status and clear activation token
@@ -184,11 +218,19 @@ export class UsersService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     if (user.status === UserStatus.ACTIVE) {
-      throw new BadRequestException('User account is already active');
+      throw new AppException(
+        ErrorCode.ACCOUNT_ALREADY_ACTIVE,
+        'User account is already active',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     // Generate new activation token
@@ -204,15 +246,27 @@ export class UsersService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     if (user.status === UserStatus.ACTIVE) {
-      throw new BadRequestException('User account is already active');
+      throw new AppException(
+        ErrorCode.ACCOUNT_ALREADY_ACTIVE,
+        'User account is already active',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     if (!user.activationToken) {
-      throw new BadRequestException('No activation token found for this user');
+      throw new AppException(
+        ErrorCode.NO_ACTIVATION_TOKEN,
+        'No activation token found for this user',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     return user.activationToken;

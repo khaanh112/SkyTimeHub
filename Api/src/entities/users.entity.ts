@@ -4,8 +4,6 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
 } from 'typeorm';
 import { UserRole } from '../common/enums/roles.enum';
 import { UserStatus } from 'src/common/enums/user-status.enum';

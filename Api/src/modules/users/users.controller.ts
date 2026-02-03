@@ -1,58 +1,65 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseInterceptors, UploadedFile, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  UseInterceptors,
+  UploadedFile,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+} from '@nestjs/common';
+
 import { ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { UsersService } from './users.service';
+import { ApiTags } from '@nestjs/swagger/dist/decorators/api-use-tags.decorator';
 import { User } from '@entities/users.entity';
+import { UserRole } from '@common/enums/roles.enum';
+import { ExcelFileInterceptor } from '@/common/interceptors/excelfile.interceptor';
+import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ImportUserRow } from './dto/import-user.dto';
-import { Roles } from '../authorization';
-import { UserRole } from '@common/enums/roles.enum';
+import { Roles } from '../authorization/decorators/roles.decorator';
 import { CurrentUser } from '../authentication/decorators/current-user.decorator';
 import { ExcelService } from '../import/excel.service';
-import { ApiTags } from '@nestjs/swagger/dist/decorators/api-use-tags.decorator';
 
-
-
-@ApiTags('Users') 
+@ApiTags('Users')
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
-
   constructor(
     private readonly usersService: UsersService,
     private readonly excelService: ExcelService,
   ) {}
-                                                                                     
 
   @Get()
   @ApiOperation({ summary: 'Get all users' })
-  @ApiResponse({ status:200, description: 'List of users retrieved successfully.'})
+  @ApiResponse({ status: 200, description: 'List of users retrieved successfully.' })
   async getAllUsers(): Promise<User[]> {
     return await this.usersService.getUsers();
   }
 
-  
   @Get('me/profile')
   @ApiOperation({ summary: 'Get current user profile' })
-  @ApiResponse({ status:200, description: 'Current user profile retrieved successfully.'})
+  @ApiResponse({ status: 200, description: 'Current user profile retrieved successfully.' })
   async getCurrentUserProfile(@CurrentUser('id') userId: number): Promise<User> {
     return await this.usersService.getUser(userId);
   }
 
-  
   @Get(':id')
   @ApiOperation({ summary: 'Get user by ID' })
-  @ApiResponse({ status:200, description: 'User retrieved successfully.'})
+  @ApiResponse({ status: 200, description: 'User retrieved successfully.' })
   async getUserById(@Param('id') id: number): Promise<User> {
     return await this.usersService.getUser(id);
   }
-  
-  
+
   @Roles(UserRole.ADMIN, UserRole.HR)
   @Post()
   @ApiOperation({ summary: 'Create a new user' })
-  @ApiResponse({ status:201, description: 'User created successfully.'})
+  @ApiResponse({ status: 201, description: 'User created successfully.' })
   async createUser(@Body() user: CreateUserDto): Promise<User> {
     return await this.usersService.createUser(user);
   }
@@ -60,71 +67,43 @@ export class UsersController {
   @Roles(UserRole.ADMIN, UserRole.HR)
   @Put(':id')
   @ApiOperation({ summary: 'Update an existing user' })
-  @ApiResponse({ status:200, description: 'User updated successfully.'})
-  async updateUser(@Param('id') id: number, 
-  @Body() user: UpdateUserDto,
-  ): Promise<User> {
+  @ApiResponse({ status: 200, description: 'User updated successfully.' })
+  async updateUser(@Param('id') id: number, @Body() user: UpdateUserDto): Promise<User> {
     return this.usersService.updateUser(id, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.HR)
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a user' })
-  @ApiResponse({ status:200, description: 'User deleted successfully.'})
+  @ApiResponse({ status: 200, description: 'User deleted successfully.' })
   async deleteUser(@Param('id') id: number): Promise<void> {
     return await this.usersService.deleteUser(id);
   }
 
-
-
   @Roles(UserRole.ADMIN, UserRole.HR)
   @Get(':id/activation-link')
   @ApiOperation({ summary: 'Get activation link for a user' })
-  @ApiResponse({ status:200, description: 'Activation link generated successfully.'})
-  async getActivationLink(@Param('id') id: number): Promise<{ activationLink: string; token: string }> {
+  @ApiResponse({ status: 200, description: 'Activation link generated successfully.' })
+  async getActivationLink(
+    @Param('id') id: number,
+  ): Promise<{ activationLink: string; token: string }> {
     const token = await this.usersService.getActivationToken(id);
-    
+
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const activationLink = `${frontendUrl}/auth/activate?token=${token}`;
-    
+
     return {
       activationLink,
       token,
     };
   }
- 
-
 
   @Roles(UserRole.HR)
   @Post('import/preview')
   @ApiOperation({ summary: 'Preview import of users from Excel file' })
-  @ApiResponse({ status:200, description: 'Preview generated successfully.'})
+  @ApiResponse({ status: 200, description: 'Preview generated successfully.' })
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor('file', {
-    limits: {
-      fileSize: 10 * 1024 * 1024, // 10MB limit
-      files: 1,
-    },
-    fileFilter: (req, file, callback) => {
-      // Check file extension
-      if (!file.originalname.match(/\.(xlsx|xls)$/i)) {
-        return callback(new BadRequestException('Only Excel files (.xlsx, .xls) are allowed'), false);
-      }
-      
-      // Check mime type
-      const validMimeTypes = [
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel',
-        'application/octet-stream', // Sometimes Excel files come as octet-stream
-      ];
-      
-      if (!validMimeTypes.includes(file.mimetype)) {
-        return callback(new BadRequestException('Invalid file type'), false);
-      }
-      
-      callback(null, true);
-    },
-  }))
+  @UseInterceptors(ExcelFileInterceptor)
   async previewImport(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
@@ -136,7 +115,7 @@ export class UsersController {
   @Post('import/execute')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Execute import of users from Excel file' })
-  @ApiResponse({ status:200, description: 'Import executed successfully.'})
+  @ApiResponse({ status: 200, description: 'Import executed successfully.' })
   async executeImport(@Body('rows') rows: ImportUserRow[]) {
     return await this.excelService.executeImport(rows);
   }

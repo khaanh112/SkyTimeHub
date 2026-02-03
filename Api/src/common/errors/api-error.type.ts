@@ -1,3 +1,6 @@
+/**
+ * @deprecated Use ApiErrorResponse from api-response.type.ts instead
+ */
 export type ApiError = {
   code: string;
   message: string;

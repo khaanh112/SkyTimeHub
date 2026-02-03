@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { RefreshToken } from '../../entity/refresh-token.entity';
-import { UsersService } from '../../users/users.service';
+import { RefreshToken } from '@entities/refresh-token.entity';
+import { UsersService } from '@modules/users/users.service';
 
 @Injectable()
 export class RefreshTokenService {

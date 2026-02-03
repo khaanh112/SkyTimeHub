@@ -4,19 +4,19 @@ export const authService = {
   // Login with email (for testing)
   loginWithEmail: async (email) => {
     const response = await api.post('/auth/login/email', { email });
-    return response.data;
+    return response.data.data || response.data;
   },
 
   // Get current user profile
   getProfile: async () => {
     const response = await api.get('/auth/me');
-    return response.data;
+    return response.data.data || response.data;
   },
 
   // Refresh token
   refreshToken: async (refreshToken) => {
     const response = await api.post('/auth/refresh', { refreshToken });
-    return response.data;
+    return response.data.data || response.data;
   },
 
   // Logout

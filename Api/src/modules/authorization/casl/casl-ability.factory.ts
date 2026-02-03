@@ -4,7 +4,6 @@ import { Injectable } from '@nestjs/common';
 import { User } from '@entities/users.entity';
 import { UserRole } from '@common/enums/roles.enum';
 
-
 export type AppAbility = PureAbility<[Action, Subjects]>;
 
 @Injectable()
