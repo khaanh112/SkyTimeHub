@@ -25,7 +25,7 @@ import { ZohoStrategy } from './strategies/zoho.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 // Entities
-import { RefreshToken } from './entities/refresh-token.entity';
+import { RefreshToken } from '../entity/refresh-token.entity';
 
 @Module({
   imports: [

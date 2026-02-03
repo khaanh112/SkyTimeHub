@@ -11,10 +11,10 @@ export class PoliciesGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const policyHandlers = this.reflector.getAllAndOverride<RequiredRule[]>(
-      CHECK_POLICIES_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const policyHandlers = this.reflector.getAllAndOverride<RequiredRule[]>(CHECK_POLICIES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     // If no policies are defined, allow access (use with @Roles for RBAC)
     if (!policyHandlers || policyHandlers.length === 0) {

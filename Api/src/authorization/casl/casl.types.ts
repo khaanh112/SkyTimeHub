@@ -10,7 +10,7 @@ export enum Action {
 }
 
 // Define all subjects/resources in the system
-export type Subjects = 
+export type Subjects =
   | 'User'
   | 'Leave'
   | 'Overtime'

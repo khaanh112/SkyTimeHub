@@ -5,15 +5,7 @@ import { RolesGuard } from './guards/roles.guard';
 
 @Global()
 @Module({
-  providers: [
-    CaslAbilityFactory,
-    PoliciesGuard,
-    RolesGuard,
-  ],
-  exports: [
-    CaslAbilityFactory,
-    PoliciesGuard,
-    RolesGuard,
-  ],
+  providers: [CaslAbilityFactory, PoliciesGuard, RolesGuard],
+  exports: [CaslAbilityFactory, PoliciesGuard, RolesGuard],
 })
 export class AuthorizationModule {}

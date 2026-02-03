@@ -18,6 +18,3 @@ export * from './decorators';
 
 // DTOs
 export * from './dto';
-
-// Entities
-export * from './entities';

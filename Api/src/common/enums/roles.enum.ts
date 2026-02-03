@@ -4,7 +4,7 @@ export enum UserRole {
   EMPLOYEE = 'employee',
   DEPARTMENT_LEADER = 'department_leader',
   BOD = 'bod',
-} 
+}
 
 export enum LeaveStatus {
   PENDING = 'pending',

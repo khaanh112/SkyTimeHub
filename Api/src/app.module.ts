@@ -1,8 +1,8 @@
-import { ConfigModule, ConfigService } from "@nestjs/config";
-import { Module } from "@nestjs/common";
-import { TypeOrmModule } from "@nestjs/typeorm";
-import { APP_GUARD } from "@nestjs/core";
-import { getDatabaseConfig } from "./config/database.config";
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { APP_GUARD } from '@nestjs/core';
+import { getDatabaseConfig } from './config/database.config';
 import { AppController } from './app.controller';
 
 // Feature Modules
@@ -28,7 +28,7 @@ import { RolesGuard } from './authorization/guards/roles.guard';
     UsersModule,
     AuthenticationModule,
     AuthorizationModule,
-  ],  
+  ],
   controllers: [AppController],
   providers: [
     // Global Guard - Authentication (must run first)
@@ -43,5 +43,4 @@ import { RolesGuard } from './authorization/guards/roles.guard';
     },
   ],
 })
-
 export class AppModule {}

@@ -24,12 +24,7 @@ export class ZohoStrategy extends PassportStrategy(Strategy, 'zoho') {
     });
   }
 
-  async validate(
-    accessToken: string,
-    refreshToken: string,
-    profile: any,
-    done: any,
-  ): Promise<any> {
+  async validate(accessToken: string, refreshToken: string, profile: any, done: any): Promise<any> {
     // Fetch user info from Zoho
     const response = await fetch('https://accounts.zoho.com/oauth/user/info', {
       headers: {

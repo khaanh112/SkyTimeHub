@@ -1,9 +1,17 @@
-import { IsEmail, IsEnum, IsString, IsOptional, IsDateString, IsInt, Length, Matches } from "class-validator";
-import { UserRole } from "../../common/enums/roles.enum";
-import { UserStatus } from "../../common/enums/user-status.enum";
+import {
+  IsEmail,
+  IsEnum,
+  IsString,
+  IsOptional,
+  IsDateString,
+  IsInt,
+  Length,
+  Matches,
+} from 'class-validator';
+import { UserRole } from '../../common/enums/roles.enum';
+import { UserStatus } from '../../common/enums/user-status.enum';
 
 export class CreateUserDto {
-  
   @IsOptional()
   @IsString()
   @Length(1, 20)
@@ -37,7 +45,9 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   @Length(10, 20)
-  @Matches(/^[0-9+\-() ]+$/, { message: 'Phone number must contain only digits, spaces, and + - ( ) characters' })
+  @Matches(/^[0-9+\-() ]+$/, {
+    message: 'Phone number must contain only digits, spaces, and + - ( ) characters',
+  })
   phone?: string;
 
   @IsOptional()

@@ -1,14 +1,17 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { User } from '../../users/users.entity';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { User } from '../../entity/users.entity';
 import { UsersService } from '../../users/users.service';
 import { TokenService } from './token.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { ZohoAuthService } from './zoho-auth.service';
 import { LoginResponseDto } from '../dto/login-response.dto';
 import { UserStatus } from '../../common/enums/user-status.enum';
+import { ZohoProfileDto } from '../dto/zoho-profile.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private usersService: UsersService,
     private tokenService: TokenService,
@@ -20,8 +23,16 @@ export class AuthService {
   // ZOHO OAUTH
   // =====================================================
 
-  async validateUserFromZoho(zohoProfile: any): Promise<LoginResponseDto> {
-    return this.zohoAuthService.validateAndLogin(zohoProfile);
+  async validateUserFromZoho(zohoProfile: ZohoProfileDto): Promise<LoginResponseDto> {
+    try {
+      this.logger.log(`Validating user from Zoho: ${zohoProfile?.email || 'unknown'}`);
+      const result = await this.zohoAuthService.validateAndLogin(zohoProfile);
+      this.logger.log(`Successfully validated user from Zoho: ${result.user.email}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Error validating user from Zoho: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   // =====================================================
@@ -29,61 +40,81 @@ export class AuthService {
   // =====================================================
 
   async loginWithEmail(email: string): Promise<LoginResponseDto> {
-    // Find or create user by email
-    let user = await this.usersService.getUserByEmail(email);
-    
-    if (!user) {
-      // Create new user if not exists
-      user = await this.usersService.createUser({
-        email,
-        username: email.split('@')[0],
-        status: UserStatus.ACTIVE,
-      });
+    try {
+      this.logger.log(`Attempting login with email: ${email}`);
+      
+      // Find or create user by email
+      let user = await this.usersService.getUserByEmail(email);
+
+      if (!user) {
+        this.logger.log(`User not found, creating new user: ${email}`);
+        // Create new user if not exists
+        user = await this.usersService.createUser({
+          email,
+          username: email.split('@')[0],
+          status: UserStatus.ACTIVE,
+        });
+        this.logger.log(`New user created: ${user.id}`);
+      } else {
+        this.logger.log(`User found: ${user.id}`);
+      }
+
+      if (user.status !== UserStatus.ACTIVE) {
+        this.logger.warn(`User account not active: ${user.id}, status: ${user.status}`);
+        throw new UnauthorizedException('User account is not active, contact HR department.');
+      }
+
+      // Generate tokens
+      this.logger.log(`Generating tokens for user: ${user.id}`);
+      const tokens = await this.tokenService.generateTokens(user);
+
+      // Save refresh token
+      this.logger.log(`Saving refresh token for user: ${user.id}`);
+      await this.refreshTokenService.saveToken(
+        user.id,
+        tokens.refreshToken,
+        this.tokenService.getRefreshTokenExpiration(),
+      );
+
+      this.logger.log(`Login successful for user: ${user.id}`);
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+          status: user.status,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Login error for email ${email}: ${error.message}`, error.stack);
+      throw error;
     }
-
-    if(user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('User account is not active, contact HR department.');
-    }
-    
-
-    // Generate tokens
-    const tokens = await this.tokenService.generateTokens(user);
-
-    // Save refresh token
-    await this.refreshTokenService.saveToken(
-      user.id,
-      tokens.refreshToken,
-      this.tokenService.getRefreshTokenExpiration(),
-    );
-
-    return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        status: user.status,
-      },
-    };
   }
 
   // =====================================================
   // TOKEN MANAGEMENT
   // =====================================================
 
-  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  async refreshAccessToken(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
+      this.logger.log('Attempting to refresh access token');
       const payload = await this.tokenService.verifyRefreshToken(refreshToken);
+      this.logger.log(`Token verified for user: ${payload.sub}`);
 
       const storedToken = await this.refreshTokenService.findValidToken(payload.sub, refreshToken);
 
       if (!storedToken) {
+        this.logger.warn(`Invalid refresh token for user: ${payload.sub}`);
         throw new UnauthorizedException('Invalid refresh token');
       }
 
       if (this.refreshTokenService.isTokenExpired(storedToken)) {
+        this.logger.warn(`Refresh token expired for user: ${payload.sub}`);
         await this.refreshTokenService.revokeToken(storedToken.id);
         throw new UnauthorizedException('Refresh token expired');
       }
@@ -91,6 +122,7 @@ export class AuthService {
       const user = await this.usersService.getUser(payload.sub);
 
       if (!user || user.status !== UserStatus.ACTIVE) {
+        this.logger.warn(`User not active: ${payload.sub}`);
         throw new UnauthorizedException('User not active');
       }
 
@@ -103,8 +135,10 @@ export class AuthService {
         this.tokenService.getRefreshTokenExpiration(),
       );
 
+      this.logger.log(`Token refreshed successfully for user: ${user.id}`);
       return tokens;
     } catch (error) {
+      this.logger.error(`Error refreshing token: ${error.message}`, error.stack);
       if (error instanceof UnauthorizedException) {
         throw error;
       }
@@ -118,9 +152,12 @@ export class AuthService {
 
   async logout(userId: number): Promise<void> {
     if (!userId) {
+      this.logger.warn('Logout called without userId');
       return; // Silent fail if no userId
     }
+    this.logger.log(`Logging out user: ${userId}`);
     await this.refreshTokenService.revokeAllUserTokens(userId);
+    this.logger.log(`User logged out successfully: ${userId}`);
   }
 
   // =====================================================
@@ -129,7 +166,7 @@ export class AuthService {
 
   async validateUser(userId: number): Promise<User> {
     const user = await this.usersService.getUser(userId);
-    
+
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
@@ -150,30 +187,38 @@ export class AuthService {
    * Used when user clicks activation link from invitation email
    */
   async activateAccount(token: string): Promise<LoginResponseDto> {
-    // Activate the account
-    const user = await this.usersService.activateAccount(token);
+    try {
+      this.logger.log('Attempting to activate account');
+      // Activate the account
+      const user = await this.usersService.activateAccount(token);
+      this.logger.log(`Account activated for user: ${user.id}`);
 
-    // Generate tokens for auto-login after activation
-    const tokens = await this.tokenService.generateTokens(user);
+      // Generate tokens for auto-login after activation
+      const tokens = await this.tokenService.generateTokens(user);
 
-    // Save refresh token
-    await this.refreshTokenService.saveToken(
-      user.id,
-      tokens.refreshToken,
-      this.tokenService.getRefreshTokenExpiration(),
-    );
+      // Save refresh token
+      await this.refreshTokenService.saveToken(
+        user.id,
+        tokens.refreshToken,
+        this.tokenService.getRefreshTokenExpiration(),
+      );
 
-    return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        status: user.status,
-      },
-    };
+      this.logger.log(`Account activation complete for user: ${user.id}`);
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+          status: user.status,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error activating account: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**
@@ -182,7 +227,7 @@ export class AuthService {
    */
   async resendActivationEmail(userId: number): Promise<{ token: string; user: User }> {
     const user = await this.usersService.resendActivation(userId);
-    
+
     return {
       token: user.activationToken,
       user,
