@@ -146,23 +146,6 @@ export class UsersService {
     return await this.usersRepository.save(updatedUser);
   }
 
-  async updateRefreshToken(userId: number, refreshTokenHash: string | null): Promise<void> {
-    if (!userId) {
-      throw new AppException(
-        ErrorCode.USER_ID_REQUIRED,
-        'User ID is required',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
-    }
-
-    await this.usersRepository.update({ id: userId }, { refreshTokenHash });
-  }
-
   async deleteUser(id: number): Promise<void> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
     if (!existingUser) {
@@ -191,30 +174,6 @@ export class UsersService {
     user.status = UserStatus.ACTIVE;
     user.activatedAt = new Date();
     user.activationToken = null;
-
-    return await this.usersRepository.save(user);
-  }
-
-  /**
-   * Resend activation email (regenerate token)
-   */
-  async resendActivation(userId: number): Promise<User> {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-
-    if (!user) {
-      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
-    }
-
-    if (user.status === UserStatus.ACTIVE) {
-      throw new AppException(
-        ErrorCode.ACCOUNT_ALREADY_ACTIVE,
-        'User account is already active',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    // Generate new activation token
-    user.activationToken = this.generateActivationToken();
 
     return await this.usersRepository.save(user);
   }

@@ -173,17 +173,5 @@ export class AuthController {
     return new SuccessResponseDto(result, 'User account activated successfully');
   }
 
-  @Post('resend-activation')
-  @ApiBearerAuth()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Resend activation email' })
-  @ApiResponse({ status: 200, description: 'Activation email sent successfully.' })
-  async resendActivation(@CurrentUser('id') userId: number) {
-    const result = await this.authService.resendActivationEmail(userId);
-
-    // TODO: Send activation email here
-    // await this.emailService.sendActivationEmail(result.user.email, result.token);
-
-    return new SuccessResponseDto(result, 'Activation email sent successfully');
-  }
+ 
 }

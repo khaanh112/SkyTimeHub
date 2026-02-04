@@ -204,10 +204,7 @@ export class AuthService {
     return user;
   }
 
-  // =====================================================
-  // ACCOUNT ACTIVATION
-  // =====================================================
-
+ 
   /**
    * Activate user account via activation token
    * Used when user clicks activation link from invitation email
@@ -229,16 +226,5 @@ export class AuthService {
     }
   }
 
-  /**
-   * Resend activation email
-   * Generates new activation token and returns it for email service
-   */
-  async resendActivationEmail(userId: number): Promise<{ token: string; user: User }> {
-    const user = await this.usersService.resendActivation(userId);
-
-    return {
-      token: user.activationToken,
-      user,
-    };
-  }
+  
 }
