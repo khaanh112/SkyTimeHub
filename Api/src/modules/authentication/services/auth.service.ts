@@ -32,7 +32,7 @@ export class AuthService {
       this.logger.log(`Successfully validated user from Zoho: ${result.user.email}`);
       return result;
     } catch (error) {
-      this.logger.error(`Error validating user from Zoho: ${error.message}`, error.stack);
+      this.logger.warn(`Zoho login denied for ${zohoProfile?.email}: ${error.message}`);
       throw error;
     }
   }
@@ -190,11 +190,7 @@ export class AuthService {
     const user = await this.usersService.getUser(userId);
 
     if (!user) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'User not found',
-        HttpStatus.UNAUTHORIZED,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.UNAUTHORIZED);
     }
 
     if (user.status !== UserStatus.ACTIVE) {
@@ -216,37 +212,19 @@ export class AuthService {
    * Activate user account via activation token
    * Used when user clicks activation link from invitation email
    */
-  async activateAccount(token: string): Promise<LoginResponseDto> {
+  async activateAccount(token: string): Promise<{ email: string; username: string }> {
     try {
       this.logger.log('Attempting to activate account');
       // Activate the account
       const user = await this.usersService.activateAccount(token);
       this.logger.log(`Account activated for user: ${user.id}`);
 
-      // Generate tokens for auto-login after activation
-      const tokens = await this.tokenService.generateTokens(user);
-
-      // Save refresh token
-      await this.refreshTokenService.saveToken(
-        user.id,
-        tokens.refreshToken,
-        this.tokenService.getRefreshTokenExpiration(),
-      );
-
-      this.logger.log(`Account activation complete for user: ${user.id}`);
       return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role,
-          status: user.status,
-        },
+        email: user.email,
+        username: user.username,
       };
     } catch (error) {
-      this.logger.error(`Error activating account: ${error.message}`, error.stack);
+      this.logger.error(`Account activation failed: ${error.message}`, error.stack);
       throw error;
     }
   }

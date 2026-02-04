@@ -3,7 +3,14 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './context';
 import { LoadingSpinner } from './components';
-import { LoginPage, AuthCallback, Dashboard, UsersPage, ProfilePage } from './pages';
+import {
+  LoginPage,
+  AuthCallback,
+  Dashboard,
+  UsersPage,
+  ProfilePage,
+  ActivateAccountPage,
+} from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
 
 // Protected Route wrapper
@@ -57,6 +64,7 @@ function AppRoutes() {
         }
       />
       <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/auth/activate" element={<ActivateAccountPage />} />
 
       {/* Protected routes */}
       <Route

@@ -35,10 +35,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = (accessToken, refreshToken) => {
+  const login = async (accessToken, refreshToken, showToast = true) => {
     authService.saveTokens(accessToken, refreshToken);
-    checkAuth();
-    toast.success('Đăng nhập thành công!');
+    await checkAuth();
+    if (showToast) {
+      toast.success('Đăng nhập thành công!');
+    }
   };
 
   const logout = async () => {

@@ -56,7 +56,7 @@ export class UsersController {
     return await this.usersService.getUser(id);
   }
 
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Roles(UserRole.HR)
   @Post()
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully.' })
@@ -64,7 +64,7 @@ export class UsersController {
     return await this.usersService.createUser(user);
   }
 
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Roles(UserRole.HR)
   @Put(':id')
   @ApiOperation({ summary: 'Update an existing user' })
   @ApiResponse({ status: 200, description: 'User updated successfully.' })
@@ -72,7 +72,7 @@ export class UsersController {
     return this.usersService.updateUser(id, user);
   }
 
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  @Roles(UserRole.HR)
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a user' })
   @ApiResponse({ status: 200, description: 'User deleted successfully.' })
@@ -80,7 +80,7 @@ export class UsersController {
     return await this.usersService.deleteUser(id);
   }
 
-  @Roles(UserRole.ADMIN, UserRole.HR)
+  //@Roles(UserRole.HR)
   @Get(':id/activation-link')
   @ApiOperation({ summary: 'Get activation link for a user' })
   @ApiResponse({ status: 200, description: 'Activation link generated successfully.' })

@@ -52,11 +52,7 @@ export class UsersService {
       where: { id },
     });
     if (!user) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'User not found',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
     return user;
   }
@@ -117,11 +113,7 @@ export class UsersService {
   async updateUser(id: number, user: UpdateUserDto): Promise<User> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
     if (!existingUser) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'User not found',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
 
     // Check if email is being updated and already exists
@@ -165,11 +157,7 @@ export class UsersService {
 
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'User not found',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
 
     await this.usersRepository.update({ id: userId }, { refreshTokenHash });
@@ -178,11 +166,7 @@ export class UsersService {
   async deleteUser(id: number): Promise<void> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
     if (!existingUser) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'User not found',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
     await this.usersRepository.delete(id);
   }
@@ -218,11 +202,7 @@ export class UsersService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
 
     if (!user) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'User not found',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
 
     if (user.status === UserStatus.ACTIVE) {
@@ -246,11 +226,7 @@ export class UsersService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
 
     if (!user) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'User not found',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
 
     if (user.status === UserStatus.ACTIVE) {

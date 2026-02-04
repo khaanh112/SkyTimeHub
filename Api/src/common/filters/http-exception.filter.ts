@@ -7,7 +7,6 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { ApiError } from '../errors/api-error.type';
 import { ApiErrorResponse } from '../types/api-response.type';
 import { ErrorCode } from '../enums/errror-code.enum';
 import { AppException } from '../exceptions/app.exception';
@@ -25,7 +24,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // 1) AppException -> giữ nguyên code/message/details
     if (exception instanceof AppException) {
       const status = exception.getStatus();
-      const r = exception.getResponse() as ApiError;
+      const r = exception.getResponse() as ApiErrorResponse;
 
       const response: ApiErrorResponse = {
         success: false,
@@ -42,7 +41,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // 2) HttpException khác (BadRequest, NotFound, v.v.) -> chuyển đổi sang định dạng chuẩn
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
-      const payload = exception.getResponse() as ApiError;
+      const payload = exception.getResponse() as ApiErrorResponse;
 
       // ValidationPipe thường là BadRequestException với message array
       if (exception instanceof BadRequestException && Array.isArray(payload?.message)) {

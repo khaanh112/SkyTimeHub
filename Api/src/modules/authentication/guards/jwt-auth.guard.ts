@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
@@ -17,9 +23,9 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const url = request.url;
     const method = request.method;
-    
+
     this.logger.log(`[${method}] ${url} - JWT Guard called`);
-    
+
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -41,8 +47,10 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const payload = await this.jwtService.verifyAsync(token);
-      this.logger.log(`[${method}] ${url} - Token verified for user: ${payload.sub} (${payload.email})`);
-      
+      this.logger.log(
+        `[${method}] ${url} - Token verified for user: ${payload.sub} (${payload.email})`,
+      );
+
       // Set full user payload to request for use in guards/controllers
       request.user = {
         id: payload.sub,
@@ -50,7 +58,7 @@ export class JwtAuthGuard implements CanActivate {
         username: payload.username,
         role: payload.role,
       };
-      
+
       this.logger.log(`[${method}] ${url} - User set on request: ${JSON.stringify(request.user)}`);
     } catch (error) {
       this.logger.error(`[${method}] ${url} - Token verification failed: ${error.message}`);

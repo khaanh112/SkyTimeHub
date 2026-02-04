@@ -45,9 +45,6 @@ export class User {
   @Column({ type: 'varchar', length: 100, nullable: true })
   position: string;
 
-  @Column({ type: 'varchar', length: 20, nullable: true })
-  phone: string;
-
   @Column({ name: 'join_date', type: 'date', nullable: true })
   joinDate: Date;
 

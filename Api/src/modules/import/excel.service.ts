@@ -164,19 +164,6 @@ export class ExcelService {
             }
           }
 
-          if (
-            rowData.phone !== null &&
-            rowData.phone !== undefined &&
-            String(rowData.phone).trim()
-          ) {
-            const phoneStr = String(rowData.phone).trim();
-            if (phoneStr.length > 20) {
-              errors.push('Phone number is too long (max 20 characters)');
-            } else if (!this.isValidPhone(phoneStr)) {
-              errors.push('Invalid phone format. Use digits, spaces, +, -, (, )');
-            }
-          }
-
           if (rowData.employeeId !== null && rowData.employeeId !== undefined) {
             const empIdStr = String(rowData.employeeId).trim();
             if (empIdStr && empIdStr.length > 20) {
@@ -268,10 +255,7 @@ export class ExcelService {
               String(rowData.position).trim()
                 ? String(rowData.position).trim()
                 : undefined,
-            phone:
-              rowData.phone !== null && rowData.phone !== undefined && String(rowData.phone).trim()
-                ? String(rowData.phone).trim()
-                : undefined,
+
             joinDate:
               rowData.joinDate !== null &&
               rowData.joinDate !== undefined &&
@@ -298,7 +282,6 @@ export class ExcelService {
             role: undefined,
             departmentId: undefined,
             position: undefined,
-            phone: undefined,
             joinDate: undefined,
             errors: [`Failed to process row: ${rowError.message || 'Unknown error'}`],
           };
@@ -382,7 +365,6 @@ export class ExcelService {
             username: row.username,
             role: row.role as UserRole,
             position: row.position,
-            phone: row.phone,
             joinDate: row.joinDate ? new Date(row.joinDate) : undefined,
             status: UserStatus.INACTIVE, // New users start inactive
           };
@@ -422,13 +404,5 @@ export class ExcelService {
   private isValidEmail(email: string): boolean {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
-  }
-
-  /**
-   * Validate phone format
-   */
-  private isValidPhone(phone: string): boolean {
-    const phoneRegex = /^[0-9+\-() ]+$/;
-    return phoneRegex.test(phone) && phone.length >= 10 && phone.length <= 20;
   }
 }

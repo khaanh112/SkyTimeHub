@@ -12,6 +12,7 @@ import { AuthorizationModule } from '@modules/authorization/authorization.module
 import { JwtAuthGuard } from '@modules/authentication/guards/jwt-auth.guard';
 import { RolesGuard } from '@modules/authorization/guards/roles.guard';
 import { TransformInterceptor } from '@/common/interceptors/transform.interceptor';
+import { NotificationsModule } from '@modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { TransformInterceptor } from '@/common/interceptors/transform.intercepto
     UsersModule,
     AuthenticationModule,
     AuthorizationModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

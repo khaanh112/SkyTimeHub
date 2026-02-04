@@ -27,6 +27,12 @@ export const authService = {
     return response.data;
   },
 
+  // Activate account
+  activateAccount: async (token) => {
+    const response = await api.post(`/auth/activate/${token}`);
+    return response.data.data || response.data;
+  },
+
   // Check if user is authenticated
   isAuthenticated: () => {
     return !!localStorage.getItem('accessToken');

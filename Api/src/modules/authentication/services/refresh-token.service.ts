@@ -1,16 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource} from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { RefreshToken } from '@entities/refresh-token.entity';
 import { UsersService } from '@modules/users/users.service';
+import { User } from '@/entities/users.entity';
+
 
 @Injectable()
 export class RefreshTokenService {
   constructor(
     @InjectRepository(RefreshToken)
     private refreshTokenRepository: Repository<RefreshToken>,
+    private dataSource: DataSource,
     private usersService: UsersService,
+  
   ) {}
 
   async saveToken(userId: number, token: string, expiresAt: Date): Promise<RefreshToken> {
@@ -48,8 +52,13 @@ export class RefreshTokenService {
       return; // Silent fail if no userId
     }
 
-    await this.refreshTokenRepository.update({ userId, isRevoked: false }, { isRevoked: true });
-    await this.usersService.updateRefreshToken(userId, null);
+    await this.dataSource.transaction(async (manager) => {
+
+      await manager.update(RefreshToken, { userId, isRevoked: false }, { isRevoked: true });
+      await manager.getRepository(User).update({ id: userId },{ refreshTokenHash: null }, );
+    
+    });
+
   }
 
   isTokenExpired(token: RefreshToken): boolean {

@@ -1,11 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { UsersService } from '../../users/users.service';
 import { TokenService } from './token.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { LoginResponseDto } from '../dto/login-response.dto';
 import { UserStatus } from '@common/enums/user-status.enum';
+import { ErrorCode } from '@common/enums/errror-code.enum';
+import { AppException } from '@common/exceptions/app.exception';
 import { ZohoProfileDto } from '../dto/zoho-profile.dto';
 import { User } from '@/entities/users.entity';
+import { HttpStatus } from '@nestjs/common';
 
 @Injectable()
 export class ZohoAuthService {
@@ -16,7 +19,7 @@ export class ZohoAuthService {
   ) {}
 
   async validateAndLogin(zohoProfile: ZohoProfileDto): Promise<LoginResponseDto> {
-    const user = await this.findOrCreateUser(zohoProfile);
+    const user = await this.findCreatedUser(zohoProfile);
 
     const tokens = await this.tokenService.generateTokens(user);
 
@@ -38,23 +41,36 @@ export class ZohoAuthService {
     };
   }
 
-  private async findOrCreateUser(profile: ZohoProfileDto): Promise<User> {
-    const { email, firstName, lastName } = profile;
+  private async findCreatedUser(profile: ZohoProfileDto): Promise<User> {
+    const { email } = profile;
 
-    let user = await this.usersService.getUserByEmail(email);
+    const user = await this.usersService.getUserByEmail(email);
 
+    // User must be invited by HR first
     if (!user) {
-      user = await this.usersService.createUser({
-        email,
-        username: `${firstName} ${lastName}`.trim() || email.split('@')[0],
-      });
-    } else if (user.activationToken) {
-      // User was created by HR but hasn't activated account yet
-      throw new UnauthorizedException(
-        'Account not activated. Please check your email and click the activation link first.',
+      throw new AppException(
+        ErrorCode.ACCOUNT_NOT_INVITED,
+        'Account not found. Please contact HR department to get an invitation first.',
+        HttpStatus.UNAUTHORIZED,
       );
-    } else if (user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('User account is not active, contact HR department.');
+    }
+
+    // User must activate account before logging in
+    if (user.activationToken) {
+      throw new AppException(
+        ErrorCode.ACCOUNT_NOT_ACTIVATED,
+        'Account not activated. Please check your email and click the activation link first.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    // User account must be active
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new AppException(
+        ErrorCode.ACCOUNT_INACTIVE,
+        'User account is not active. Please contact HR department.',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     return user;
