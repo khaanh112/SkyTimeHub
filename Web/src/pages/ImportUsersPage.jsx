@@ -223,13 +223,14 @@ const ImportUsersPage = () => {
 
   const downloadTemplate = () => {
     try {
-      // Create sample Excel template
+      // Download Excel template
       const link = document.createElement('a');
       link.href = '/templates/users-import-template.xlsx';
       link.download = 'users-import-template.xlsx';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      toast.success('Đã tải xuống template Excel');
     } catch (error) {
       console.error('Download error:', error);
       toast.error('Failed to download template. Please try again.');
@@ -291,17 +292,19 @@ const ImportUsersPage = () => {
 
             {/* Instructions */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-blue-900 mb-2">Excel Format Requirements:</h3>
+              <h3 className="text-sm font-medium text-blue-900 mb-2">Yêu cầu định dạng Excel:</h3>
               <ul className="text-sm text-blue-800 space-y-1">
-                <li>• <strong>File limits</strong>: Maximum 10MB, 1000 rows</li>
-                <li>• <strong>email</strong> (required): Valid email address</li>
-                <li>• <strong>username</strong> (required): Full name</li>
-                <li>• <strong>employeeId</strong> (optional): Unique employee ID (auto-generated if empty)</li>
-                <li>• <strong>role</strong> (optional): admin, hr, employee, department_leader, bod</li>
-                <li>• <strong>departmentId</strong> (optional): Department ID number</li>
-                <li>• <strong>position</strong> (optional): Job position</li>
-                <li>• <strong>phone</strong> (optional): Phone number</li>
-                <li>• <strong>joinDate</strong> (optional): Date format: YYYY-MM-DD</li>
+                <li>• <strong>Giới hạn file</strong>: Tối đa 10MB, 1000 dòng</li>
+                <li>• <strong>employeeId</strong> (bắt buộc): Mã nhân viên duy nhất (VD: EMP240001)</li>
+                <li>• <strong>email</strong> (bắt buộc): Địa chỉ email hợp lệ</li>
+                <li>• <strong>username</strong> (bắt buộc): Họ và tên đầy đủ</li>
+                <li>• <strong>role</strong> (tùy chọn): admin, hr, employee, department_leader, bod</li>
+                <li>• <strong>departmentId</strong> (tùy chọn): Số ID phòng ban</li>
+                <li>• <strong>position</strong> (tùy chọn): Chức vụ công việc</li>
+                <li>• <strong>joinDate</strong> (tùy chọn): Định dạng: YYYY-MM-DD</li>
+                <li className="mt-2 pt-2 border-t border-blue-300">
+                  <strong>⚠️ Lưu ý:</strong> Tất cả user import sẽ có trạng thái <strong className="text-red-700">inactive</strong> mặc định
+                </li>
               </ul>
             </div>
           </div>

@@ -104,7 +104,7 @@ export class ExcelService {
       }
 
       // Validate required columns exist
-      const requiredColumns = ['email', 'username'];
+      const requiredColumns = ['email', 'username', 'employeeId'];
       const firstRow = data[0];
       const missingColumns = requiredColumns.filter((col) => !(col in firstRow));
       if (missingColumns.length > 0) {
@@ -155,19 +155,23 @@ export class ExcelService {
             errors.push('Username is too long (max 100 characters)');
           }
 
+          // Validate employeeId (REQUIRED)
+          const employeeId =
+            rowData.employeeId !== null && rowData.employeeId !== undefined
+              ? String(rowData.employeeId).trim()
+              : '';
+          if (!employeeId) {
+            errors.push('Employee ID is required');
+          } else if (employeeId.length > 20) {
+            errors.push('Employee ID must be max 20 characters');
+          }
+
           // Validate optional fields with null safety
           if (rowData.role !== null && rowData.role !== undefined && String(rowData.role).trim()) {
             const roleStr = String(rowData.role).trim();
             const validRoles = Object.values(UserRole);
             if (!validRoles.includes(roleStr as UserRole)) {
               errors.push(`Invalid role. Must be one of: ${validRoles.join(', ')}`);
-            }
-          }
-
-          if (rowData.employeeId !== null && rowData.employeeId !== undefined) {
-            const empIdStr = String(rowData.employeeId).trim();
-            if (empIdStr && empIdStr.length > 20) {
-              errors.push('Employee ID must be max 20 characters');
             }
           }
 
@@ -214,29 +218,21 @@ export class ExcelService {
             }
           }
 
-          // Check for duplicate employeeId in database
-          if (rowData.employeeId !== null && rowData.employeeId !== undefined) {
-            const empIdStr = String(rowData.employeeId).trim();
-            if (empIdStr) {
-              try {
-                const existingEmployee = await this.usersService.findByEmployeeId(empIdStr);
-                if (existingEmployee) {
-                  errors.push('Employee ID already exists in system');
-                }
-              } catch (dbError) {
-                errors.push('Could not verify employee ID uniqueness');
+          // Check for duplicate employeeId in database (only if employee ID is valid)
+          if (employeeId && this.isValidEmployeeId(employeeId)) {
+            try {
+              const existingEmployee = await this.usersService.findByEmployeeId(employeeId);
+              if (existingEmployee) {
+                errors.push('Employee ID already exists in system');
               }
+            } catch (dbError) {
+              errors.push('Could not verify employee ID uniqueness');
             }
           }
 
           const row: ImportUserRow = {
             rowNumber,
-            employeeId:
-              rowData.employeeId !== null &&
-              rowData.employeeId !== undefined &&
-              String(rowData.employeeId).trim()
-                ? String(rowData.employeeId).trim()
-                : undefined,
+            employeeId: employeeId || undefined,
             email: email,
             username: username,
             role:
@@ -255,7 +251,6 @@ export class ExcelService {
               String(rowData.position).trim()
                 ? String(rowData.position).trim()
                 : undefined,
-
             joinDate:
               rowData.joinDate !== null &&
               rowData.joinDate !== undefined &&
@@ -343,38 +338,24 @@ export class ExcelService {
 
       for (const row of validRows) {
         try {
-          // Validate row data
-          if (!row.email || !row.username) {
-            throw new Error('Missing required fields');
+          // Validate row data - email, username, and employeeId are required
+          if (!row.email || !row.username || !row.employeeId) {
+            throw new Error('Missing required fields: email, username, or employeeId');
           }
 
-          // Generate employee ID if not provided
-          let employeeId;
-          try {
-            employeeId = row.employeeId || (await this.usersService.generateEmployeeId());
-          } catch (genError) {
-            throw new Error(`Failed to generate employee ID: ${genError.message}`);
-          }
-
-          // Generate activation token
-          const activationToken = this.usersService.generateActivationToken();
+          
 
           const userData: CreateUserDto = {
-            employeeId,
+            employeeId: row.employeeId,
             email: row.email,
             username: row.username,
             role: row.role as UserRole,
             position: row.position,
             joinDate: row.joinDate ? new Date(row.joinDate) : undefined,
-            status: UserStatus.INACTIVE, // New users start inactive
+            status: UserStatus.PENDING, // All imported users auto-set to pending
           };
 
-          const user = this.usersRepository.create({
-            ...userData,
-            activationToken,
-          });
-
-          await this.usersRepository.save(user);
+          await this.usersService.createUser(userData);
 
           result.successCount++;
         } catch (error) {
@@ -404,5 +385,12 @@ export class ExcelService {
   private isValidEmail(email: string): boolean {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
+  }
+
+  /**
+   * Validate employee ID format
+   */
+  private isValidEmployeeId(employeeId: string): boolean {
+    return employeeId && employeeId.length > 0 && employeeId.length <= 20;
   }
 }

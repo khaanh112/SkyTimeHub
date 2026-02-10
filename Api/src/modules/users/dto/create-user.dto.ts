@@ -4,29 +4,30 @@ import {
   IsString,
   IsOptional,
   IsDateString,
+  IsNotEmpty,
   Length,
   Matches,
 } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
 
 export class CreateUserDto {
-  @ApiPropertyOptional({ example: 'EMP001', description: 'Employee ID', maxLength: 20 })
-  @IsOptional()
+  @ApiProperty({ example: 'EMP001', description: 'Employee ID', maxLength: 20, required: true })
+  @IsNotEmpty({ message: 'Employee ID is required' })
   @IsString()
   @Length(1, 20)
-  employeeId?: string;
+  employeeId: string;
 
-  @ApiPropertyOptional({ example: 'user@example.com', description: 'User email address' })
-  @IsOptional()
+  @ApiProperty({ example: 'user@example.com', description: 'User email address', required: true })
+  @IsNotEmpty({ message: 'Email is required' })
   @IsEmail()
-  email?: string;
+  email: string;
 
-  @ApiPropertyOptional({ example: 'johndoe', description: 'Username' })
-  @IsOptional()
+  @ApiProperty({ example: 'johndoe', description: 'Username', required: true })
+  @IsNotEmpty({ message: 'Username is required' })
   @IsString()
-  username?: string;
+  username: string;
 
   @ApiPropertyOptional({ enum: UserRole, example: UserRole.EMPLOYEE, description: 'User role' })
   @IsOptional()
@@ -48,19 +49,6 @@ export class CreateUserDto {
   @Length(1, 100)
   position?: string;
 
-  @ApiPropertyOptional({
-    example: '+1234567890',
-    description: 'Phone number',
-    minLength: 10,
-    maxLength: 20,
-  })
-  @IsOptional()
-  @IsString()
-  @Length(10, 20)
-  @Matches(/^[0-9+\-() ]+$/, {
-    message: 'Phone number must contain only digits, spaces, and + - ( ) characters',
-  })
-  phone?: string;
 
   @ApiPropertyOptional({
     example: '2024-01-01',

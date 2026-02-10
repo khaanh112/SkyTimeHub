@@ -10,6 +10,8 @@ import {
   User,
   Shield,
   ChevronDown,
+  Calendar,
+  CheckCircle,
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, setIsOpen }) => {
@@ -19,6 +21,8 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
 
   const menuItems = [
     { path: '/', icon: Home, label: 'Dashboard' },
+    { path: '/leave-requests', icon: Calendar, label: 'My Leave Requests' },
+    { path: '/approvals', icon: CheckCircle, label: 'Approvals' },
     { path: '/users', icon: Users, label: 'Quản lý Users' },
   ];
 

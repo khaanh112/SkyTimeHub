@@ -1,10 +1,16 @@
 import { Module } from '@nestjs/common';
-import { NotificationsController } from './notifications.controller';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
 import { NotificationsService } from './notifications.service';
+import { EmailWorkerService } from './email-worker.service';
+import { EmailQueue } from '@entities/email_queue.entity';
 
 @Module({
-  imports: [],
-  controllers: [NotificationsController],
-  providers: [NotificationsService],
+  imports: [
+    TypeOrmModule.forFeature([EmailQueue]),
+  ],
+  controllers: [],
+  providers: [NotificationsService, EmailWorkerService],
+  exports: [NotificationsService], // Export to use in other modules
 })
 export class NotificationsModule {}

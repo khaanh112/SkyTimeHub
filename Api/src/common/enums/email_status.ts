@@ -1,0 +1,8 @@
+export enum EmailStatus {
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  SENT = 'SENT',
+  FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
+  SKIPPED = 'SKIPPED',
+}

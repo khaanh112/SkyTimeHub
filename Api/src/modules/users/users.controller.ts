@@ -27,7 +27,6 @@ import { CurrentUser } from '../authentication/decorators/current-user.decorator
 import { ExcelService } from '../import/excel.service';
 
 @ApiTags('Users')
-@ApiBearerAuth()
 @Controller('users')
 export class UsersController {
   constructor(
@@ -36,6 +35,7 @@ export class UsersController {
   ) {}
 
   @Get()
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all users' })
   @ApiResponse({ status: 200, description: 'List of users retrieved successfully.' })
   async getAllUsers(): Promise<User[]> {
@@ -43,6 +43,7 @@ export class UsersController {
   }
 
   @Get('me/profile')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'Current user profile retrieved successfully.' })
   async getCurrentUserProfile(@CurrentUser('id') userId: number): Promise<User> {
@@ -50,6 +51,7 @@ export class UsersController {
   }
 
   @Get(':id')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get user by ID' })
   @ApiResponse({ status: 200, description: 'User retrieved successfully.' })
   async getUserById(@Param('id') id: number): Promise<User> {
@@ -58,6 +60,7 @@ export class UsersController {
 
   @Roles(UserRole.HR)
   @Post()
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully.' })
   async createUser(@Body() user: CreateUserDto): Promise<User> {
@@ -66,6 +69,7 @@ export class UsersController {
 
   @Roles(UserRole.HR)
   @Put(':id')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update an existing user' })
   @ApiResponse({ status: 200, description: 'User updated successfully.' })
   async updateUser(@Param('id') id: number, @Body() user: UpdateUserDto): Promise<User> {
@@ -74,14 +78,16 @@ export class UsersController {
 
   @Roles(UserRole.HR)
   @Delete(':id')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete a user' })
   @ApiResponse({ status: 200, description: 'User deleted successfully.' })
   async deleteUser(@Param('id') id: number): Promise<void> {
     return await this.usersService.deleteUser(id);
   }
 
-  //@Roles(UserRole.HR)
+  @Roles(UserRole.HR)
   @Get(':id/activation-link')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get activation link for a user' })
   @ApiResponse({ status: 200, description: 'Activation link generated successfully.' })
   async getActivationLink(
@@ -99,7 +105,56 @@ export class UsersController {
   }
 
   @Roles(UserRole.HR)
+  @Post(':id/deactivate')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Deactivate user account' })
+  @ApiResponse({ status: 200, description: 'User account deactivated successfully.' })
+  async deactivateAccount(@Param('id') id: number): Promise<User> {
+    return await this.usersService.deacativateAccount(id);
+  }
+
+  @Roles(UserRole.HR)
+  @Get(':id/reset-activation-token')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Reset activation token for user (HR only)' })
+  @ApiResponse({ status: 200, description: 'Activation token reset successfully.' })
+  async resetActivationToken(@Param('id') id: number): Promise<{ activationLink: string; token: string }> {
+    const token = await this.usersService.resetActivationToken(id);
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const activationLink = `${frontendUrl}/auth/activate?token=${token}`;
+
+    return {
+      activationLink,
+      token,
+    };
+  }
+
+  @Roles(UserRole.HR)
+  @Post(':id/resend-activation-link')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Resend activation link to user email (HR only)' })
+  @ApiResponse({ status: 200, description: 'Activation link sent successfully.' })
+  @HttpCode(HttpStatus.OK)
+  async resendActivationLink(
+    @Param('id') id: number,
+  ): Promise<{ message: string; activationLink: string }> {
+    return await this.usersService.resendActivationLink(id);
+  }
+
+  @Roles(UserRole.HR)  
+  @Post(':id/activate')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Activate user account' })
+  @ApiResponse({ status: 200, description: 'User account activated successfully.' })
+  async activateAccountByHr(@Param('id') id: number): Promise<User> {
+    return await this.usersService.reactivateAccount(id);
+  }
+
+
+  @Roles(UserRole.HR)
   @Post('import/preview')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Preview import of users from Excel file' })
   @ApiResponse({ status: 200, description: 'Preview generated successfully.' })
   @HttpCode(HttpStatus.OK)
@@ -113,6 +168,7 @@ export class UsersController {
 
   @Roles(UserRole.HR)
   @Post('import/execute')
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Execute import of users from Excel file' })
   @ApiResponse({ status: 200, description: 'Import executed successfully.' })

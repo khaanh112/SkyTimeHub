@@ -80,7 +80,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // 3) Unknown error -> 500 chuẩn
     const response: ApiErrorResponse = {
       success: false,
-      code: ErrorCode.INTERNAL_ERROR,
+      code: ErrorCode.INTERNAL_SERVER_ERROR,
       message: 'Internal server error',
       timestamp,
       path,

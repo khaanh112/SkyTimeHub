@@ -48,23 +48,12 @@ export class AuthService {
       // Find or create user by email
       let user = await this.usersService.getUserByEmail(email);
 
-      if (!user) {
-        this.logger.log(`User not found, creating new user: ${email}`);
-        // Create new user if not exists
-        user = await this.usersService.createUser({
-          email,
-          username: email.split('@')[0],
-          status: UserStatus.ACTIVE,
-        });
-        this.logger.log(`New user created: ${user.id}`);
-      } else {
-        this.logger.log(`User found: ${user.id}`);
-      }
+      
 
       if (user.status !== UserStatus.ACTIVE) {
         this.logger.warn(`User account not active: ${user.id}, status: ${user.status}`);
         throw new AppException(
-          ErrorCode.ACCOUNT_INACTIVE,
+          ErrorCode.ACCOUNT_NOT_ACTIVE,
           'User account is not active, contact HR department.',
           HttpStatus.UNAUTHORIZED,
         );
@@ -138,7 +127,7 @@ export class AuthService {
       if (!user || user.status !== UserStatus.ACTIVE) {
         this.logger.warn(`User not active: ${payload.sub}`);
         throw new AppException(
-          ErrorCode.ACCOUNT_INACTIVE,
+          ErrorCode.ACCOUNT_NOT_ACTIVE,
           'User not active',
           HttpStatus.UNAUTHORIZED,
         );
@@ -195,7 +184,7 @@ export class AuthService {
 
     if (user.status !== UserStatus.ACTIVE) {
       throw new AppException(
-        ErrorCode.ACCOUNT_INACTIVE,
+        ErrorCode.ACCOUNT_NOT_ACTIVE,
         'User account is not active',
         HttpStatus.UNAUTHORIZED,
       );

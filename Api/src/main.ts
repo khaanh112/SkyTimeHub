@@ -10,22 +10,28 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
 
-  app.setGlobalPrefix(app.get(ConfigService).get<string>('PREFIX_API') || '/api/v1');
+  const configService = app.get(ConfigService);
+  app.setGlobalPrefix(configService.get<string>('PREFIX_API') || '/api/v1');
 
+  // Swagger Configuration
   const config = new DocumentBuilder()
-    .setTitle('API Documentation')
-    .setDescription('The API description')
+    .setTitle('SkyTimeHub API')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addTag('Authentication', 'User authentication and authorization endpoints')
+    .addTag('Users', 'User management and profile endpoints')
+    .addTag('Leave Requests', 'Leave request submission, approval, and management')
+    .addBearerAuth(
+   
+    )
+    .addServer(configService.get<string>('API_URL') || 'http://localhost:3000', 'Development Server')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document, {
-    swaggerOptions: { persistAuthorization: true },
-  });
+  
+  SwaggerModule.setup('api-docs', app, document);
 
   app.enableCors({
-    origin: app.get(ConfigService).get<string>('FRONTEND_URL') || '*',
+    origin: configService.get<string>('FRONTEND_URL') || '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
@@ -40,7 +46,7 @@ async function bootstrap() {
 
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  const port = app.get(ConfigService).get<number>('PORT') || 3000;
+  const port = configService.get<number>('PORT') || 3000;
   await app.listen(port);
   Logger.log(`🚀 Application is running on: http://localhost:${port}`, 'Bootstrap');
   Logger.log(`📚 API Documentation: http://localhost:${port}/api-docs`, 'Bootstrap');

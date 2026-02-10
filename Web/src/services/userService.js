@@ -66,6 +66,36 @@ export const userService = {
     const response = await api.post('/users/import/execute', { rows }, config);
     return response.data.data || response.data;
   },
+
+  // Get activation link for a user
+  getActivationLink: async (id) => {
+    const response = await api.get(`/users/${id}/activation-link`);
+    return response.data.data || response.data;
+  },
+
+  // Reset activation token for a user
+  resetActivationToken: async (id) => {
+    const response = await api.get(`/users/${id}/reset-activation-token`);
+    return response.data.data || response.data;
+  },
+
+  // Resend activation link to user email (HR only)
+  resendActivationLink: async (id) => {
+    const response = await api.post(`/users/${id}/resend-activation-link`);
+    return response.data.data || response.data;
+  },
+
+  // Deactivate user account
+  deactivate: async (id) => {
+    const response = await api.post(`/users/${id}/deactivate`);
+    return response.data.data || response.data;
+  },
+
+  // Reactivate user account (from inactive to active)
+  reactivate: async (id) => {
+    const response = await api.post(`/users/${id}/activate`);
+    return response.data.data || response.data;
+  },
 };
 
 export default userService;

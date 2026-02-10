@@ -23,6 +23,7 @@ import { ApiOperation, ApiTags, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { SuccessResponseDto } from '@/common/dto/success-response.dto';
 import { AppException, ErrorCode } from '@/common';
 
+
 @Controller('auth')
 @ApiTags('Authentication')
 export class AuthController {
@@ -48,6 +49,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Zoho OAuth callback' })
   @ApiResponse({ status: 302, description: 'Redirects to frontend with tokens' })
   async zohoCallback(@Req() req: any, @Res() res: Response) {
+    this.logger.log('========== ZOHO CALLBACK START ==========');
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
 
     // Handle OAuth errors from Zoho (e.g., user denied access)
@@ -67,19 +69,32 @@ export class AuthController {
     }
 
     try {
+      this.logger.log(`Request user object: ${JSON.stringify(req.user)}`);
+      
       const zohoProfile = {
         email: req.user.email,
         firstName: req.user.firstName,
         lastName: req.user.lastName,
       };
 
+      this.logger.log(`Zoho profile extracted - Email: ${zohoProfile.email}, Name: ${zohoProfile.firstName} ${zohoProfile.lastName}`);
+      this.logger.log('Calling authService.validateUserFromZoho...');
+      
       const loginResponse = await this.authService.validateUserFromZoho(zohoProfile);
+      
+      this.logger.log(`Validation successful - User ID: ${loginResponse.user.id}, Status: ${loginResponse.user.status}`);
 
       const redirectUrl = `${frontendUrl}/auth/callback?accessToken=${loginResponse.accessToken}&refreshToken=${loginResponse.refreshToken}`;
 
+      this.logger.log(`Redirecting to frontend with tokens`);
+      this.logger.log('========== ZOHO CALLBACK SUCCESS ==========');
       return res.redirect(redirectUrl);
     } catch (error) {
-      this.logger.warn(`Zoho login denied: ${error.message}`);
+      this.logger.error('========== ZOHO CALLBACK ERROR ==========');
+      this.logger.error(`Error type: ${error.constructor.name}`);
+      this.logger.error(`Error code: ${error.code || 'UNKNOWN'}`);
+      this.logger.error(`Error message: ${error.message}`);
+      this.logger.error(`Error stack: ${error.stack}`);
 
       const errorCode = error.code || 'INTERNAL_ERROR';
       const errorMessage = encodeURIComponent(
@@ -87,6 +102,8 @@ export class AuthController {
       );
       const redirectUrl = `${frontendUrl}/auth/callback?error=${errorCode}&message=${errorMessage}`;
 
+      this.logger.log(`Redirecting to frontend with error: ${errorCode}`);
+      this.logger.log('========== ZOHO CALLBACK FAILED ==========');
       return res.redirect(redirectUrl);
     }
   }

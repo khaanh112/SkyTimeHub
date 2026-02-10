@@ -3,7 +3,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { APP_GUARD } from '@nestjs/core';
 
 // Modules
 import { UsersModule } from '../users/users.module';
@@ -18,7 +17,6 @@ import { ZohoAuthService } from './services/zoho-auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { ZohoStrategy } from './strategies/zoho.strategy';
 
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshToken } from '@entities/refresh-token.entity';
 
 @Module({
@@ -47,11 +45,6 @@ import { RefreshToken } from '@entities/refresh-token.entity';
     // Strategies
     JwtStrategy,
     ZohoStrategy,
-    // Global Guard - Authentication
-    {
-      provide: APP_GUARD,
-      useClass: JwtAuthGuard,
-    },
   ],
   exports: [AuthService, TokenService, JwtModule],
 })

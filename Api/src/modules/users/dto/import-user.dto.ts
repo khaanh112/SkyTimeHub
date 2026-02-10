@@ -16,8 +16,6 @@ export interface ImportUserRow {
   departmentId?: number;
   /** Job position */
   position?: string;
-  /** Phone number */
-  phone?: string;
   /** Join date */
   joinDate?: string;
   /** Validation errors for this row */

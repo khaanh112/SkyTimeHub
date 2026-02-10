@@ -10,6 +10,8 @@ import {
   UsersPage,
   ProfilePage,
   ActivateAccountPage,
+  LeaveRequestsPage,
+  ApprovalsPage,
 } from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
 
@@ -96,6 +98,22 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <ProfilePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/leave-requests"
+        element={
+          <ProtectedRoute>
+            <LeaveRequestsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/approvals"
+        element={
+          <ProtectedRoute>
+            <ApprovalsPage />
           </ProtectedRoute>
         }
       />

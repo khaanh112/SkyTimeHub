@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yêu cầu nghỉ phép mới</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 2px solid #2196F3;
+        }
+        .header h1 {
+            margin: 0;
+            color: #2196F3;
+            font-size: 24px;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .info-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .info-table td:first-child {
+            font-weight: bold;
+            width: 150px;
+            color: #555;
+        }
+        .highlight {
+            background-color: #e3f2fd;
+            padding: 15px;
+            border-left: 4px solid #2196F3;
+            margin: 15px 0;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px 0;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📝 Yêu cầu nghỉ phép mới</h1>
+        </div>
+        <div class="content">
+            <p>Xin chào <strong>{{approverName}}</strong>,</p>
+            <p>Bạn có một yêu cầu nghỉ phép mới cần xem xét từ <strong>{{requesterName}}</strong>:</p>
+            
+            <table class="info-table">
+                <tr>
+                    <td>📋 Mã yêu cầu:</td>
+                    <td>#{{leaveRequestId}}</td>
+                </tr>
+                <tr>
+                    <td>👤 Người yêu cầu:</td>
+                    <td>{{requesterName}}</td>
+                </tr>
+                <tr>
+                    <td>📅 Ngày bắt đầu:</td>
+                    <td>{{startDate}}</td>
+                </tr>
+                <tr>
+                    <td>📅 Ngày kết thúc:</td>
+                    <td>{{endDate}}</td>
+                </tr>
+                {{#if reason}}
+                <tr>
+                    <td>📝 Lý do:</td>
+                    <td>{{reason}}</td>
+                </tr>
+                {{/if}}
+            </table>
+            
+            <div class="highlight">
+                <p style="margin: 0;"><strong>⏰ Vui lòng đăng nhập vào hệ thống SkyTimeHub để xem chi tiết và phê duyệt yêu cầu này.</strong></p>
+            </div>
+        </div>
+        <div class="footer">
+            <p>© 2026 SkyTimeHub. All rights reserved.</p>
+            <p>Email này được gửi tự động, vui lòng không trả lời.</p>
+        </div>
+    </div>
+</body>
+</html>
