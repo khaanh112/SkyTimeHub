@@ -25,15 +25,26 @@ const leaveRequestService = {
     return response.data;
   },
 
-  // Approve a leave request
-  approveLeaveRequest: async (id) => {
-    const response = await api.patch(`/leave-requests/${id}/approve`);
+  // Update an existing leave request
+  updateLeaveRequest: async (id, data) => {
+    const response = await api.put(`/leave-requests/${id}`, data);
     return response.data;
   },
 
-  // Reject a leave request
-  rejectLeaveRequest: async (id) => {
-    const response = await api.patch(`/leave-requests/${id}/reject`);
+  // Approve a leave request (with optimistic locking version)
+  approveLeaveRequest: async (id, version) => {
+    const response = await api.patch(`/leave-requests/${id}/approve`, {
+      version,
+    });
+    return response.data;
+  },
+
+  // Reject a leave request (with optimistic locking version)
+  rejectLeaveRequest: async (id, rejectedReason, version) => {
+    const response = await api.patch(`/leave-requests/${id}/reject`, {
+      rejectedReason,
+      version,
+    });
     return response.data;
   },
 

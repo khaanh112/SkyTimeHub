@@ -9,6 +9,10 @@ const ApprovalsPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectedReason, setRejectedReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [processingId, setProcessingId] = useState(null);
 
   useEffect(() => {
     fetchPendingApprovals();
@@ -28,34 +32,77 @@ const ApprovalsPage = () => {
   };
 
   const handleApprove = async (id) => {
+    if (processingId) return;
     if (!window.confirm('Are you sure you want to APPROVE this leave request?')) {
       return;
     }
 
+    const request = pendingApprovals.find(r => r.id === id) || selectedRequest;
     try {
-      await leaveRequestService.approveLeaveRequest(id);
+      setProcessingId(id);
+      await leaveRequestService.approveLeaveRequest(id, request?.version);
       toast.success('Leave request approved successfully!');
-      fetchPendingApprovals();
+      // Optimistically remove from list so user can't click again
+      setPendingApprovals(prev => prev.filter(r => r.id !== id));
       setShowDetailModal(false);
+      setSelectedRequest(null);
+      fetchPendingApprovals();
     } catch (error) {
       console.error('Error approving leave request:', error);
-      toast.error(error.response?.data?.message || 'Failed to approve leave request');
+      if (error.response?.status === 409) {
+        toast.error('This request has been modified. Refreshing list...');
+        fetchPendingApprovals();
+      } else {
+        toast.error(error.response?.data?.message || 'Failed to approve leave request');
+      }
+    } finally {
+      setProcessingId(null);
     }
   };
 
   const handleReject = async (id) => {
-    if (!window.confirm('Are you sure you want to REJECT this leave request?')) {
+    if (processingId) return;
+    setSelectedRequest(pendingApprovals.find(r => r.id === id) || selectedRequest);
+    setShowDetailModal(false);
+    setShowRejectModal(true);
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!rejectedReason || rejectedReason.trim().length < 10) {
+      toast.error('Please provide a reason (at least 10 characters)');
       return;
     }
 
     try {
-      await leaveRequestService.rejectLeaveRequest(id);
+      setSubmitting(true);
+      setProcessingId(selectedRequest.id);
+      await leaveRequestService.rejectLeaveRequest(
+        selectedRequest.id,
+        rejectedReason,
+        selectedRequest?.version,
+      );
       toast.success('Leave request rejected');
+      // Optimistically remove from list
+      const rejectedId = selectedRequest.id;
+      setPendingApprovals(prev => prev.filter(r => r.id !== rejectedId));
+      setShowRejectModal(false);
+      setRejectedReason('');
+      setSelectedRequest(null);
       fetchPendingApprovals();
-      setShowDetailModal(false);
     } catch (error) {
       console.error('Error rejecting leave request:', error);
-      toast.error(error.response?.data?.message || 'Failed to reject leave request');
+      if (error.response?.status === 409) {
+        toast.error('This request has been modified. Refreshing list...');
+        setShowRejectModal(false);
+        setRejectedReason('');
+        setSelectedRequest(null);
+        fetchPendingApprovals();
+      } else {
+        toast.error(error.response?.data?.message || 'Failed to reject leave request');
+      }
+    } finally {
+      setSubmitting(false);
+      setProcessingId(null);
     }
   };
 
@@ -170,13 +217,15 @@ const ApprovalsPage = () => {
                     </button>
                     <button
                       onClick={() => handleApprove(request.id)}
-                      className="text-green-600 hover:text-green-900 transition"
+                      disabled={!!processingId}
+                      className="text-green-600 hover:text-green-900 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Approve
+                      {processingId === request.id ? 'Approving...' : 'Approve'}
                     </button>
                     <button
                       onClick={() => handleReject(request.id)}
-                      className="text-red-600 hover:text-red-900 transition"
+                      disabled={!!processingId}
+                      className="text-red-600 hover:text-red-900 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Reject
                     </button>
@@ -262,6 +311,18 @@ const ApprovalsPage = () => {
               </div>
             </div>
 
+            {/* Rejected Reason (if rejected) */}
+            {selectedRequest.status === 'rejected' && selectedRequest.rejectedReason && (
+              <div>
+                <h3 className="text-sm font-medium text-red-700 mb-2">Rejection Reason</h3>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-sm text-red-900">
+                    {selectedRequest.rejectedReason}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Submission Date */}
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-2">Submitted On</h3>
@@ -283,15 +344,83 @@ const ApprovalsPage = () => {
               </button>
               <button
                 onClick={() => handleReject(selectedRequest.id)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                disabled={!!processingId}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Reject
               </button>
               <button
                 onClick={() => handleApprove(selectedRequest.id)}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                disabled={!!processingId}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                Approve
+                {processingId === selectedRequest.id && <LoadingSpinner size="sm" />}
+                {processingId === selectedRequest.id ? 'Approving...' : 'Approve'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Reject Modal */}
+      {showRejectModal && selectedRequest && (
+        <Modal
+          isOpen={showRejectModal}
+          onClose={() => {
+            setShowRejectModal(false);
+            setRejectedReason('');
+            setSelectedRequest(null);
+          }}
+          title="Reject Leave Request"
+        >
+          <div className="space-y-4">
+            {/* Request Info */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <p className="text-sm text-yellow-800">
+                <strong>Employee:</strong> {selectedRequest.user?.username || 'Unknown'}
+              </p>
+              <p className="text-sm text-yellow-800">
+                <strong>Period:</strong> {new Date(selectedRequest.startDate).toLocaleDateString()} - {new Date(selectedRequest.endDate).toLocaleDateString()}
+              </p>
+            </div>
+
+            {/* Rejected Reason Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason for Rejection *
+              </label>
+              <textarea
+                value={rejectedReason}
+                onChange={(e) => setRejectedReason(e.target.value)}
+                placeholder="Please provide a detailed reason for rejecting this leave request (minimum 10 characters)..."
+                rows={4}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {rejectedReason.length} / 10 characters minimum
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectedReason('');
+                  setSelectedRequest(null);
+                }}
+                disabled={submitting}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectSubmit}
+                disabled={submitting || rejectedReason.trim().length < 10}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {submitting && <LoadingSpinner size="sm" />}
+                {submitting ? 'Rejecting...' : 'Reject Request'}
               </button>
             </div>
           </div>

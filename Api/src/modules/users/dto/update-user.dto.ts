@@ -1,11 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsEnum,
-  IsString,
-  IsOptional,
-  IsDateString,
-  Length,
-} from 'class-validator';
+import { IsEnum, IsString, IsOptional, IsDateString, Length } from 'class-validator';
 import { UserRole } from '@common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
 
@@ -26,7 +20,11 @@ export class UpdateUserDto {
   @IsEnum(UserRole)
   role?: UserRole;
 
-  @ApiPropertyOptional({ enum: UserStatus, example: UserStatus.ACTIVE, description: 'User status - HR can only change between active, locked, suspended' })
+  @ApiPropertyOptional({
+    enum: UserStatus,
+    example: UserStatus.ACTIVE,
+    description: 'User status - HR can only change between active, locked, suspended',
+  })
   @IsOptional()
   @IsEnum(UserStatus)
   status?: UserStatus;

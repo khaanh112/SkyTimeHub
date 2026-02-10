@@ -23,7 +23,7 @@ export class ZohoAuthService {
   async validateAndLogin(zohoProfile: ZohoProfileDto): Promise<LoginResponseDto> {
     this.logger.log('========== ZOHO AUTH SERVICE START ==========');
     this.logger.log(`Validating login for email: ${zohoProfile.email}`);
-    
+
     const user = await this.findCreatedUser(zohoProfile);
     this.logger.log(`User found and validated - ID: ${user.id}, Email: ${user.email}`);
 
@@ -54,7 +54,7 @@ export class ZohoAuthService {
 
   private async findCreatedUser(profile: ZohoProfileDto): Promise<User> {
     const { email } = profile;
-    
+
     this.logger.log('--- Checking user in database ---');
     this.logger.log(`Looking up user by email: ${email}`);
 
@@ -76,7 +76,9 @@ export class ZohoAuthService {
     this.logger.log(`   - Email: ${user.email}`);
     this.logger.log(`   - Username: ${user.username}`);
     this.logger.log(`   - Status: ${user.status}`);
-    this.logger.log(`   - Activation Token: ${user.activationToken ? 'EXISTS (not activated yet)' : 'NULL (activated)'}`);
+    this.logger.log(
+      `   - Activation Token: ${user.activationToken ? 'EXISTS (not activated yet)' : 'NULL (activated)'}`,
+    );
     this.logger.log(`   - Activated At: ${user.activatedAt || 'NULL'}`);
 
     // User must activate account before logging in

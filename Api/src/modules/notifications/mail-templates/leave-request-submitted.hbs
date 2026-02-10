@@ -17,13 +17,13 @@
             max-width: 600px;
             margin: 20px auto;
             background-color: #ffffff;
-            padding: 20px;
+            padding: 30px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .header {
             text-align: center;
-            padding: 20px 0;
+            padding-bottom: 20px;
             border-bottom: 2px solid #2196F3;
         }
         .header h1 {
@@ -32,31 +32,41 @@
             font-size: 24px;
         }
         .content {
-            padding: 20px 0;
+            padding: 30px 0;
+            text-align: center;
         }
-        .info-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        .info-table td {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        .info-table td:first-child {
-            font-weight: bold;
-            width: 150px;
-            color: #555;
-        }
-        .highlight {
+        .info-box {
             background-color: #e3f2fd;
-            padding: 15px;
-            border-left: 4px solid #2196F3;
-            margin: 15px 0;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .info-box p {
+            margin: 8px 0;
+            color: #333;
+        }
+        .info-box strong {
+            color: #1976D2;
+        }
+        .button {
+            display: inline-block;
+            padding: 14px 32px;
+            background-color: #2196F3;
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 16px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .button:hover {
+            background-color: #1976D2;
         }
         .footer {
             text-align: center;
-            padding: 20px 0;
+            padding-top: 20px;
             border-top: 1px solid #ddd;
             font-size: 12px;
             color: #777;
@@ -69,37 +79,17 @@
             <h1>📝 Yêu cầu nghỉ phép mới</h1>
         </div>
         <div class="content">
-            <p>Xin chào <strong>{{approverName}}</strong>,</p>
-            <p>Bạn có một yêu cầu nghỉ phép mới cần xem xét từ <strong>{{requesterName}}</strong>:</p>
+            <p>Xin chào,</p>
+            <p>Có một yêu cầu nghỉ phép mới từ <strong>{{requesterName}}</strong></p>
             
-            <table class="info-table">
-                <tr>
-                    <td>📋 Mã yêu cầu:</td>
-                    <td>#{{leaveRequestId}}</td>
-                </tr>
-                <tr>
-                    <td>👤 Người yêu cầu:</td>
-                    <td>{{requesterName}}</td>
-                </tr>
-                <tr>
-                    <td>📅 Ngày bắt đầu:</td>
-                    <td>{{startDate}}</td>
-                </tr>
-                <tr>
-                    <td>📅 Ngày kết thúc:</td>
-                    <td>{{endDate}}</td>
-                </tr>
-                {{#if reason}}
-                <tr>
-                    <td>📝 Lý do:</td>
-                    <td>{{reason}}</td>
-                </tr>
-                {{/if}}
-            </table>
-            
-            <div class="highlight">
-                <p style="margin: 0;"><strong>⏰ Vui lòng đăng nhập vào hệ thống SkyTimeHub để xem chi tiết và phê duyệt yêu cầu này.</strong></p>
+            <div class="info-box">
+                <p>📅 <strong>Từ ngày:</strong> {{startDate}}</p>
+                <p>📅 <strong>Đến ngày:</strong> {{endDate}}</p>
             </div>
+            
+            <a href="{{dashboardLink}}" class="button">Xem chi tiết</a>
+            
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">Nhấn vào nút trên để xem chi tiết và xử lý yêu cầu</p>
         </div>
         <div class="footer">
             <p>© 2026 SkyTimeHub. All rights reserved.</p>

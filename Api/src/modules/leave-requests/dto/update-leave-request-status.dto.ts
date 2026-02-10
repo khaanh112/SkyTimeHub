@@ -1,13 +1,37 @@
-import { IsEnum } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
-import { LeaveRequestStatus } from '@common/enums/request_status';
+import { IsDateString, IsInt, IsArray, IsOptional, IsString } from 'class-validator';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 
 export class UpdateLeaveRequestStatusDto {
-  @ApiProperty({ 
-    enum: LeaveRequestStatus, 
-    example: LeaveRequestStatus.APPROVED,
-    description: 'New status for the leave request'
+  @ApiProperty({
+    description: 'Start date of leave (YYYY-MM-DD)',
+    example: '2026-02-10',
   })
-  @IsEnum(LeaveRequestStatus)
-  status: LeaveRequestStatus;
+  @IsDateString()
+  startDate: string;
+
+  @ApiProperty({
+    description: 'End date of leave (YYYY-MM-DD)',
+    example: '2026-02-12',
+  })
+  @IsDateString()
+  endDate: string;
+
+  @ApiPropertyOptional({
+    description: 'Reason for leave request',
+    example: 'Family vacation',
+  })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+
+  @ApiPropertyOptional({
+    description: 'Array of user IDs to CC on notifications',
+    example: [2, 3],
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  ccUserIds?: number[];
 }
+

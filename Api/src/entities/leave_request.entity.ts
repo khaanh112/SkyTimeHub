@@ -41,7 +41,10 @@ export class LeaveRequest {
   approverId: number;
 
   @Exclude()
-  @ManyToOne(() => User, (user) => user.approvalsToReview, { nullable: false, onDelete: 'RESTRICT' })
+  @ManyToOne(() => User, (user) => user.approvalsToReview, {
+    nullable: false,
+    onDelete: 'RESTRICT',
+  })
   @JoinColumn({ name: 'approver_id' })
   approver: User;
 
@@ -57,7 +60,11 @@ export class LeaveRequest {
   @Column({ type: 'text', nullable: true })
   reason?: string;
 
-  @ApiProperty({ enum: LeaveRequestStatus, example: LeaveRequestStatus.PENDING, description: 'Request status' })
+  @ApiProperty({
+    enum: LeaveRequestStatus,
+    example: LeaveRequestStatus.PENDING,
+    description: 'Request status',
+  })
   @Column({
     type: 'enum',
     enum: LeaveRequestStatus,
@@ -66,7 +73,7 @@ export class LeaveRequest {
   status: LeaveRequestStatus;
 
   @ApiProperty({ example: 1, description: 'Version number for optimistic locking' })
-  @VersionColumn()
+  @VersionColumn({ default: 1 })
   version: number;
 
   @ApiPropertyOptional({ example: '2026-02-10T10:00:00.000Z', description: 'Approval timestamp' })
@@ -77,17 +84,20 @@ export class LeaveRequest {
   @Column({ name: 'rejected_at', type: 'timestamptz', nullable: true })
   rejectedAt?: Date;
 
-  @ApiPropertyOptional({ example: '2026-02-10T10:00:00.000Z', description: 'Cancellation timestamp' })
+  @ApiPropertyOptional({ example: 'Reason for rejection', description: 'Reason for rejection' })
+  @Column({ name: 'rejected_reason', type: 'text', nullable: true })
+  rejectedReason?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-02-10T10:00:00.000Z',
+    description: 'Cancellation timestamp',
+  })
   @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
   cancelledAt?: Date;
 
   // danh sách người nhận notify (HR default + user chọn thêm)
   @Exclude()
-  @OneToMany(
-    () => LeaveRequestNotificationRecipient,
-    (r) => r.request,
-    { cascade: true },
-  )
+  @OneToMany(() => LeaveRequestNotificationRecipient, (r) => r.request, { cascade: true })
   notificationRecipients: LeaveRequestNotificationRecipient[];
 
   @ApiProperty({ example: '2026-02-10T09:00:00.000Z', description: 'Creation timestamp' })

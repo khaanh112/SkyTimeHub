@@ -7,10 +7,7 @@ import { ExcelService } from '@modules/import/excel.service';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([User]),
-    NotificationsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([User]), NotificationsModule],
   controllers: [UsersController],
   providers: [UsersService, ExcelService],
   exports: [UsersService, TypeOrmModule],

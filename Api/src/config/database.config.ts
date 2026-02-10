@@ -15,7 +15,15 @@ export const getDatabaseConfig = (configService: ConfigService): TypeOrmModuleOp
   username: configService.get('DB_USERNAME'),
   password: configService.get('DB_PASSWORD'),
   database: configService.get('DB_DATABASE'),
-  entities: [User, RefreshToken, Department, LeaveRequest, LeaveRequestNotificationRecipient, UserApprover, EmailQueue],
+  entities: [
+    User,
+    RefreshToken,
+    Department,
+    LeaveRequest,
+    LeaveRequestNotificationRecipient,
+    UserApprover,
+    EmailQueue,
+  ],
   synchronize: configService.get('DB_SYNCHRONIZE') === 'true',
   logging: configService.get('DB_LOGGING') === 'true',
 });

@@ -34,7 +34,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     AuthorizationModule,
     NotificationsModule,
     LeaveRequestsModule,
-    SettingsModule
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [

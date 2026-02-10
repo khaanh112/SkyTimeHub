@@ -6,7 +6,6 @@ import {
   IsDateString,
   IsNotEmpty,
   Length,
-  Matches,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@common/enums/roles.enum';
@@ -48,7 +47,6 @@ export class CreateUserDto {
   @IsString()
   @Length(1, 100)
   position?: string;
-
 
   @ApiPropertyOptional({
     example: '2024-01-01',

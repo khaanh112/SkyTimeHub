@@ -17,13 +17,13 @@
             max-width: 600px;
             margin: 20px auto;
             background-color: #ffffff;
-            padding: 20px;
+            padding: 30px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .header {
             text-align: center;
-            padding: 20px 0;
+            padding-bottom: 20px;
             border-bottom: 2px solid #f44336;
         }
         .header h1 {
@@ -32,32 +32,41 @@
             font-size: 24px;
         }
         .content {
-            padding: 20px 0;
-        }
-        .info-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        .info-table td {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        .info-table td:first-child {
-            font-weight: bold;
-            width: 150px;
-            color: #555;
+            padding: 30px 0;
+            text-align: center;
         }
         .warning-box {
             background-color: #ffebee;
-            padding: 15px;
-            border-left: 4px solid #f44336;
-            margin: 15px 0;
-            border-radius: 4px;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .warning-box p {
+            margin: 8px 0;
+            color: #333;
+        }
+        .warning-box strong {
+            color: #D32F2F;
+        }
+        .button {
+            display: inline-block;
+            padding: 14px 32px;
+            background-color: #f44336;
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 16px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .button:hover {
+            background-color: #D32F2F;
         }
         .footer {
             text-align: center;
-            padding: 20px 0;
+            padding-top: 20px;
             border-top: 1px solid #ddd;
             font-size: 12px;
             color: #777;
@@ -67,37 +76,24 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>❌ Yêu cầu nghỉ phép bị từ chối</h1>
+            <h1>❌ Yêu cầu bị từ chối</h1>
         </div>
         <div class="content">
             <p>Xin chào <strong>{{requesterName}}</strong>,</p>
+            <p>Yêu cầu nghỉ phép của bạn đã bị từ chối</p>
             
             <div class="warning-box">
-                <p style="margin: 0;"><strong>Yêu cầu nghỉ phép của bạn đã bị từ chối.</strong></p>
+                <p>📅 <strong>Từ ngày:</strong> {{startDate}}</p>
+                <p>📅 <strong>Đến ngày:</strong> {{endDate}}</p>
+                <p>👤 <strong>Người từ chối:</strong> {{approverName}}</p>
+                {{#if rejectedReason}}
+                <p>📝 <strong>Lý do:</strong> {{rejectedReason}}</p>
+                {{/if}}
             </div>
             
-            <p>Thông tin chi tiết yêu cầu nghỉ phép:</p>
+            <a href="{{dashboardLink}}" class="button">Xem chi tiết</a>
             
-            <table class="info-table">
-                <tr>
-                    <td>📅 Ngày bắt đầu:</td>
-                    <td>{{startDate}}</td>
-                </tr>
-                <tr>
-                    <td>📅 Ngày kết thúc:</td>
-                    <td>{{endDate}}</td>
-                </tr>
-                <tr>
-                    <td>👤 Người từ chối:</td>
-                    <td>{{approverName}}</td>
-                </tr>
-                <tr>
-                    <td>⏰ Thời gian từ chối:</td>
-                    <td>{{rejectedAt}}</td>
-                </tr>
-            </table>
-            
-            <p><strong>Lưu ý:</strong> Nếu bạn có thắc mắc về quyết định này, vui lòng liên hệ trực tiếp với người phê duyệt hoặc bộ phận HR để được hỗ trợ.</p>
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">Vui lòng liên hệ HR nếu cần hỗ trợ</p>
         </div>
         <div class="footer">
             <p>© 2026 SkyTimeHub. All rights reserved.</p>

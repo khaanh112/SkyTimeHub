@@ -23,7 +23,6 @@ import { ApiOperation, ApiTags, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { SuccessResponseDto } from '@/common/dto/success-response.dto';
 import { AppException, ErrorCode } from '@/common';
 
-
 @Controller('auth')
 @ApiTags('Authentication')
 export class AuthController {
@@ -56,33 +55,37 @@ export class AuthController {
     const oauthError = req.query.error;
     if (oauthError) {
       this.logger.warn(`Zoho OAuth error: ${oauthError}`);
-      
+
       const errorCode = oauthError === 'access_denied' ? 'access_denied' : 'OAUTH_ERROR';
       const errorMessage = encodeURIComponent(
-        oauthError === 'access_denied' 
+        oauthError === 'access_denied'
           ? 'Bạn đã từ chối quyền truy cập. Vui lòng thử lại và chấp nhận quyền để đăng nhập.'
-          : 'Đăng nhập thất bại. Vui lòng thử lại.'
+          : 'Đăng nhập thất bại. Vui lòng thử lại.',
       );
       const redirectUrl = `${frontendUrl}/auth/callback?error=${errorCode}&message=${errorMessage}`;
-      
+
       return res.redirect(redirectUrl);
     }
 
     try {
       this.logger.log(`Request user object: ${JSON.stringify(req.user)}`);
-      
+
       const zohoProfile = {
         email: req.user.email,
         firstName: req.user.firstName,
         lastName: req.user.lastName,
       };
 
-      this.logger.log(`Zoho profile extracted - Email: ${zohoProfile.email}, Name: ${zohoProfile.firstName} ${zohoProfile.lastName}`);
+      this.logger.log(
+        `Zoho profile extracted - Email: ${zohoProfile.email}, Name: ${zohoProfile.firstName} ${zohoProfile.lastName}`,
+      );
       this.logger.log('Calling authService.validateUserFromZoho...');
-      
+
       const loginResponse = await this.authService.validateUserFromZoho(zohoProfile);
-      
-      this.logger.log(`Validation successful - User ID: ${loginResponse.user.id}, Status: ${loginResponse.user.status}`);
+
+      this.logger.log(
+        `Validation successful - User ID: ${loginResponse.user.id}, Status: ${loginResponse.user.status}`,
+      );
 
       const redirectUrl = `${frontendUrl}/auth/callback?accessToken=${loginResponse.accessToken}&refreshToken=${loginResponse.refreshToken}`;
 
@@ -189,6 +192,4 @@ export class AuthController {
     const result = await this.authService.activateAccount(dto.token);
     return new SuccessResponseDto(result, 'User account activated successfully');
   }
-
- 
 }

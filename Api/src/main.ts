@@ -20,14 +20,15 @@ async function bootstrap() {
     .addTag('Authentication', 'User authentication and authorization endpoints')
     .addTag('Users', 'User management and profile endpoints')
     .addTag('Leave Requests', 'Leave request submission, approval, and management')
-    .addBearerAuth(
-   
+    .addBearerAuth()
+    .addServer(
+      configService.get<string>('API_URL') || 'http://localhost:3000',
+      'Development Server',
     )
-    .addServer(configService.get<string>('API_URL') || 'http://localhost:3000', 'Development Server')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  
+
   SwaggerModule.setup('api-docs', app, document);
 
   app.enableCors({

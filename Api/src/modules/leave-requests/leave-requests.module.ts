@@ -10,12 +10,7 @@ import { NotificationsModule } from '@modules/notifications/notifications.module
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      LeaveRequest,
-      LeaveRequestNotificationRecipient,
-      UserApprover,
-      User,
-    ]),
+    TypeOrmModule.forFeature([LeaveRequest, LeaveRequestNotificationRecipient, UserApprover, User]),
     NotificationsModule,
   ],
   controllers: [LeaveRequestsController],

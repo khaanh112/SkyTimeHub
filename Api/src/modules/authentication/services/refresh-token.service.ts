@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RefreshToken } from '@entities/refresh-token.entity';
 
-
 @Injectable()
 export class RefreshTokenService {
   constructor(
@@ -40,10 +39,7 @@ export class RefreshTokenService {
       return; // Silent fail if no userId
     }
 
-    await this.refreshTokenRepository.update(
-      { userId, isRevoked: false },
-      { isRevoked: true }
-    );
+    await this.refreshTokenRepository.update({ userId, isRevoked: false }, { isRevoked: true });
   }
 
   isTokenExpired(token: RefreshToken): boolean {

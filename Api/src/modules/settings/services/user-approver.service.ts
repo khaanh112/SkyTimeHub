@@ -1,12 +1,12 @@
-import { UserApprover } from "@/entities/user_approver.entity";
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import {User} from "@/entities/users.entity";
-import { UserApproverDto } from "../dto/user-approver.dto";
-import { AppException } from "@/common";
-import { ErrorCode } from "@/common/enums/errror-code.enum";
-import { Logger } from "@nestjs/common";
+import { UserApprover } from '@/entities/user_approver.entity';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from '@/entities/users.entity';
+import { UserApproverDto } from '../dto/user-approver.dto';
+import { AppException } from '@/common';
+import { ErrorCode } from '@/common/enums/errror-code.enum';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class UserApproverService {
@@ -21,20 +21,19 @@ export class UserApproverService {
 
   async getApproversForUser(userId: number): Promise<User[]> {
     this.logger.log(`Fetching approvers for user ID: ${userId}`);
-  
+
     const userApprovers = await this.userApproverRepository.find({
       where: { userId, active: true },
       relations: ['approver'],
     });
-    return userApprovers.map(ua => ua.approver);
+    return userApprovers.map((ua) => ua.approver);
   }
 
-  
   async setApproverForUser(userId: number, dto: UserApproverDto): Promise<UserApprover> {
     this.logger.log(`Setting approver for user ID: ${userId} to approver ID: ${dto.approverId}`);
     this.logger.debug(`Input DTO: ${JSON.stringify(dto)}`);
-    
-    if(dto.approverId === userId) {
+
+    if (dto.approverId === userId) {
       throw new AppException(ErrorCode.INVALID_INPUT, 'A user cannot be their own approver.', 400);
     }
     const approver = await this.userRepository.findOne({ where: { id: dto.approverId } });
@@ -43,10 +42,7 @@ export class UserApproverService {
     }
 
     // Deactivate existing approvers
-    await this.userApproverRepository.update(
-      { userId, active: true },
-      { active: false }
-    );
+    await this.userApproverRepository.update({ userId, active: true }, { active: false });
 
     const userApprover = this.userApproverRepository.create({
       userId,

@@ -48,8 +48,6 @@ export class AuthService {
       // Find or create user by email
       let user = await this.usersService.getUserByEmail(email);
 
-      
-
       if (user.status !== UserStatus.ACTIVE) {
         this.logger.warn(`User account not active: ${user.id}, status: ${user.status}`);
         throw new AppException(
@@ -193,7 +191,6 @@ export class AuthService {
     return user;
   }
 
- 
   /**
    * Activate user account via activation token
    * Used when user clicks activation link from invitation email
@@ -214,6 +211,4 @@ export class AuthService {
       throw error;
     }
   }
-
-  
 }

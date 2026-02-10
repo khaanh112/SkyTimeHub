@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as nodemailer from 'nodemailer';
@@ -9,10 +9,12 @@ import { EmailQueue } from '@entities/email_queue.entity';
 import { EmailType } from '@common/enums/email_type';
 import { EmailReferenceKind } from '@common/enums/email-reference-kind.enum';
 import { EmailStatus } from '@common/enums/email_status';
-import * as crypto from 'crypto';
+import { LeaveRequest } from '@/entities/leave_request.entity';
+import { LeaveRequestNotificationRecipient } from '@/entities/leave-request-notification-recipient.entity';
+
 
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleDestroy {
   private readonly logger = new Logger(NotificationsService.name);
   private transporter: nodemailer.Transporter;
   private templates: Map<EmailType, Handlebars.TemplateDelegate> = new Map();
@@ -26,9 +28,19 @@ export class NotificationsService {
   }
 
   /**
+   * Clean up on module destroy
+   */
+  async onModuleDestroy() {
+    if (this.transporter) {
+      this.logger.log('🔌 Closing SMTP transporter connection pool...');
+      this.transporter.close();
+    }
+  }
+
+  /**
    * Initialize Zoho SMTP transporter
    */
-  private initializeTransporter() {
+  private async initializeTransporter() {
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.zoho.com',
       port: parseInt(process.env.SMTP_PORT || '465'),
@@ -37,9 +49,26 @@ export class NotificationsService {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      // Connection pooling to prevent "Unexpected socket close" errors
+      pool: true, // Enable connection pooling
+      maxConnections: 5, // Max parallel connections
+      maxMessages: 100, // Max messages per connection before reconnect
+      rateDelta: 1000, // Rate limiting: time window (ms)
+      rateLimit: 5, // Rate limiting: max messages per rateDelta
+      // Timeout settings
+      connectionTimeout: 60000, // 60 seconds
+      greetingTimeout: 30000, // 30 seconds
+      socketTimeout: 60000, // 60 seconds
     });
 
-    this.logger.log('✅ Zoho SMTP transporter initialized');
+    // Verify connection on startup
+    try {
+      await this.transporter.verify();
+      this.logger.log('✅ Zoho SMTP transporter initialized and verified with connection pooling');
+    } catch (error) {
+      this.logger.error('❌ Failed to verify SMTP connection:', error.message);
+      this.logger.warn('⚠️ Emails may fail to send. Please check SMTP credentials and connection.');
+    }
   }
 
   /**
@@ -59,6 +88,8 @@ export class NotificationsService {
       { type: EmailType.LEAVE_REQUEST_SUBMITTED, file: 'leave-request-submitted.hbs' },
       { type: EmailType.LEAVE_REQUEST_APPROVED, file: 'leave-request-approved.hbs' },
       { type: EmailType.LEAVE_REQUEST_REJECTED, file: 'leave-request-rejected.hbs' },
+      { type: EmailType.LEAVE_REQUEST_UPDATED, file: 'leave-request-updated.hbs' },
+      { type: EmailType.LEAVE_REQUEST_CANCELLED, file: 'leave-request-cancelled.hbs' },
     ];
 
     for (const { type, file } of templateFiles) {
@@ -71,7 +102,7 @@ export class NotificationsService {
         this.logger.error(`❌ Template file not found: ${templatePath}`);
       }
     }
-    
+
     this.logger.log(`📧 Total templates loaded: ${this.templates.size}`);
     this.logger.debug(`📋 Template keys: ${Array.from(this.templates.keys()).join(', ')}`);
   }
@@ -80,12 +111,16 @@ export class NotificationsService {
    * Send email using SMTP (called by worker)
    */
   async sendEmail(email: EmailQueue): Promise<void> {
-    this.logger.debug(`🔍 Looking for template with key: "${email.type}" (type: ${typeof email.type})`);
+    this.logger.debug(
+      `🔍 Looking for template with key: "${email.type}" (type: ${typeof email.type})`,
+    );
     this.logger.debug(`📋 Available keys: ${Array.from(this.templates.keys()).join(', ')}`);
-    
+
     const template = this.templates.get(email.type);
     if (!template) {
-      this.logger.error(`❌ Template not found! Requested: "${email.type}", Available: [${Array.from(this.templates.keys()).join(', ')}]`);
+      this.logger.error(
+        `❌ Template not found! Requested: "${email.type}", Available: [${Array.from(this.templates.keys()).join(', ')}]`,
+      );
       throw new Error(`Template not found for email type: ${email.type}`);
     }
 
@@ -95,15 +130,24 @@ export class NotificationsService {
     // Get subject from context or use default
     const subject = this.getEmailSubject(email.type, email.context);
 
-    // Send email
-    const info = await this.transporter.sendMail({
-      from: `"${process.env.SMTP_FROM_NAME || 'SkyTimeHub'}" <${process.env.SMTP_USER}>`,
-      to: email.recipientUser.email,
-      subject,
-      html,
-    });
+    this.logger.debug(`📤 Sending email ${email.id} to ${email.recipientUser.email} via SMTP...`);
+    
+    try {
+      // Send email with retry on socket close
+      const info = await this.transporter.sendMail({
+        from: `"${process.env.SMTP_FROM_NAME || 'SkyTimeHub'}" <${process.env.SMTP_USER}>`,
+        to: email.recipientUser.email,
+        subject,
+        html,
+      });
 
-    this.logger.log(`Email sent to ${email.recipientUser.email}: ${info.messageId}`);
+      this.logger.log(`✅ Email ${email.id} sent to ${email.recipientUser.email}: ${info.messageId}`);
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to send email ${email.id} to ${email.recipientUser.email}: ${error.message}`,
+      );
+      throw error;
+    }
   }
 
   /**
@@ -119,6 +163,10 @@ export class NotificationsService {
         return 'Yêu cầu nghỉ phép đã được phê duyệt';
       case EmailType.LEAVE_REQUEST_REJECTED:
         return 'Yêu cầu nghỉ phép bị từ chối';
+      case EmailType.LEAVE_REQUEST_UPDATED:
+        return `Yêu cầu nghỉ phép đã được cập nhật - ${context.requesterName || 'User'}`;
+      case EmailType.LEAVE_REQUEST_CANCELLED:
+        return `Yêu cầu nghỉ phép đã bị hủy - ${context.requesterName || 'User'}`;
       default:
         return 'Thông báo từ SkyTimeHub';
     }
@@ -218,6 +266,7 @@ export class NotificationsService {
   async enqueueLeaveRequestApprovedNotification(
     leaveRequestId: number,
     recipientUserId: number,
+    recipients: LeaveRequestNotificationRecipient[],
     context: {
       requesterName: string;
       approverName: string;
@@ -250,9 +299,18 @@ export class NotificationsService {
     });
 
     await this.emailQueueRepository.save(emailQueue);
-    this.logger.log(
-      `✅ Leave request approved notification queued for request ${leaveRequestId}`,
-    );
+
+    for(const recipient of recipients) {
+      if(recipient.userId !== recipientUserId) {
+        await this.enqueueLeaveRequestApprovedNotification(
+          leaveRequestId,
+          recipient.userId,
+          recipients,
+          context,
+        );
+      }
+    }
+    this.logger.log(`✅ Leave request approved notification queued for request ${leaveRequestId}`);
   }
 
   /**
@@ -267,6 +325,7 @@ export class NotificationsService {
       startDate: string;
       endDate: string;
       rejectedAt: string;
+      rejectedReason?: string;
     },
   ): Promise<void> {
     const idempotencyKey = `leave-rejected-${leaveRequestId}-${recipientUserId}`;
@@ -293,9 +352,70 @@ export class NotificationsService {
     });
 
     await this.emailQueueRepository.save(emailQueue);
-    this.logger.log(
-      `✅ Leave request rejected notification queued for request ${leaveRequestId}`,
-    );
+    this.logger.log(`✅ Leave request rejected notification queued for request ${leaveRequestId}`);
+  }
+
+  /**
+   * Enqueue leave request updated notification
+   */
+  async enqueueLeaveRequestUpdatedNotification(
+    leaveRequestId: number,
+    recipientUserId: number,
+    context: {
+      requesterName: string;
+      startDate: string;
+      endDate: string;
+      dashboardLink: string;
+    },
+  ): Promise<void> {
+    const idempotencyKey = `leave-updated-${leaveRequestId}-${recipientUserId}-${Date.now()}`;
+
+    const emailQueue = this.emailQueueRepository.create({
+      recipientUserId: recipientUserId,
+      type: EmailType.LEAVE_REQUEST_UPDATED,
+      referenceKind: EmailReferenceKind.LEAVE_REQUEST,
+      referenceId: leaveRequestId,
+      idempotencyKey: idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    await this.emailQueueRepository.save(emailQueue);
+    this.logger.log(`✅ Leave request updated notification queued for request ${leaveRequestId}`);
+  }
+
+  /**
+   * Enqueue leave request cancelled notification
+   */
+  async enqueueLeaveRequestCancelledNotification(
+    leaveRequestId: number,
+    recipientUserId: number,
+    context: {
+      requesterName: string;
+      startDate: string;
+      endDate: string;
+      dashboardLink: string;
+    },
+  ): Promise<void> {
+    const idempotencyKey = `leave-cancelled-${leaveRequestId}-${recipientUserId}-${Date.now()}`;
+
+    const emailQueue = this.emailQueueRepository.create({
+      recipientUserId: recipientUserId,
+      type: EmailType.LEAVE_REQUEST_CANCELLED,
+      referenceKind: EmailReferenceKind.LEAVE_REQUEST,
+      referenceId: leaveRequestId,
+      idempotencyKey: idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    await this.emailQueueRepository.save(emailQueue);
+    this.logger.log(`✅ Leave request cancelled notification queued for request ${leaveRequestId}`);
   }
 }
-

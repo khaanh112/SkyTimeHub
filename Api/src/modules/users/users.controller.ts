@@ -118,7 +118,9 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Reset activation token for user (HR only)' })
   @ApiResponse({ status: 200, description: 'Activation token reset successfully.' })
-  async resetActivationToken(@Param('id') id: number): Promise<{ activationLink: string; token: string }> {
+  async resetActivationToken(
+    @Param('id') id: number,
+  ): Promise<{ activationLink: string; token: string }> {
     const token = await this.usersService.resetActivationToken(id);
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -142,7 +144,7 @@ export class UsersController {
     return await this.usersService.resendActivationLink(id);
   }
 
-  @Roles(UserRole.HR)  
+  @Roles(UserRole.HR)
   @Post(':id/activate')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Activate user account' })
@@ -150,7 +152,6 @@ export class UsersController {
   async activateAccountByHr(@Param('id') id: number): Promise<User> {
     return await this.usersService.reactivateAccount(id);
   }
-
 
   @Roles(UserRole.HR)
   @Post('import/preview')

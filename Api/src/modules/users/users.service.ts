@@ -138,14 +138,16 @@ export class UsersService {
       // Enqueue activation email with correct format
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       const activationLink = `${frontendUrl}/auth/activate?token=${activationToken}`;
-      
+
       await this.notificationsService.enqueueActivationEmail(
         savedUser.id,
         activationToken,
         activationLink,
       );
 
-      this.logger.log(`User created: ${savedUser.email}, status: ${savedUser.status}, activation email queued`);
+      this.logger.log(
+        `User created: ${savedUser.email}, status: ${savedUser.status}, activation email queued`,
+      );
       return savedUser;
     } catch (error) {
       this.logger.error('Error creating user:', error);
@@ -157,8 +159,7 @@ export class UsersService {
     }
   }
 
-
-// implement
+  // implement
   async updateUser(id: number, user: UpdateUserDto): Promise<User> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
     if (!existingUser) {
@@ -201,7 +202,7 @@ export class UsersService {
   async activateAccount(token: string): Promise<User> {
     this.logger.log('========== ACTIVATE ACCOUNT START ==========');
     this.logger.log(`Activation token received: ${token}`);
-    
+
     this.logger.log('Looking up user by activation token...');
     const user = await this.usersRepository.findOne({
       where: { activationToken: token },
@@ -222,7 +223,7 @@ export class UsersService {
     this.logger.log(`   - Email: ${user.email}`);
     this.logger.log(`   - Current Status: ${user.status}`);
     this.logger.log(`   - Current Activation Token: ${user.activationToken}`);
-    
+
     // Check if user status is PENDING before allowing activation
     if (user.status !== UserStatus.PENDING) {
       this.logger.error(`❌ Cannot activate account with status: ${user.status}`);
@@ -242,10 +243,12 @@ export class UsersService {
     user.activationToken = null;
 
     const savedUser = await this.usersRepository.save(user);
-    
+
     this.logger.log(`✓ User account activated successfully`);
     this.logger.log(`   - New Status: ${savedUser.status}`);
-    this.logger.log(`   - Activation Token: ${savedUser.activationToken === null ? 'CLEARED' : savedUser.activationToken}`);
+    this.logger.log(
+      `   - Activation Token: ${savedUser.activationToken === null ? 'CLEARED' : savedUser.activationToken}`,
+    );
     this.logger.log(`   - Activated At: ${savedUser.activatedAt}`);
     this.logger.log('========== ACTIVATE ACCOUNT SUCCESS ==========');
 
@@ -257,7 +260,7 @@ export class UsersService {
     if (!user) {
       throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
-    if(user.status === UserStatus.INACTIVE){
+    if (user.status === UserStatus.INACTIVE) {
       throw new AppException(
         ErrorCode.INVALID_INPUT,
         `Cannot deactivate account. Current status is ${user.status}.`,
@@ -274,7 +277,7 @@ export class UsersService {
     if (!user) {
       throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
-    if(user.status !== UserStatus.INACTIVE){
+    if (user.status !== UserStatus.INACTIVE) {
       throw new AppException(
         ErrorCode.INVALID_INPUT,
         `Cannot reactivate account. Current status is ${user.status}. Only inactive accounts can be reactivated.`,
@@ -318,14 +321,14 @@ export class UsersService {
     if (!user) {
       throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
-    if(user.status !== UserStatus.PENDING){
+    if (user.status !== UserStatus.PENDING) {
       throw new AppException(
         ErrorCode.ACCOUNT_ALREADY_ACTIVE,
         'User account is already active, contact HR for assistance',
         HttpStatus.BAD_REQUEST,
       );
     }
-    if(!user.activationToken) {
+    if (!user.activationToken) {
       throw new AppException(
         ErrorCode.NO_ACTIVATION_TOKEN,
         'No activation token found for this user',
@@ -403,9 +406,9 @@ export class UsersService {
     }
 
     this.logger.log(`========== RESEND ACTIVATION LINK SUCCESS ==========`);
-    
+
     return {
-      message: 'Activation link has been sent to the user\'s email',
+      message: "Activation link has been sent to the user's email",
       activationLink,
     };
   }

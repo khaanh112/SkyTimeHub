@@ -26,11 +26,10 @@ export class ZohoStrategy extends PassportStrategy(Strategy, 'zoho') {
   }
   authorizationParams(): Record<string, string> {
     return {
-      prompt: 'consent',      // Zoho: value must be "consent"
+      prompt: 'consent', // Zoho: value must be "consent"
       access_type: 'offline', // nếu bạn cần refresh token
     };
   }
-
 
   async validate(
     accessToken: string,

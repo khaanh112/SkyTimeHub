@@ -25,28 +25,28 @@ export class EmailWorkerService {
     // Set timeout with default value and validation
     const timeoutConfig = this.configService.get('PROCESSING_TIMEOUT_MINUTES');
     this.PROCESSING_TIMEOUT_MINUTES = Number(timeoutConfig) || 10; // Default: 10 minutes
-    
+
     if (!timeoutConfig || isNaN(Number(timeoutConfig))) {
       this.logger.warn(
-        `PROCESSING_TIMEOUT_MINUTES not set or invalid (${timeoutConfig}), using default: ${this.PROCESSING_TIMEOUT_MINUTES} minutes`
+        `PROCESSING_TIMEOUT_MINUTES not set or invalid (${timeoutConfig}), using default: ${this.PROCESSING_TIMEOUT_MINUTES} minutes`,
       );
     }
-    
+
     const batchConfig = this.configService.get('BATCH_SIZE');
     this.BATCH_SIZE = Number(batchConfig) || 10; // Default: 10 emails
-    
+
     if (!batchConfig || isNaN(Number(batchConfig))) {
       this.logger.warn(
-        `BATCH_SIZE not set or invalid (${batchConfig}), using default: ${this.BATCH_SIZE}`
+        `BATCH_SIZE not set or invalid (${batchConfig}), using default: ${this.BATCH_SIZE}`,
       );
     }
-    
+
     // Generate unique worker ID
     this.workerId = `worker-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
     this.logger.log(
       `Email Worker initialized with ID: ${this.workerId}, ` +
-      `Timeout: ${this.PROCESSING_TIMEOUT_MINUTES} minutes, ` +
-      `Batch size: ${this.BATCH_SIZE}`
+        `Timeout: ${this.PROCESSING_TIMEOUT_MINUTES} minutes, ` +
+        `Batch size: ${this.BATCH_SIZE}`,
     );
   }
 
@@ -71,9 +71,11 @@ export class EmailWorkerService {
             status: EmailStatus.PENDING,
           },
         });
-        
+
         if (scheduledCount > 0) {
-          this.logger.debug(`No emails ready to process (${scheduledCount} pending, scheduled for retry)`);
+          this.logger.debug(
+            `No emails ready to process (${scheduledCount} pending, scheduled for retry)`,
+          );
         } else {
           this.logger.debug('No pending emails to process');
         }
@@ -83,16 +85,12 @@ export class EmailWorkerService {
       this.logger.log(`Processing ${emails.length} emails`);
 
       // Process emails in parallel (but limit concurrency)
-      const results = await Promise.allSettled(
-        emails.map((email) => this.processEmail(email)),
-      );
+      const results = await Promise.allSettled(emails.map((email) => this.processEmail(email)));
 
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
 
-      this.logger.log(
-        `Email processing completed: ${succeeded} succeeded, ${failed} failed`,
-      );
+      this.logger.log(`Email processing completed: ${succeeded} succeeded, ${failed} failed`);
     } catch (error) {
       this.logger.error('Error in email queue processing', error.stack);
     }
@@ -102,26 +100,24 @@ export class EmailWorkerService {
    * Recover emails stuck in PROCESSING state (e.g., worker crashed)
    */
   private async recoverStalledEmails() {
-    const timeoutThreshold = new Date(
-      Date.now() - this.PROCESSING_TIMEOUT_MINUTES * 60 * 1000,
-    );
+    const timeoutThreshold = new Date(Date.now() - this.PROCESSING_TIMEOUT_MINUTES * 60 * 1000);
 
     // First check all PROCESSING emails for debugging
     const allProcessing = await this.emailQueueRepository.find({
       where: { status: EmailStatus.PROCESSING },
     });
-    
+
     if (allProcessing.length > 0) {
       this.logger.debug(
         `Found ${allProcessing.length} PROCESSING emails. Details: ${JSON.stringify(
-          allProcessing.map(e => ({
+          allProcessing.map((e) => ({
             id: e.id,
             workerId: e.workerId,
             processingStartedAt: e.processingStartedAt,
             currentWorkerId: this.workerId,
             isOld: e.processingStartedAt && e.processingStartedAt < timeoutThreshold,
-          }))
-        )}`
+          })),
+        )}`,
       );
     }
 
@@ -139,9 +135,7 @@ export class EmailWorkerService {
       .getMany();
 
     if (stalledEmails.length > 0) {
-      this.logger.warn(
-        `Found ${stalledEmails.length} stalled emails, recovering...`,
-      );
+      this.logger.warn(`Found ${stalledEmails.length} stalled emails, recovering...`);
 
       for (const email of stalledEmails) {
         const oldWorkerId = email.workerId;
@@ -232,17 +226,16 @@ export class EmailWorkerService {
     }
   }
 
-
   /**
    * Process a single email
    */
   private async processEmail(email: EmailQueue): Promise<void> {
     this.logger.log(
       `📧 Processing email ${email.id} (${email.type}). ` +
-      `Current status: ${email.status}, ` +
-      `Worker: ${email.workerId}, ` +
-      `Attempt: ${email.attemptCount + 1}/${email.maxAttempts}, ` +
-      `Processing started at: ${email.processingStartedAt?.toISOString()}`
+        `Current status: ${email.status}, ` +
+        `Worker: ${email.workerId}, ` +
+        `Attempt: ${email.attemptCount + 1}/${email.maxAttempts}, ` +
+        `Processing started at: ${email.processingStartedAt?.toISOString()}`,
     );
 
     try {
@@ -258,10 +251,7 @@ export class EmailWorkerService {
 
       this.logger.log(`✅ Email ${email.id} sent successfully (PROCESSING → SENT)`);
     } catch (error) {
-      this.logger.error(
-        `❌ Failed to send email ${email.id}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`❌ Failed to send email ${email.id}: ${error.message}`, error.stack);
 
       await this.handleEmailFailure(email, error);
     }
@@ -283,9 +273,7 @@ export class EmailWorkerService {
         errorMessage: error.message || 'Unknown error',
       });
 
-      this.logger.error(
-        `Email ${email.id} permanently failed after ${newAttemptCount} attempts`,
-      );
+      this.logger.error(`Email ${email.id} permanently failed after ${newAttemptCount} attempts`);
     } else {
       // Schedule retry with exponential backoff
       const retryDelayMinutes = Math.pow(2, newAttemptCount); // 2, 4, 8 minutes
@@ -302,9 +290,9 @@ export class EmailWorkerService {
 
       this.logger.warn(
         `⚠️ Email ${email.id} retry scheduled (PROCESSING → PENDING). ` +
-        `Next retry at: ${nextRetryAt.toISOString()}, ` +
-        `Attempt: ${newAttemptCount}/${email.maxAttempts}, ` +
-        `Error: ${error.message}`,
+          `Next retry at: ${nextRetryAt.toISOString()}, ` +
+          `Attempt: ${newAttemptCount}/${email.maxAttempts}, ` +
+          `Error: ${error.message}`,
       );
     }
   }
