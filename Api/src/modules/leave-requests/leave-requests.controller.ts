@@ -58,7 +58,19 @@ export class LeaveRequestsController {
     try {
       const result = await this.leaveRequestsService.findUserLeaveRequests(req.user.id);
       console.log('[LeaveRequestsController] findAll result count:', result?.length);
-      return result;
+      
+      // Transform each request to include ccUserIds from notificationRecipients
+      const transformedResult = result.map((request) => {
+        const ccUserIds = request.notificationRecipients
+          ?.filter(r => r.type === 'CC')
+          .map(r => r.userId) || [];
+        return {
+          ...request,
+          ccUserIds,
+        };
+      });
+      
+      return transformedResult;
     } catch (error) {
       console.error('[LeaveRequestsController] findAll error:', error);
       throw error;
@@ -95,7 +107,17 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 404, description: 'Leave request not found.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.leaveRequestsService.findOne(id);
+    const leaveRequest = await this.leaveRequestsService.findOne(id);
+    
+    // Transform notificationRecipients to ccUserIds for frontend
+    const ccUserIds = leaveRequest.notificationRecipients
+      ?.filter(r => r.type === 'CC')
+      .map(r => r.userId) || [];
+    
+    return {
+      ...leaveRequest,
+      ccUserIds,
+    };
   }
 
   @Put(':id')

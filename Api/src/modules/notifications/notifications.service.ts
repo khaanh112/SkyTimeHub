@@ -273,6 +273,7 @@ export class NotificationsService implements OnModuleDestroy {
       startDate: string;
       endDate: string;
       approvedAt: string;
+      dashboardLink: string;
     },
   ): Promise<void> {
     const idempotencyKey = `leave-approved-${leaveRequestId}-${recipientUserId}`;

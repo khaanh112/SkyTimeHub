@@ -391,6 +391,7 @@ async updateLeaveRequest(
         startDate: leaveRequest.startDate,
         endDate: leaveRequest.endDate,
         approvedAt: leaveRequest.approvedAt.toISOString(),
+        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
       },
     );
 
@@ -495,7 +496,7 @@ async updateLeaveRequest(
     try {
       const results = await this.leaveRequestRepository.find({
         where: { userId },
-        relations: ['approver'],
+        relations: ['approver', 'notificationRecipients'],
         order: { createdAt: 'DESC' },
       });
       this.logger.log(`[findUserLeaveRequests] Query completed, found ${results.length} results`);

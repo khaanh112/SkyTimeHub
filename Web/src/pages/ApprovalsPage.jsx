@@ -50,8 +50,21 @@ const ApprovalsPage = () => {
     } catch (error) {
       console.error('Error approving leave request:', error);
       if (error.response?.status === 409) {
-        toast.error('This request has been modified. Refreshing list...');
-        fetchPendingApprovals();
+        toast.error('This request has been modified. Refreshing data...');
+        // Refresh the list
+        await fetchPendingApprovals();
+        // If detail modal is open, refresh the selected request with updated version
+        if (showDetailModal && selectedRequest?.id === id) {
+          try {
+            const updatedRequest = await leaveRequestService.getLeaveRequest(id);
+            setSelectedRequest(updatedRequest.data || updatedRequest);
+            toast.info('Request details updated. Please review changes before approving.');
+          } catch (fetchError) {
+            console.error('Error fetching updated request:', fetchError);
+            setShowDetailModal(false);
+            setSelectedRequest(null);
+          }
+        }
       } else {
         toast.error(error.response?.data?.message || 'Failed to approve leave request');
       }
@@ -73,18 +86,18 @@ const ApprovalsPage = () => {
       return;
     }
 
+    const requestId = selectedRequest.id;
     try {
       setSubmitting(true);
-      setProcessingId(selectedRequest.id);
+      setProcessingId(requestId);
       await leaveRequestService.rejectLeaveRequest(
-        selectedRequest.id,
+        requestId,
         rejectedReason,
         selectedRequest?.version,
       );
       toast.success('Leave request rejected');
       // Optimistically remove from list
-      const rejectedId = selectedRequest.id;
-      setPendingApprovals(prev => prev.filter(r => r.id !== rejectedId));
+      setPendingApprovals(prev => prev.filter(r => r.id !== requestId));
       setShowRejectModal(false);
       setRejectedReason('');
       setSelectedRequest(null);
@@ -92,11 +105,22 @@ const ApprovalsPage = () => {
     } catch (error) {
       console.error('Error rejecting leave request:', error);
       if (error.response?.status === 409) {
-        toast.error('This request has been modified. Refreshing list...');
+        toast.error('This request has been modified. Refreshing data...');
+        // Close reject modal but keep data to show in detail modal
         setShowRejectModal(false);
         setRejectedReason('');
-        setSelectedRequest(null);
-        fetchPendingApprovals();
+        // Refresh the list
+        await fetchPendingApprovals();
+        // Fetch updated request and show in detail modal
+        try {
+          const updatedRequest = await leaveRequestService.getLeaveRequest(requestId);
+          setSelectedRequest(updatedRequest.data || updatedRequest);
+          setShowDetailModal(true);
+          toast.info('Request details updated. Please review changes before rejecting.');
+        } catch (fetchError) {
+          console.error('Error fetching updated request:', fetchError);
+          setSelectedRequest(null);
+        }
       } else {
         toast.error(error.response?.data?.message || 'Failed to reject leave request');
       }
@@ -248,6 +272,16 @@ const ApprovalsPage = () => {
           title="Leave Request Details"
         >
           <div className="space-y-4">
+            {/* Version Badge */}
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded px-3 py-2">
+              <span className="text-xs text-blue-800 font-medium">
+                Version: {selectedRequest.version}
+              </span>
+              <span className="text-xs text-gray-600">
+                Last updated: {new Date(selectedRequest.updatedAt || selectedRequest.createdAt).toLocaleString()}
+              </span>
+            </div>
+
             {/* Employee Info */}
             <div className="bg-gray-50 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-700 mb-2">Employee</h3>
