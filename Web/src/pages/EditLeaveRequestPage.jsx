@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { leaveRequestService } from '../services';
 import { UserMultiSelect, LoadingSpinner } from '../components';
 import { toast } from 'react-toastify';
-import { ArrowLeft, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, AlertCircle, CheckCircle, User } from 'lucide-react';
 
 const EditLeaveRequestPage = () => {
   const navigate = useNavigate();
@@ -233,23 +233,54 @@ const EditLeaveRequestPage = () => {
             </div>
           </div>
 
-          {/* Additional */}
+          {/* Approver & Additional Recipients */}
           <div>
             <div className="flex items-center gap-2 mb-4">
               <div className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white rounded-full text-sm font-semibold">3</div>
-              <h3 className="text-base font-semibold text-gray-900">Additional Recipients</h3>
+              <h3 className="text-base font-semibold text-gray-900">Approver & CC Recipients</h3>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">CC Users</label>
-              <UserMultiSelect
-                selectedUserIds={formData.ccUserIds}
-                onChange={(userIds) => setFormData({ ...formData, ccUserIds: userIds })}
-                excludeCurrentUser={true}
-              />
-              <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                Your approver and all HR users will automatically receive email notifications
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Approver */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Approver</label>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  {request?.approver ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                        {request.approver.username?.charAt(0).toUpperCase() || 'A'}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{request.approver.username}</p>
+                        <p className="text-xs text-gray-600 truncate">{request.approver.email}</p>
+                        {request.approver.department && (
+                          <p className="text-xs text-gray-500 mt-0.5 truncate">
+                            {request.approver.department}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-gray-400">
+                      <User className="w-5 h-5" />
+                      <p className="text-sm italic">No approver assigned</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CC Users */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">CC Users</label>
+                <UserMultiSelect
+                  selectedUserIds={formData.ccUserIds}
+                  onChange={(userIds) => setFormData({ ...formData, ccUserIds: userIds })}
+                  excludeCurrentUser={true}
+                />
+                <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Your approver and all HR users will automatically receive email notifications
+                </p>
+              </div>
             </div>
           </div>
 

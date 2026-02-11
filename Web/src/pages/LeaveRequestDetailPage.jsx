@@ -262,7 +262,7 @@ const LeaveRequestDetailPage = () => {
             <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={() => navigate(`/leave-requests`)}
+                onClick={() => navigate(`/leave-requests/${leaveRequest.id}/edit`)}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 <Edit className="w-4 h-4" />

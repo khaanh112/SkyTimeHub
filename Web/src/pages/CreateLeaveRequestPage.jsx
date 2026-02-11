@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { leaveRequestService } from '../services';
 import { UserMultiSelect } from '../components';
 import { toast } from 'react-toastify';
-import { ArrowLeft, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, AlertCircle, CheckCircle, User } from 'lucide-react';
 
 const CreateLeaveRequestPage = () => {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  const [approver, setApprover] = useState(null);
   const [formData, setFormData] = useState({
     startDate: '',
     endDate: '',
@@ -15,6 +16,24 @@ const CreateLeaveRequestPage = () => {
     workSolution: '',
     ccUserIds: [],
   });
+
+  useEffect(() => {
+    fetchApprover();
+  }, []);
+
+  const fetchApprover = async () => {
+    try {
+      // Get approver from existing leave requests
+      const requests = await leaveRequestService.getMyLeaveRequests();
+      const requestsData = requests.data || requests;
+      if (requestsData && requestsData.length > 0 && requestsData[0].approver) {
+        setApprover(requestsData[0].approver);
+      }
+    } catch (error) {
+      console.error('Error fetching approver:', error);
+      // If no requests exist yet, approver will remain null
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -156,23 +175,54 @@ const CreateLeaveRequestPage = () => {
             </div>
           </div>
 
-          {/* Additional */}
+          {/* Approver & Additional Recipients */}
           <div>
             <div className="flex items-center gap-2 mb-4">
               <div className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white rounded-full text-sm font-semibold">3</div>
-              <h3 className="text-base font-semibold text-gray-900">Additional Recipients</h3>
+              <h3 className="text-base font-semibold text-gray-900">Approver & CC Recipients</h3>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">CC Users</label>
-              <UserMultiSelect
-                selectedUserIds={formData.ccUserIds}
-                onChange={(userIds) => setFormData({ ...formData, ccUserIds: userIds })}
-                excludeCurrentUser={true}
-              />
-              <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                Your approver and all HR users will automatically receive email notifications
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Approver */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Approver</label>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  {approver ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                        {approver.username?.charAt(0).toUpperCase() || 'A'}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{approver.username}</p>
+                        <p className="text-xs text-gray-600 truncate">{approver.email}</p>
+                        {approver.department && (
+                          <p className="text-xs text-gray-500 mt-0.5 truncate">
+                            {approver.department}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-gray-400">
+                      <User className="w-5 h-5" />
+                      <p className="text-sm italic">No approver assigned</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CC Users */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">CC Users</label>
+                <UserMultiSelect
+                  selectedUserIds={formData.ccUserIds}
+                  onChange={(userIds) => setFormData({ ...formData, ccUserIds: userIds })}
+                  excludeCurrentUser={true}
+                />
+                <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Your approver and all HR users will automatically receive email notifications
+                </p>
+              </div>
             </div>
           </div>
 

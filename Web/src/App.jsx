@@ -6,7 +6,6 @@ import { LoadingSpinner, Layout } from './components';
 import {
   LoginPage,
   AuthCallback,
-  Dashboard,
   UsersPage,
   ProfilePage,
   ActivateAccountPage,
@@ -76,7 +75,7 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <Dashboard />
+            <ProfilePage />
           </ProtectedRoute>
         }
       />
@@ -93,14 +92,6 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <ImportUsersPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/profile"
-        element={
-          <ProtectedRoute>
-            <ProfilePage />
           </ProtectedRoute>
         }
       />

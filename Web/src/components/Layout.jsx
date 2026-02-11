@@ -4,7 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import {
   Menu,
   X,
-  Home,
   Users,
   LogOut,
   User,
@@ -20,10 +19,10 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
   const navigate = useNavigate();
 
   const menuItems = [
-    { path: '/', icon: Home, label: 'Dashboard' },
-    { path: '/leave-requests', icon: Calendar, label: 'My Leave Requests' },
+    { path: '/', icon: User, label: 'Account Management' },
+    { path: '/leave-requests', icon: Calendar, label: 'Leave Requests Management' },
     { path: '/approvals', icon: CheckCircle, label: 'Approvals' },
-    { path: '/users', icon: Users, label: 'Quản lý Users' },
+    { path: '/employees', icon: Users, label: 'Employee Management' },
   ];
 
   const isActive = (path) => location.pathname === path;
