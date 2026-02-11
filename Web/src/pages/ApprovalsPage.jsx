@@ -21,7 +21,7 @@ const ApprovalsPage = () => {
   const fetchPendingApprovals = async () => {
     try {
       setLoading(true);
-      const data = await leaveRequestService.getPendingApprovals();
+      const data = await leaveRequestService.getManagementRequests();
       setPendingApprovals(data.data || data);
     } catch (error) {
       console.error('Error fetching pending approvals:', error);

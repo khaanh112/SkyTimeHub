@@ -77,26 +77,27 @@ export class LeaveRequestsController {
     }
   }
 
-  @Get('pending-approvals')
+  @Get('management')
   @ApiOperation({
-    summary: 'Get pending approvals for current user',
+    summary: 'Get leave requests for management view',
     description:
-      'Retrieve all pending leave requests that require approval from the authenticated user.',
+      'For HR: returns all leave requests (all statuses). For Approvers: returns all requests where they are the approver (all statuses).',
   })
-  @ApiResponse({ status: 200, description: 'List of pending approvals retrieved successfully.' })
+  @ApiResponse({ status: 200, description: 'List of leave requests retrieved successfully.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async findPendingApprovals(@Request() req) {
-    console.log('[LeaveRequestsController] findPendingApprovals called for user:', req.user?.id);
+  async findForManagement(@Request() req) {
+    console.log('[LeaveRequestsController] findForManagement called for user:', req.user?.id, 'role:', req.user?.role);
     try {
-      const result = await this.leaveRequestsService.findPendingApprovalsForUser(req.user.id);
-      console.log('[LeaveRequestsController] findPendingApprovals result count:', result?.length);
+      const result = await this.leaveRequestsService.findRequestsForManagement(req.user);
+      console.log('[LeaveRequestsController] findForManagement result count:', result?.length);
       return result;
     } catch (error) {
-      console.error('[LeaveRequestsController] findPendingApprovals error:', error);
+      console.error('[LeaveRequestsController] findForManagement error:', error);
       throw error;
     }
   }
 
+  
   @Get(':id')
   @ApiOperation({
     summary: 'Get leave request by ID',

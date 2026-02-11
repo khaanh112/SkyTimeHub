@@ -48,7 +48,7 @@ const LeaveRequestManagementPage = () => {
       setLoading(true);
       const data = view === 'my-requests' 
         ? await leaveRequestService.getMyLeaveRequests()
-        : await leaveRequestService.getPendingApprovals();
+        : await leaveRequestService.getManagementRequests();
       setLeaveRequests(data.data || data);
     } catch (error) {
       console.error('Error fetching leave requests:', error);

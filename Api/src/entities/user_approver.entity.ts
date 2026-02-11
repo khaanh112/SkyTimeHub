@@ -13,7 +13,7 @@ import { Exclude } from 'class-transformer';
 import { User } from './users.entity';
 
 @Entity('user_approvers')
-@Unique('uq_user_approver_active', ['userId', 'active']) // optional logic: chỉ 1 active mapping
+// Removed @Unique decorator - will use partial unique index via migration
 @Index('idx_user_approvers_user_active', ['userId', 'active'])
 export class UserApprover {
   @PrimaryGeneratedColumn()

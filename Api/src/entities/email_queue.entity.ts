@@ -64,7 +64,7 @@ export class EmailQueue {
   @Column({ name: 'attempt_count', default: 0 })
   attemptCount: number;
 
-  @Column({ name: 'max_attempts', default: 3 })
+  @Column({ name: 'max_attempts', default: 5 })
   maxAttempts: number;
 
   @Column({ name: 'next_retry_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })

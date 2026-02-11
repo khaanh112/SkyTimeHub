@@ -70,24 +70,40 @@ export class UserApproverService {
     await queryRunner.startTransaction();
 
     try {
-      // Deactivate existing active approvers
+      // Deactivate all currently active approvers for this user
       await queryRunner.manager.update(
         UserApprover,
         { userId, active: true },
         { active: false },
       );
 
-      const userApprover = queryRunner.manager.create(UserApprover, {
-        userId,
-        approverId: dto.approverId,
-        createdBy: dto.createdBy,
-        active: true,
+      // Check if a record with this approverId already exists (active or inactive)
+      let userApprover = await queryRunner.manager.findOne(UserApprover, {
+        where: { userId, approverId: dto.approverId },
       });
 
-      const savedUserApprover = await queryRunner.manager.save(UserApprover, userApprover);
+      if (userApprover) {
+        // Reuse existing record - just reactivate it
+        this.logger.debug(
+          `Reusing existing user_approver record ID: ${userApprover.id}`,
+        );
+        userApprover.active = true;
+        userApprover.createdBy = dto.createdBy;
+        await queryRunner.manager.save(UserApprover, userApprover);
+      } else {
+        // Create new record only if it doesn't exist
+        this.logger.debug('Creating new user_approver record');
+        userApprover = queryRunner.manager.create(UserApprover, {
+          userId,
+          approverId: dto.approverId,
+          createdBy: dto.createdBy,
+          active: true,
+        });
+        await queryRunner.manager.save(UserApprover, userApprover);
+      }
 
       await queryRunner.commitTransaction();
-      return savedUserApprover;
+      return userApprover;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(

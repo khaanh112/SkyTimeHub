@@ -593,29 +593,45 @@ async updateLeaveRequest(
   }
 
   /**
-   * Find pending approvals for an approver
+   * Find leave requests for management view
+   * - HR: all requests (all statuses)
+   * - Approver: all requests where they are the approver (all statuses)
    */
-  async findPendingApprovalsForUser(approverId: number): Promise<LeaveRequest[]> {
-    this.logger.log(`[findPendingApprovalsForUser] Called for approverId: ${approverId}`);
+  async findRequestsForManagement(user: { id: number; role: string }): Promise<LeaveRequest[]> {
+    this.logger.log(`[findRequestsForManagement] Called for userId: ${user.id}, role: ${user.role}`);
     try {
-      this.logger.log(`[findPendingApprovalsForUser] Starting query...`);
-      const results = await this.leaveRequestRepository.find({
-        where: {
-          approverId,
-          status: LeaveRequestStatus.PENDING,
-        },
-        relations: ['user'],
-        order: { createdAt: 'ASC' },
-      });
+      let results: LeaveRequest[];
+
+      if (user.role === 'hr') {
+        // HR can see all requests regardless of status
+        this.logger.log(`[findRequestsForManagement] User is HR, fetching all requests`);
+        results = await this.leaveRequestRepository.find({
+          relations: ['user', 'approver'],
+          order: { createdAt: 'DESC' },
+        });
+      } else {
+        // Approvers see all requests where they are the approver (all statuses)
+        this.logger.log(`[findRequestsForManagement] User is approver, fetching their assigned requests`);
+        results = await this.leaveRequestRepository.find({
+          where: {
+            approverId: user.id,
+          },
+          relations: ['user', 'approver'],
+          order: { createdAt: 'DESC' },
+        });
+      }
+
       this.logger.log(
-        `[findPendingApprovalsForUser] Query completed, found ${results.length} results`,
+        `[findRequestsForManagement] Query completed, found ${results.length} results`,
       );
       return results;
     } catch (error) {
-      this.logger.error(`[findPendingApprovalsForUser] Error: ${error.message}`, error.stack);
+      this.logger.error(`[findRequestsForManagement] Error: ${error.message}`, error.stack);
       throw error;
     }
   }
+
+  
 
   /**
    * Find one leave request by ID

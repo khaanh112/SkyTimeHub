@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { leaveRequestService } from '../services';
 import { LoadingSpinner, StatusBadge, DetailSection, Modal } from '../components';
+import { useAuth } from '../context';
 import { toast } from 'react-toastify';
 import { 
   ArrowLeft, 
@@ -22,6 +23,7 @@ const LeaveRequestDetailPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const view = searchParams.get('view') || 'my-requests';
+  const { user: currentUser } = useAuth();
   const [leaveRequest, setLeaveRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -366,8 +368,8 @@ const LeaveRequestDetailPage = () => {
           </div>
         </div>
 
-        {/* Actions - Only show in my-requests view */}
-        {view === 'my-requests' && leaveRequest.status === 'pending' && (
+        {/* Actions - Only show edit/cancel for request owner */}
+        {leaveRequest.status === 'pending' && leaveRequest.userId === currentUser?.id && (
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
             <div className="flex flex-wrap gap-3">
@@ -389,8 +391,8 @@ const LeaveRequestDetailPage = () => {
           </div>
         )}
 
-        {/* Actions - Management view (Approve/Reject) */}
-        {view === 'management' && leaveRequest.status === 'pending' && (
+        {/* Actions - Approve/Reject for approvers (not the request owner) */}
+        {leaveRequest.status === 'pending' && leaveRequest.userId !== currentUser?.id && (
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
             <div className="flex flex-wrap gap-3">

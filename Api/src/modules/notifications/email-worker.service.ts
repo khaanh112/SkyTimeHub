@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Brackets } from 'typeorm';
@@ -9,7 +9,7 @@ import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
-export class EmailWorkerService {
+export class EmailWorkerService implements OnModuleInit {
   private readonly logger = new Logger(EmailWorkerService.name);
   private readonly workerId: string;
   private readonly PROCESSING_TIMEOUT_MINUTES: number;
@@ -24,7 +24,7 @@ export class EmailWorkerService {
   ) {
     // Set timeout with default value and validation
     const timeoutConfig = this.configService.get('PROCESSING_TIMEOUT_MINUTES');
-    this.PROCESSING_TIMEOUT_MINUTES = Number(timeoutConfig) || 10; // Default: 10 minutes
+    this.PROCESSING_TIMEOUT_MINUTES = Number(timeoutConfig) || 3; // Default: 3 minutes (reduced for immediate send)
 
     if (!timeoutConfig || isNaN(Number(timeoutConfig))) {
       this.logger.warn(
@@ -51,11 +51,53 @@ export class EmailWorkerService {
   }
 
   /**
-   * Main cron job - runs every minute to process pending emails
+   * Run on module initialization - recover any stuck PROCESSING emails
+   * from previous workers (e.g., after service restart)
+   */
+  async onModuleInit() {
+    this.logger.log('Email Worker module initialized, checking for stuck emails...');
+    
+    // Find all PROCESSING emails (from old workers)
+    const stuckEmails = await this.emailQueueRepository.find({
+      where: { status: EmailStatus.PROCESSING },
+    });
+
+    if (stuckEmails.length > 0) {
+      this.logger.warn(
+        `Found ${stuckEmails.length} stuck PROCESSING emails from previous workers, recovering...`,
+      );
+
+      for (const email of stuckEmails) {
+        const newAttemptCount = email.attemptCount + 1;
+        // Faster retry on startup: 30s, 1min, 2min
+        const retryDelaySeconds = newAttemptCount === 1 ? 30 : Math.pow(2, newAttemptCount - 1) * 60;
+        const nextRetryAt = new Date(Date.now() + retryDelaySeconds * 1000);
+
+        await this.emailQueueRepository.update(email.id, {
+          status: EmailStatus.PENDING,
+          attemptCount: newAttemptCount,
+          processingStartedAt: null,
+          workerId: null,
+          nextRetryAt: nextRetryAt,
+          errorMessage: `Recovered on startup from worker ${email.workerId || 'unknown'}`,
+        });
+
+        this.logger.log(`Recovered stuck email ${email.id}, scheduled retry at ${nextRetryAt.toISOString()}`);
+      }
+
+      this.logger.log(`Successfully recovered ${stuckEmails.length} stuck emails`);
+    } else {
+      this.logger.log('No stuck emails found, queue is clean');
+    }
+  }
+
+  /**
+   * Main cron job - runs every 30 seconds to retry failed emails and recover stuck ones
+   * Most emails are sent immediately, this cronjob only handles retries and recovery
    */
   @Cron(CronExpression.EVERY_30_SECONDS)
   async processEmailQueue() {
-    this.logger.debug('Starting email queue processing...');
+    this.logger.debug('Starting email queue processing (retry handler)...');
 
     try {
       // Step 1: Clean up stale processing emails (timeout recovery)
@@ -275,9 +317,10 @@ export class EmailWorkerService {
 
       this.logger.error(`Email ${email.id} permanently failed after ${newAttemptCount} attempts`);
     } else {
-      // Schedule retry with exponential backoff
-      const retryDelayMinutes = Math.pow(2, newAttemptCount); // 2, 4, 8 minutes
-      const nextRetryAt = new Date(Date.now() + retryDelayMinutes * 60 * 1000);
+      // Schedule retry with faster backoff
+      // Attempt 1: 30s, Attempt 2: 1min, Attempt 3: 2min, Attempt 4+: 4min, 8min...
+      const retryDelaySeconds = newAttemptCount === 1 ? 30 : Math.pow(2, newAttemptCount - 1) * 60;
+      const nextRetryAt = new Date(Date.now() + retryDelaySeconds * 1000);
 
       await this.emailQueueRepository.update(email.id, {
         status: EmailStatus.PENDING,

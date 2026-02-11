@@ -7,7 +7,13 @@ const leaveRequestService = {
     return response.data;
   },
 
-  // Get pending approvals for current user (as approver)
+  // Get leave requests for management view (HR: all, Approver: assigned to them)
+  getManagementRequests: async () => {
+    const response = await api.get('/leave-requests/management');
+    return response.data;
+  },
+
+  // Get pending approvals for current user (deprecated, use getManagementRequests)
   getPendingApprovals: async () => {
     const response = await api.get('/leave-requests/pending-approvals');
     return response.data;
