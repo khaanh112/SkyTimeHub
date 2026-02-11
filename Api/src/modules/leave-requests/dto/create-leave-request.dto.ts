@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsString, IsArray, IsInt } from 'class-validator';
+import { IsDateString, IsOptional, IsString, IsArray, IsInt, Length } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateLeaveRequestDto {
@@ -21,6 +21,7 @@ export class CreateLeaveRequestDto {
     example: 'Family vacation',
   })
   @IsString()
+  @Length(5, 500)
   reason: string;
 
 
@@ -30,6 +31,7 @@ export class CreateLeaveRequestDto {
   })
   @IsOptional()
   @IsString()
+  @Length(0, 1000)
   workSolution?: string;  
 
   @ApiPropertyOptional({

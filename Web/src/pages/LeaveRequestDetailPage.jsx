@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { leaveRequestService } from '../services';
-import { LoadingSpinner, StatusBadge, DetailSection } from '../components';
+import { LoadingSpinner, StatusBadge, DetailSection, Modal } from '../components';
 import { toast } from 'react-toastify';
 import { 
   ArrowLeft, 
@@ -13,15 +13,22 @@ import {
   AlertCircle,
   Users,
   Edit,
-  Info
+  Info,
+  CheckCircle
 } from 'lucide-react';
 
 const LeaveRequestDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const view = searchParams.get('view') || 'my-requests';
   const [leaveRequest, setLeaveRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectedReason, setRejectedReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [processingId, setProcessingId] = useState(null);
 
   useEffect(() => {
     fetchLeaveRequestDetail();
@@ -53,6 +60,69 @@ const LeaveRequestDetailPage = () => {
       navigate('/leave-requests');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to cancel leave request');
+    }
+  };
+
+  const handleApprove = async () => {
+    if (processingId) return;
+    if (!window.confirm('Are you sure you want to APPROVE this leave request?')) {
+      return;
+    }
+
+    try {
+      setProcessingId(leaveRequest.id);
+      await leaveRequestService.approveLeaveRequest(leaveRequest.id, leaveRequest.version);
+      toast.success('Leave request approved successfully!');
+      navigate('/leave-requests');
+    } catch (error) {
+      console.error('Error approving leave request:', error);
+      if (error.response?.status === 409) {
+        toast.error('This request has been modified. Refreshing data...');
+        fetchLeaveRequestDetail();
+      } else {
+        toast.error(error.response?.data?.message || 'Failed to approve leave request');
+      }
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleReject = () => {
+    setShowRejectModal(true);
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!rejectedReason || rejectedReason.trim().length < 10) {
+      toast.error('Please provide a reason (at least 10 characters)');
+      return;
+    }
+
+    const requestId = leaveRequest.id;
+    try {
+      setSubmitting(true);
+      setProcessingId(requestId);
+      await leaveRequestService.rejectLeaveRequest(
+        requestId,
+        rejectedReason,
+        leaveRequest?.version,
+      );
+      toast.success('Leave request rejected');
+      setShowRejectModal(false);
+      setRejectedReason('');
+      navigate('/leave-requests');
+    } catch (error) {
+      console.error('Error rejecting leave request:', error);
+      if (error.response?.status === 409) {
+        toast.error('This request has been modified. Refreshing data...');
+        setShowRejectModal(false);
+        setRejectedReason('');
+        fetchLeaveRequestDetail();
+      } else {
+        toast.error(error.response?.data?.message || 'Failed to reject leave request');
+      }
+    } finally {
+      setSubmitting(false);
+      setProcessingId(null);
     }
   };
 
@@ -102,7 +172,9 @@ const LeaveRequestDetailPage = () => {
           className="inline-flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 mb-6"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Back to My Requests</span>
+          <span className="text-sm font-medium">
+            {view === 'management' ? 'Back to Management View' : 'Back to My Requests'}
+          </span>
         </button>
         
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
@@ -124,7 +196,8 @@ const LeaveRequestDetailPage = () => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <>
+      <div className="max-w-5xl mx-auto">
         {/* Page Header */}
         <div className="mb-6">
           <button
@@ -132,7 +205,9 @@ const LeaveRequestDetailPage = () => {
             className="inline-flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-white border border-transparent hover:border-gray-200 rounded-lg transition-colors mb-4"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className="text-sm font-medium">Back to My Requests</span>
+            <span className="text-sm font-medium">
+              {view === 'management' ? 'Back to Management View' : 'Back to My Requests'}
+            </span>
           </button>
           
           <div className="flex items-start justify-between">
@@ -147,6 +222,41 @@ const LeaveRequestDetailPage = () => {
         {/* Main Content Card */}
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm mb-6">
           <div className="p-6 space-y-5">
+            {/* Requester Information - Management View Only */}
+            {view === 'management' && leaveRequest.user && (
+              <DetailSection title="Requester Information" icon={User}>
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-linear-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-xl font-semibold">
+                    {leaveRequest.user.username?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                  <div className="flex-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-600 mb-1">Name</p>
+                        <p className="text-sm font-semibold text-gray-900">{leaveRequest.user.username}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-600 mb-1">Email</p>
+                        <p className="text-sm font-medium text-gray-900">{leaveRequest.user.email}</p>
+                      </div>
+                      {leaveRequest.user.employeeId && (
+                        <div>
+                          <p className="text-xs text-gray-600 mb-1">Employee ID</p>
+                          <p className="text-sm font-medium text-gray-900">{leaveRequest.user.employeeId}</p>
+                        </div>
+                      )}
+                      {leaveRequest.user.department && (
+                        <div>
+                          <p className="text-xs text-gray-600 mb-1">Department</p>
+                          <p className="text-sm font-medium text-gray-900">{leaveRequest.user.department}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </DetailSection>
+            )}
+
             {/* Leave Period */}
             <DetailSection title="Leave Period" icon={Calendar}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -256,8 +366,8 @@ const LeaveRequestDetailPage = () => {
           </div>
         </div>
 
-        {/* Actions */}
-        {leaveRequest.status === 'pending' && (
+        {/* Actions - Only show in my-requests view */}
+        {view === 'my-requests' && leaveRequest.status === 'pending' && (
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
             <div className="flex flex-wrap gap-3">
@@ -278,7 +388,97 @@ const LeaveRequestDetailPage = () => {
             </div>
           </div>
         )}
+
+        {/* Actions - Management view (Approve/Reject) */}
+        {view === 'management' && leaveRequest.status === 'pending' && (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleApprove}
+                disabled={!!processingId}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {processingId === leaveRequest.id && <LoadingSpinner size="sm" />}
+                <CheckCircle className="w-4 h-4" />
+                {processingId === leaveRequest.id ? 'Approving...' : 'Approve'}
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={!!processingId}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <XCircle className="w-4 h-4" />
+                Reject
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Reject Modal */}
+      {showRejectModal && (
+        <Modal
+          isOpen={showRejectModal}
+          onClose={() => {
+            setShowRejectModal(false);
+            setRejectedReason('');
+          }}
+          title="Reject Leave Request"
+        >
+          <div className="space-y-4">
+            {/* Request Info */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <p className="text-sm text-yellow-800">
+                <strong>Employee:</strong> {leaveRequest?.user?.username || 'Unknown'}
+              </p>
+              <p className="text-sm text-yellow-800">
+                <strong>Period:</strong> {formatDate(leaveRequest?.startDate)} - {formatDate(leaveRequest?.endDate)}
+              </p>
+            </div>
+
+            {/* Rejection Reason Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason for Rejection *
+              </label>
+              <textarea
+                value={rejectedReason}
+                onChange={(e) => setRejectedReason(e.target.value)}
+                placeholder="Please provide a detailed reason for rejecting this leave request (minimum 10 characters)..."
+                rows={4}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {rejectedReason.length} / 10 characters minimum
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectedReason('');
+                }}
+                disabled={submitting}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectSubmit}
+                disabled={submitting || rejectedReason.trim().length < 10}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {submitting && <LoadingSpinner size="sm" />}
+                {submitting ? 'Rejecting...' : 'Reject Request'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 };
 

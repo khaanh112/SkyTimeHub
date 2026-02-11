@@ -5,6 +5,7 @@ export { default as Dashboard } from './Dashboard';
 export { default as UsersPage } from './UsersPage';
 export { default as ProfilePage } from './ProfilePage';
 export { default as LeaveRequestsPage } from './LeaveRequestsPage';
+export { default as LeaveRequestManagementPage } from './LeaveRequestManagementPage';
 export { default as LeaveRequestDetailPage } from './LeaveRequestDetailPage';
 export { default as CreateLeaveRequestPage } from './CreateLeaveRequestPage';
 export { default as EditLeaveRequestPage } from './EditLeaveRequestPage';

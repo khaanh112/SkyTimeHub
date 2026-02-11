@@ -11,7 +11,7 @@ import { LeaveRequestsService } from './leave-requests.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ApproveLeaveRequestDto } from './dto/approve-leave-request.dto';
 import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
-import { UpdateLeaveRequestStatusDto } from './dto/update-leave-request-status.dto';
+import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
 
 @ApiTags('Leave Requests')
 @ApiBearerAuth()
@@ -133,7 +133,7 @@ export class LeaveRequestsController {
       'Update a pending leave request. Only the requester can update their own pending requests. Requires version number for optimistic locking to prevent concurrent updates.',
   })
   @ApiParam({ name: 'id', description: 'Leave request ID', type: 'number' })
-  @ApiBody({ type: UpdateLeaveRequestStatusDto })
+  @ApiBody({ type: UpdateLeaveRequestDto })
   @ApiResponse({ status: 200, description: 'Leave request updated successfully.' })
   @ApiResponse({
     status: 400,
@@ -150,7 +150,7 @@ export class LeaveRequestsController {
   })
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() updateDto: UpdateLeaveRequestStatusDto,
+    @Body() updateDto: UpdateLeaveRequestDto,
     @Request() req,
   ) {
     console.log(

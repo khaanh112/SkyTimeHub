@@ -21,7 +21,6 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
   const menuItems = [
     { path: '/', icon: User, label: 'Account Management' },
     { path: '/leave-requests', icon: Calendar, label: 'Leave Requests Management' },
-    { path: '/approvals', icon: CheckCircle, label: 'Approvals' },
     { path: '/employees', icon: Users, label: 'Employee Management' },
   ];
 
@@ -128,52 +127,6 @@ const Header = ({ setIsOpen }) => {
         >
           <Menu className="w-6 h-6 text-gray-600" />
         </button>
-
-        <div className="flex-1 lg:ml-0">
-          <h1 className="text-lg font-semibold text-gray-800 hidden lg:block">
-            API Testing Dashboard
-          </h1>
-        </div>
-
-        <div className="relative">
-          <button
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100"
-          >
-            <div className="w-8 h-8 bg-linear-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center">
-              <User className="w-4 h-4 text-white" />
-            </div>
-            <span className="hidden md:block text-sm font-medium text-gray-700">
-              {user?.username || 'Guest'}
-            </span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-
-          {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-2 fade-in">
-              <div className="px-4 py-2 border-b border-gray-100">
-                <p className="text-sm font-medium text-gray-900">{user?.username}</p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
-              <Link
-                to="/profile"
-                className="flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setDropdownOpen(false)}
-              >
-                <User className="w-4 h-4" />
-                <span>Hồ sơ của tôi</span>
-              </Link>
-              <Link
-                to="/"
-                className="flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setDropdownOpen(false)}
-              >
-                <Home className="w-4 h-4" />
-                <span>Dashboard</span>
-              </Link>
-            </div>
-          )}
-        </div>
       </div>
     </header>
   );

@@ -17,7 +17,7 @@ import { RecipientType } from '@common/enums/recipient-type.enum';
 import { UserRole } from '@common/enums/roles.enum';
 import { NotificationsService } from '@modules/notifications/notifications.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
-import { UpdateLeaveRequestStatusDto } from './dto/update-leave-request-status.dto';
+import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
 import { validateLeaveDates, checkLeaveOverlapSimple } from './utils/leave-calculation.utils';
 import { AppException, ErrorCode } from '@/common';
 import { workerData } from 'worker_threads';
@@ -190,7 +190,7 @@ export class LeaveRequestsService {
 async updateLeaveRequest(
   requestId: number,
   userId: number,
-  dto: UpdateLeaveRequestStatusDto,
+  dto: UpdateLeaveRequestDto,
 ): Promise<LeaveRequest> {
   requestId = Number(requestId);
 
@@ -343,7 +343,7 @@ async updateLeaveRequest(
 
   await this.notificationsService.enqueueLeaveRequestUpdatedNotification(
     updatedRequest.id,
-    updatedRequest.userId,
+    updatedRequest.approverId,
     {
       requesterName: updatedRequest.user.username,
       startDate: updatedRequest.startDate,
@@ -508,6 +508,7 @@ async updateLeaveRequest(
         endDate: leaveRequest.endDate,
         rejectedAt: leaveRequest.rejectedAt.toISOString(),
         rejectedReason: leaveRequest.rejectedReason,
+        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
       },
     );
 
@@ -554,6 +555,18 @@ async updateLeaveRequest(
     } finally {
       await queryRunner.release();
     }
+
+    await this.notificationsService.enqueueLeaveRequestCancelledNotification(
+      leaveRequest.id,
+      leaveRequest.userId,
+      {
+        requesterName: leaveRequest.user.username,
+        startDate: leaveRequest.startDate,
+        endDate: leaveRequest.endDate,
+        cancelledAt: leaveRequest.cancelledAt.toISOString(),
+        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
+      },
+    );
 
     this.logger.log(`Leave request ${requestId} cancelled by user ${userId}`);
     return leaveRequest;

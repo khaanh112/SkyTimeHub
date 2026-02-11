@@ -9,11 +9,10 @@ import {
   UsersPage,
   ProfilePage,
   ActivateAccountPage,
-  LeaveRequestsPage,
+  LeaveRequestManagementPage,
   LeaveRequestDetailPage,
   CreateLeaveRequestPage,
   EditLeaveRequestPage,
-  ApprovalsPage,
 } from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
 
@@ -96,10 +95,18 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/employees"
+        element={
+          <ProtectedRoute>
+            <UsersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/leave-requests"
         element={
           <ProtectedRoute>
-            <LeaveRequestsPage />
+            <LeaveRequestManagementPage />
           </ProtectedRoute>
         }
       />
@@ -124,14 +131,6 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LeaveRequestDetailPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/approvals"
-        element={
-          <ProtectedRoute>
-            <ApprovalsPage />
           </ProtectedRoute>
         }
       />

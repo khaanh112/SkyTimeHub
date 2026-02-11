@@ -1,7 +1,7 @@
-import { IsDateString, IsInt, IsArray, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsInt, IsArray, IsOptional, IsString, Length } from 'class-validator';
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 
-export class UpdateLeaveRequestStatusDto {
+export class UpdateLeaveRequestDto {
   @ApiProperty({
     description: 'Start date of leave (YYYY-MM-DD)',
     example: '2026-02-10',
@@ -21,6 +21,7 @@ export class UpdateLeaveRequestStatusDto {
     example: 'Family vacation',
   })
   @IsString()
+  @Length(5, 500)
   reason: string;
 
   
@@ -30,6 +31,7 @@ export class UpdateLeaveRequestStatusDto {
   })
   @IsOptional()
   @IsString()
+  @Length(0, 1000)
   workSolution?: string;
 
 
