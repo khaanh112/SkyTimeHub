@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './context';
-import { LoadingSpinner } from './components';
+import { LoadingSpinner, Layout } from './components';
 import {
   LoginPage,
   AuthCallback,
@@ -11,6 +11,9 @@ import {
   ProfilePage,
   ActivateAccountPage,
   LeaveRequestsPage,
+  LeaveRequestDetailPage,
+  CreateLeaveRequestPage,
+  EditLeaveRequestPage,
   ApprovalsPage,
 } from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
@@ -31,7 +34,7 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  return children;
+  return <Layout>{children}</Layout>;
 };
 
 // Public Route wrapper (redirect if authenticated)
@@ -106,6 +109,30 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LeaveRequestsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/leave-requests/create"
+        element={
+          <ProtectedRoute>
+            <CreateLeaveRequestPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/leave-requests/:id/edit"
+        element={
+          <ProtectedRoute>
+            <EditLeaveRequestPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/leave-requests/:id"
+        element={
+          <ProtectedRoute>
+            <LeaveRequestDetailPage />
           </ProtectedRoute>
         }
       />

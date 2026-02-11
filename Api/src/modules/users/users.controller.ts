@@ -25,6 +25,9 @@ import { ImportUserRow } from './dto/import-user.dto';
 import { Roles } from '../authorization/decorators/roles.decorator';
 import { CurrentUser } from '../authentication/decorators/current-user.decorator';
 import { ExcelService } from '../import/excel.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { UserApprover } from '@entities/user_approver.entity';
 
 @ApiTags('Users')
 @Controller('users')
@@ -32,6 +35,8 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly excelService: ExcelService,
+    @InjectRepository(UserApprover)
+    private userApproverRepository: Repository<UserApprover>,
   ) {}
 
   @Get()
@@ -48,6 +53,17 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'Current user profile retrieved successfully.' })
   async getCurrentUserProfile(@CurrentUser('id') userId: number): Promise<User> {
     return await this.usersService.getUser(userId);
+  }
+
+  @Get('me/approver')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user approver ID' })
+  @ApiResponse({ status: 200, description: 'Approver ID retrieved successfully.' })
+  async getCurrentUserApproverId(@CurrentUser('id') userId: number): Promise<{ approverId: number | null }> {
+    const userApprover = await this.userApproverRepository.findOne({
+      where: { userId, active: true },
+    });
+    return { approverId: userApprover?.approverId || null };
   }
 
   @Get(':id')

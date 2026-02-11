@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, UserCheck, UserX, Activity, RefreshCw } from 'lucide-react';
-import { Layout, LoadingSpinner } from '../components';
+import { LoadingSpinner } from '../components';
 import { userService } from '../services';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -77,17 +77,16 @@ const Dashboard = () => {
   };
 
   return (
-    <Layout>
-      <div className="space-y-6 fade-in">
-        {/* Welcome Section */}
-        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 text-white">
-          <h1 className="text-2xl font-bold">
-            Xin chào, {user?.username || 'Guest'}! 👋
-          </h1>
-          <p className="text-blue-100 mt-1">
-            Chào mừng bạn đến với SkyTimeHub API Testing Dashboard
-          </p>
-        </div>
+    <div className="space-y-6 fade-in">
+      {/* Welcome Section */}
+      <div className="bg-linear-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 text-white">
+        <h1 className="text-2xl font-bold">
+          Xin chào, {user?.username || 'Guest'}! 👋
+        </h1>
+        <p className="text-blue-100 mt-1">
+          Chào mừng bạn đến với SkyTimeHub API Testing Dashboard
+        </p>
+      </div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -150,7 +149,7 @@ const Dashboard = () => {
                     className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center space-x-4">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-linear-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center">
                         <span className="text-white font-medium">
                           {u.username?.charAt(0).toUpperCase() || 'U'}
                         </span>
@@ -203,7 +202,6 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
-    </Layout>
   );
 };
 

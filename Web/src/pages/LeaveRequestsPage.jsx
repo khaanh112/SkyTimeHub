@@ -1,24 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { leaveRequestService } from '../services';
-import { Modal, LoadingSpinner, UserMultiSelect } from '../components';
+import { LoadingSpinner } from '../components';
 import { toast } from 'react-toastify';
-import { ArrowLeft, Calendar, Clock, Users, FileText, CheckCircle, XCircle, AlertCircle, Edit } from 'lucide-react';
+import { Calendar, Clock, FileText, CheckCircle, XCircle, Edit, Plus } from 'lucide-react';
 
 const LeaveRequestsPage = () => {
   const navigate = useNavigate();
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [editingRequest, setEditingRequest] = useState(null);
-  const [formData, setFormData] = useState({
-    startDate: '',
-    endDate: '',
-    reason: '',
-    ccUserIds: [],
-  });
 
   useEffect(() => {
     fetchLeaveRequests();
@@ -34,35 +24,6 @@ const LeaveRequestsPage = () => {
       toast.error('Failed to load leave requests');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Validation
-    if (!formData.startDate || !formData.endDate) {
-      toast.error('Please select start and end dates');
-      return;
-    }
-
-    if (new Date(formData.endDate) < new Date(formData.startDate)) {
-      toast.error('End date must be after start date');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      await leaveRequestService.createLeaveRequest(formData);
-      toast.success('Leave request submitted successfully! 🎉');
-      setShowModal(false);
-      setFormData({ startDate: '', endDate: '', reason: '', ccUserIds: [] });
-      fetchLeaveRequests();
-    } catch (error) {
-      console.error('Error creating leave request:', error);
-      toast.error(error.response?.data?.message || 'Failed to create leave request');
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -82,66 +43,7 @@ const LeaveRequestsPage = () => {
   };
 
   const handleEdit = (request) => {
-    setEditingRequest(request);
-    setFormData({
-      startDate: request.startDate,
-      endDate: request.endDate,
-      reason: request.reason || '',
-      ccUserIds: request.ccUserIds || [],
-    });
-    setShowEditModal(true);
-  };
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    
-    // Validation
-    if (!formData.startDate || !formData.endDate) {
-      toast.error('Please select start and end dates');
-      return;
-    }
-
-    if (new Date(formData.endDate) < new Date(formData.startDate)) {
-      toast.error('End date must be after start date');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      const result = await leaveRequestService.updateLeaveRequest(editingRequest.id, {
-        ...formData,
-      
-      });
-      toast.success('Leave request updated successfully! 🎉');
-      setShowEditModal(false);
-      setEditingRequest(null);
-      setFormData({ startDate: '', endDate: '', reason: '', ccUserIds: [] });
-      fetchLeaveRequests();
-    } catch (error) {
-      console.error('Error updating leave request:', error);
-      console.error('Error response data:', error.response?.data);
-      const errorData = error.response?.data;
-      let errorMessage = errorData?.message || 'Failed to update leave request';
-      
-      // Show validation details if available
-      if (errorData?.details && Array.isArray(errorData.details)) {
-        errorMessage = errorData.details.join(', ');
-      }
-      
-      // Special handling for version conflict
-      if (error.response?.status === 409) {
-        toast.error('This request has been modified. Please refresh and try again.', {
-          autoClose: 5000,
-        });
-        setShowEditModal(false);
-        setEditingRequest(null);
-        fetchLeaveRequests(); // Refresh data
-      } else {
-        toast.error(errorMessage);
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    navigate(`/leave-requests/${request.id}/edit`);
   };
 
   const getStatusBadge = (status) => {
@@ -199,120 +101,111 @@ const LeaveRequestsPage = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-linear-to-br from-blue-50 to-indigo-100">
+      <div className="flex justify-center items-center py-12">
         <div className="text-center">
           <LoadingSpinner />
-          <p className="mt-4 text-gray-600">Loading your leave requests...</p>
+          <p className="mt-4 text-sm text-gray-600">Loading your leave requests...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-indigo-50">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header with Back Button */}
-        <div className="mb-8">
+    <div>
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">My Leave Requests</h1>
+            <p className="text-sm text-gray-600">Manage and track your time off requests</p>
+          </div>
           <button
-            onClick={() => navigate('/dashboard')}
-            className="inline-flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-all duration-200 mb-4 group"
+            onClick={() => navigate('/leave-requests/create')}
+            className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
-            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-            <span className="font-medium">Back to Dashboard</span>
+            <Plus className="w-5 h-5" />
+            New Leave Request
           </button>
-          
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">My Leave Requests</h1>
-              <p className="text-gray-600">Manage and track your time off requests</p>
+              <div className="text-gray-600 text-xs font-medium mb-1">Total Requests</div>
+              <div className="text-2xl font-bold text-gray-900">{leaveRequests.length}</div>
             </div>
+            <div className="p-2 bg-blue-50 rounded-lg">
+              <FileText className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-gray-600 text-xs font-medium mb-1">Pending</div>
+              <div className="text-2xl font-bold text-yellow-600">
+                {leaveRequests.filter(r => r.status === 'pending').length}
+              </div>
+            </div>
+            <div className="p-2 bg-yellow-50 rounded-lg">
+              <Clock className="w-5 h-5 text-yellow-600" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-gray-600 text-xs font-medium mb-1">Approved</div>
+              <div className="text-2xl font-bold text-green-600">
+                {leaveRequests.filter(r => r.status === 'approved').length}
+              </div>
+            </div>
+            <div className="p-2 bg-green-50 rounded-lg">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-gray-600 text-xs font-medium mb-1">Rejected</div>
+              <div className="text-2xl font-bold text-red-600">
+                {leaveRequests.filter(r => r.status === 'rejected').length}
+              </div>
+            </div>
+            <div className="p-2 bg-red-50 rounded-lg">
+              <XCircle className="w-5 h-5 text-red-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Leave Requests Table */}
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+        {leaveRequests.length === 0 ? (
+          <div className="text-center py-12 px-4">
+            <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-50 rounded-full mb-4">
+              <Calendar className="w-6 h-6 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No leave requests yet</h3>
+            <p className="text-sm text-gray-600 mb-4 max-w-sm mx-auto">
+              Get started by creating your first leave request. It's quick and easy!
+            </p>
             <button
-              onClick={() => setShowModal(true)}
-              className="inline-flex items-center justify-center gap-2 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5"
+              onClick={() => navigate('/leave-requests/create')}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             >
-              <Calendar className="w-5 h-5" />
-              New Leave Request
+              <Plus className="w-5 h-5" />
+              Create Leave Request
             </button>
           </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-gray-500 text-sm font-medium mb-1">Total Requests</div>
-                <div className="text-3xl font-bold text-gray-900">{leaveRequests.length}</div>
-              </div>
-              <div className="p-3 bg-blue-100 rounded-xl">
-                <FileText className="w-6 h-6 text-blue-600" />
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-gray-500 text-sm font-medium mb-1">Pending</div>
-                <div className="text-3xl font-bold text-yellow-600">
-                  {leaveRequests.filter(r => r.status === 'pending').length}
-                </div>
-              </div>
-              <div className="p-3 bg-yellow-100 rounded-xl">
-                <Clock className="w-6 h-6 text-yellow-600" />
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-gray-500 text-sm font-medium mb-1">Approved</div>
-                <div className="text-3xl font-bold text-green-600">
-                  {leaveRequests.filter(r => r.status === 'approved').length}
-                </div>
-              </div>
-              <div className="p-3 bg-green-100 rounded-xl">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-gray-500 text-sm font-medium mb-1">Rejected</div>
-                <div className="text-3xl font-bold text-red-600">
-                  {leaveRequests.filter(r => r.status === 'rejected').length}
-                </div>
-              </div>
-              <div className="p-3 bg-red-100 rounded-xl">
-                <XCircle className="w-6 h-6 text-red-600" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Leave Requests Table */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
-          {leaveRequests.length === 0 ? (
-            <div className="text-center py-16 px-4">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-                <Calendar className="w-8 h-8 text-gray-400" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No leave requests yet</h3>
-              <p className="text-gray-500 mb-6 max-w-sm mx-auto">
-                Get started by creating your first leave request. It's quick and easy!
-              </p>
-              <button
-                onClick={() => setShowModal(true)}
-                className="inline-flex items-center gap-2 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
-              >
-                <Calendar className="w-5 h-5" />
-                Create Leave Request
-              </button>
-            </div>
-          ) : (
+        ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -339,7 +232,11 @@ const LeaveRequestsPage = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {leaveRequests.map((request) => (
-                    <tr key={request.id} className="hover:bg-gray-50 transition-colors">
+                    <tr 
+                      key={request.id} 
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => navigate(`/leave-requests/${request.id}`)}
+                    >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <Calendar className="w-4 h-4 text-gray-400" />
@@ -391,7 +288,7 @@ const LeaveRequestsPage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {request.status === 'pending' && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                             <button
                               onClick={() => handleEdit(request)}
                               className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-900 font-medium transition-colors"
@@ -421,276 +318,6 @@ const LeaveRequestsPage = () => {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Create Leave Request Modal */}
-      <Modal
-        isOpen={showModal}
-        onClose={() => {
-          setShowModal(false);
-          setFormData({ startDate: '', endDate: '', reason: '', ccUserIds: [] });
-        }}
-        title="📝 New Leave Request"
-        size="lg"
-      >
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Date <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                <input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                  min={new Date().toISOString().split('T')[0]}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Date <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                <input
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                  min={formData.startDate || new Date().toISOString().split('T')[0]}
-                />
-              </div>
-            </div>
-          </div>
-
-          {formData.startDate && formData.endDate && (
-            <div className="bg-linear-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Clock className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-blue-900">
-                    Duration: {calculateDays(formData.startDate, formData.endDate)} days
-                  </p>
-                  <p className="text-xs text-blue-700">
-                    {new Date(formData.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(formData.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Reason
-              <span className="ml-1 text-xs text-gray-500 font-normal">(Optional)</span>
-            </label>
-            <div className="relative">
-              <FileText className="absolute left-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
-              <textarea
-                value={formData.reason}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                rows="3"
-                className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                placeholder="e.g., Family vacation, Medical appointment, Personal matters..."
-              />
-            </div>
-          </div>
-
-          <div>
-            <UserMultiSelect
-              selectedUserIds={formData.ccUserIds}
-              onChange={(userIds) => setFormData({ ...formData, ccUserIds: userIds })}
-              excludeCurrentUser={true}
-            />
-            <p className="mt-1.5 text-xs text-gray-500 flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" />
-              Selected users will receive email notifications about this leave request
-            </p>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={() => {
-                setShowModal(false);
-                setFormData({ startDate: '', endDate: '', reason: '', ccUserIds: [] });
-              }}
-              disabled={submitting}
-              className="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-6 py-2.5 bg-linear-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            >
-              {submitting ? (
-                <>
-                  <div className="spinner w-4 h-4 border-2 border-white border-t-transparent" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-5 h-5" />
-                  Submit Request
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Edit Leave Request Modal */}
-      <Modal
-        isOpen={showEditModal}
-        onClose={() => {
-          setShowEditModal(false);
-          setEditingRequest(null);
-          setFormData({ startDate: '', endDate: '', reason: '', ccUserIds: [] });
-        }}
-        title="✏️ Edit Leave Request"
-        size="lg"
-      >
-        <form onSubmit={handleUpdate} className="space-y-6">
-          {/* Version info alert */}
-          {editingRequest && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-                <div className="text-sm text-blue-800">
-                  <strong>Note:</strong> Only pending requests can be edited. Changes will reset the approval process.
-                  
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Date <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                <input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                  min={new Date().toISOString().split('T')[0]}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Date <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                <input
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                  min={formData.startDate || new Date().toISOString().split('T')[0]}
-                />
-              </div>
-            </div>
-          </div>
-
-          {formData.startDate && formData.endDate && (
-            <div className="bg-linear-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Clock className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-blue-900">
-                    Duration: {calculateDays(formData.startDate, formData.endDate)} days
-                  </p>
-                  <p className="text-xs text-blue-700">
-                    {new Date(formData.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(formData.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Reason
-              <span className="ml-1 text-xs text-gray-500 font-normal">(Optional)</span>
-            </label>
-            <div className="relative">
-              <FileText className="absolute left-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
-              <textarea
-                value={formData.reason}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                rows="3"
-                className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                placeholder="e.g., Family vacation, Medical appointment, Personal matters..."
-              />
-            </div>
-          </div>
-
-          <div>
-            <UserMultiSelect
-              selectedUserIds={formData.ccUserIds}
-              onChange={(userIds) => setFormData({ ...formData, ccUserIds: userIds })}
-              excludeCurrentUser={true}
-            />
-            <p className="mt-1.5 text-xs text-gray-500 flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" />
-              Selected users will receive email notifications about this leave request
-            </p>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={() => {
-                setShowEditModal(false);
-                setEditingRequest(null);
-                setFormData({ startDate: '', endDate: '', reason: '', ccUserIds: [] });
-              }}
-              disabled={submitting}
-              className="px-6 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-6 py-2.5 bg-linear-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            >
-              {submitting ? (
-                <>
-                  <div className="spinner w-4 h-4 border-2 border-white border-t-transparent" />
-                  Updating...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-5 h-5" />
-                  Update Request
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 };

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { toast } from 'react-toastify';
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, XCircle, Download } from 'lucide-react';
 import userService from '../services/userService';
-import Layout from '../components/Layout';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const ImportUsersPage = () => {
@@ -238,16 +237,15 @@ const ImportUsersPage = () => {
   };
 
   return (
-    <Layout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Import Users</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Upload Excel file to import multiple users at once
-            </p>
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Import Users</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Upload Excel file to import multiple users at once
+          </p>
+        </div>
           <button
             onClick={downloadTemplate}
             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
@@ -380,7 +378,7 @@ const ImportUsersPage = () => {
                       <td className="px-4 py-3">
                         {row.errors.length > 0 ? (
                           <div className="flex items-start space-x-1">
-                            <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                            <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
                             <ul className="text-xs text-red-600 space-y-1">
                               {row.errors.map((error, idx) => (
                                 <li key={idx}>{error}</li>
@@ -405,7 +403,6 @@ const ImportUsersPage = () => {
           </div>
         )}
       </div>
-    </Layout>
   );
 };
 

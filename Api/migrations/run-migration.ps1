@@ -25,7 +25,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "SkyTimeHub Database Migration" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Migration file: $MigrationFile" -ForegroundColor Yellow
-Write-Host "Database: $DB_NAME@$DB_HOST:$DB_PORT" -ForegroundColor Yellow
+Write-Host "Database: ${DB_NAME}@${DB_HOST}:${DB_PORT}" -ForegroundColor Yellow
 Write-Host ""
 
 # Set PGPASSWORD environment variable

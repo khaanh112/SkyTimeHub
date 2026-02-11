@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '@modules/authentication/guards/jwt-auth.guard';
 import { RolesGuard } from '@modules/authorization/guards/roles.guard';
 import { TransformInterceptor } from '@/common/interceptors/transform.interceptor';
 import { SettingsModule } from './modules/settings/settings.module';
+import { DepartmentModule } from './department/department.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     NotificationsModule,
     LeaveRequestsModule,
     SettingsModule,
+    DepartmentModule,
   ],
   controllers: [AppController],
   providers: [

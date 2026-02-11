@@ -7,10 +7,12 @@ const UserMultiSelect = ({ selectedUserIds = [], onChange, excludeCurrentUser = 
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [approverId, setApproverId] = useState(null);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
     fetchUsers();
+    fetchApprover();
   }, []);
 
   useEffect(() => {
@@ -23,6 +25,15 @@ const UserMultiSelect = ({ selectedUserIds = [], onChange, excludeCurrentUser = 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const fetchApprover = async () => {
+    try {
+      const data = await userService.getCurrentApprover();
+      setApproverId(data.approverId);
+    } catch (error) {
+      console.error('Error fetching approver:', error);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -39,6 +50,10 @@ const UserMultiSelect = ({ selectedUserIds = [], onChange, excludeCurrentUser = 
         }
       }
       
+      // Always exclude HR users from CC selection
+      // (HR automatically receives notifications for all leave requests)
+      userList = userList.filter(u => u.role !== 'HR');
+      
       setUsers(userList);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -48,11 +63,18 @@ const UserMultiSelect = ({ selectedUserIds = [], onChange, excludeCurrentUser = 
     }
   };
 
-  const filteredUsers = users.filter(user =>
-    user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.fullName?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredUsers = users.filter(user => {
+    // Exclude approver from selection (approver auto-receives notification)
+    if (approverId && user.id === approverId) {
+      return false;
+    }
+    // Apply search filter
+    return (
+      user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.fullName?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
 
   const selectedUsers = users.filter(user => selectedUserIds.includes(user.id));
 
@@ -72,9 +94,9 @@ const UserMultiSelect = ({ selectedUserIds = [], onChange, excludeCurrentUser = 
   return (
     <div className="relative" ref={dropdownRef}>
       <label className="block text-sm font-medium text-gray-700 mb-2">
-        CC (Carbon Copy)
+        Additional Recipients (Optional)
         <span className="ml-1 text-xs text-gray-500 font-normal">
-          - Optional: Notify other users
+          - Your approver and HR will be notified automatically
         </span>
       </label>
       

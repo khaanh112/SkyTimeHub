@@ -224,7 +224,6 @@ export class NotificationsService implements OnModuleDestroy {
       approverName: string;
       startDate: string;
       endDate: string;
-      reason?: string;
       leaveRequestId: number;
     },
   ): Promise<void> {
@@ -326,7 +325,7 @@ export class NotificationsService implements OnModuleDestroy {
       startDate: string;
       endDate: string;
       rejectedAt: string;
-      rejectedReason?: string;
+      rejectedReason: string;
     },
   ): Promise<void> {
     const idempotencyKey = `leave-rejected-${leaveRequestId}-${recipientUserId}`;

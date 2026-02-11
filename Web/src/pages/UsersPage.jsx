@@ -17,7 +17,7 @@ import {
   UserCog,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Layout, LoadingSpinner, Modal } from '../components';
+import { LoadingSpinner, Modal } from '../components';
 import { userService, approverService } from '../services';
 import { useAuth } from '../context';
 
@@ -351,16 +351,15 @@ const UsersPage = () => {
   };
 
   return (
-    <Layout>
-      <div className="space-y-6 fade-in">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Quản lý Users</h1>
-            <p className="text-gray-500 mt-1">
-              Quản lý tất cả users trong hệ thống
-            </p>
-          </div>
+    <div className="space-y-6 fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý Users</h1>
+          <p className="text-gray-500 mt-1">
+            Quản lý tất cả users trong hệ thống
+          </p>
+        </div>
           <div className="flex items-center space-x-3">
             <button
               onClick={() => navigate('/users/import')}
@@ -487,7 +486,7 @@ const UsersPage = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                          <div className="w-10 h-10 bg-linear-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center shrink-0">
                             <span className="text-white font-medium">
                               {user.username?.charAt(0).toUpperCase() || 'U'}
                             </span>
@@ -1087,7 +1086,6 @@ const UsersPage = () => {
           </div>
         </Modal>
       </div>
-    </Layout>
   );
 };
 

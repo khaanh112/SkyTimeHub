@@ -56,9 +56,13 @@ export class LeaveRequest {
   @Column({ type: 'date', name: 'end_date' })
   endDate: string;
 
-  @ApiPropertyOptional({ example: 'Family vacation', description: 'Reason for leave' })
-  @Column({ type: 'text', nullable: true })
-  reason?: string;
+  @ApiProperty({ example: 'Family vacation', description: 'Reason for leave' })
+  @Column({ type: 'text', nullable: false })
+  reason: string;
+
+  @ApiProperty({ example: 'Handover to John, OT compensation', description: 'Work solution/handover plan for leave'})
+  @Column({ name: 'work_solution', type: 'text', nullable: true })
+  workSolution?: string;
 
   @ApiProperty({
     enum: LeaveRequestStatus,

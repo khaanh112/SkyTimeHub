@@ -19,6 +19,12 @@ export const userService = {
     return response.data.data || response.data;
   },
 
+  // Get current user approver ID
+  getCurrentApprover: async () => {
+    const response = await api.get('/users/me/approver');
+    return response.data.data || response.data;
+  },
+
   // Create new user
   create: async (userData) => {
     const response = await api.post('/users', userData);

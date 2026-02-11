@@ -114,9 +114,15 @@ export class LeaveRequestsController {
       ?.filter(r => r.type === 'CC')
       .map(r => r.userId) || [];
     
+    // Also include ccRecipients with full user info for detail view
+    const ccRecipients = leaveRequest.notificationRecipients
+      ?.filter(r => r.type === 'CC')
+      .map(r => r.user) || [];
+    
     return {
       ...leaveRequest,
       ccUserIds,
+      ccRecipients,
     };
   }
 

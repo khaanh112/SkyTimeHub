@@ -52,7 +52,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
           <Link to="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-linear-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
               <Shield className="w-5 h-5 text-white" />
             </div>
             <span className="text-xl font-bold text-gray-800">SkyTimeHub</span>
@@ -91,7 +91,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
         {/* User section */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
           <div className="flex items-center space-x-3 p-3 rounded-xl bg-gray-50">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-linear-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center">
               <User className="w-5 h-5 text-white" />
             </div>
             <div className="flex-1 min-w-0">
@@ -141,7 +141,7 @@ const Header = ({ setIsOpen }) => {
             onClick={() => setDropdownOpen(!dropdownOpen)}
             className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100"
           >
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center">
+            <div className="w-8 h-8 bg-linear-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center">
               <User className="w-4 h-4 text-white" />
             </div>
             <span className="hidden md:block text-sm font-medium text-gray-700">

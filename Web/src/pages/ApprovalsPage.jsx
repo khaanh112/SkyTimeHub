@@ -145,28 +145,28 @@ const ApprovalsPage = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
+      <div className="flex justify-center items-center py-12">
         <LoadingSpinner />
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Pending Approvals</h1>
-        <p className="text-gray-600 mt-2">Leave requests waiting for your approval</p>
+        <h1 className="text-2xl font-bold text-gray-900">Pending Approvals</h1>
+        <p className="text-sm text-gray-600 mt-1">Leave requests waiting for your approval</p>
       </div>
 
       {/* Stats Card */}
-      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 mb-6 text-white">
+      <div className="bg-blue-600 rounded-lg shadow-sm p-6 mb-6 text-white">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm opacity-90">Total Pending Approvals</div>
-            <div className="text-4xl font-bold mt-2">{pendingApprovals.length}</div>
+            <div className="text-3xl font-bold mt-2">{pendingApprovals.length}</div>
           </div>
-          <div className="bg-white bg-opacity-20 rounded-full p-4">
-            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white bg-opacity-20 rounded-full p-3">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
@@ -174,7 +174,7 @@ const ApprovalsPage = () => {
       </div>
 
       {/* Approvals List */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         {pendingApprovals.length === 0 ? (
           <div className="text-center py-12">
             <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -200,7 +200,7 @@ const ApprovalsPage = () => {
                 <tr key={request.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
-                      <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <div className="shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
                         <span className="text-blue-600 font-semibold text-sm">
                           {request.user?.username?.charAt(0).toUpperCase() || 'U'}
                         </span>
@@ -286,7 +286,7 @@ const ApprovalsPage = () => {
             <div className="bg-gray-50 rounded-lg p-4">
               <h3 className="text-sm font-medium text-gray-700 mb-2">Employee</h3>
               <div className="flex items-center">
-                <div className="flex-shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <div className="shrink-0 h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
                   <span className="text-blue-600 font-semibold">
                     {selectedRequest.user?.username?.charAt(0).toUpperCase() || 'U'}
                   </span>

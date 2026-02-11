@@ -16,13 +16,21 @@ export class CreateLeaveRequestDto {
   @IsDateString()
   endDate: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     description: 'Reason for leave request',
     example: 'Family vacation',
   })
+  @IsString()
+  reason: string;
+
+
+  @ApiPropertyOptional({
+    description: 'Work solution/handover plan for leave',
+    example: 'Handover to John, OT compensation',
+  })
   @IsOptional()
   @IsString()
-  reason?: string;
+  workSolution?: string;  
 
   @ApiPropertyOptional({
     description: 'Array of user IDs to CC on notifications',

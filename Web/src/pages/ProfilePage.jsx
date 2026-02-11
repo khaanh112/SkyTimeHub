@@ -71,10 +71,10 @@ const ProfilePage = () => {
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       {/* Header Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="h-32 bg-gradient-to-r from-blue-500 to-blue-600"></div>
+        <div className="h-32 bg-linear-to-r from-blue-500 to-blue-600"></div>
         <div className="px-8 pb-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-end -mt-16 mb-6">
-            <div className="w-32 h-32 bg-gradient-to-br from-blue-400 to-blue-500 rounded-2xl flex items-center justify-center shadow-lg border-4 border-white">
+            <div className="w-32 h-32 bg-linear-to-br from-blue-400 to-blue-500 rounded-2xl flex items-center justify-center shadow-lg border-4 border-white">
               <span className="text-4xl text-white font-bold">
                 {user.username?.charAt(0).toUpperCase() || 'U'}
               </span>
@@ -108,7 +108,7 @@ const ProfilePage = () => {
           {/* Employee ID */}
           {user.employeeId && (
             <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
                 <Briefcase className="w-5 h-5 text-blue-500" />
               </div>
               <div>
@@ -120,7 +120,7 @@ const ProfilePage = () => {
 
           {/* Email */}
           <div className="flex items-start space-x-3">
-            <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center shrink-0">
               <Mail className="w-5 h-5 text-purple-500" />
             </div>
             <div>
@@ -132,7 +132,7 @@ const ProfilePage = () => {
           {/* Department */}
           {user.department && (
             <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
                 <Building2 className="w-5 h-5 text-green-500" />
               </div>
               <div>
@@ -145,7 +145,7 @@ const ProfilePage = () => {
           {/* Position */}
           {user.position && (
             <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center shrink-0">
                 <Briefcase className="w-5 h-5 text-orange-500" />
               </div>
               <div>
@@ -158,7 +158,7 @@ const ProfilePage = () => {
           {/* Phone */}
           {user.phone && (
             <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-pink-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-pink-50 rounded-lg flex items-center justify-center shrink-0">
                 <Phone className="w-5 h-5 text-pink-500" />
               </div>
               <div>
@@ -171,7 +171,7 @@ const ProfilePage = () => {
           {/* Join Date */}
           {user.joinDate && (
             <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
                 <Calendar className="w-5 h-5 text-indigo-500" />
               </div>
               <div>
@@ -186,7 +186,7 @@ const ProfilePage = () => {
           {/* Activated At */}
           {user.activatedAt && (
             <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
                 <CheckCircle className="w-5 h-5 text-green-500" />
               </div>
               <div>
@@ -201,7 +201,7 @@ const ProfilePage = () => {
           {/* Created At */}
           {user.createdAt && (
             <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center shrink-0">
                 <Calendar className="w-5 h-5 text-gray-500" />
               </div>
               <div>
