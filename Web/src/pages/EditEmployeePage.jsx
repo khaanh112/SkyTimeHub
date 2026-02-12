@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { LoadingSpinner } from '../components';
 import { userService, departmentService, approverService } from '../services';
 
-const ROLES = ['employee', 'hr', 'admin', 'department_leader', 'bod'];
+const ROLES = ['employee', 'hr', 'admin'];
 const GENDERS = ['male', 'female'];
 
 const EditEmployeePage = () => {
@@ -20,7 +20,6 @@ const EditEmployeePage = () => {
   const [canBeLeader, setCanBeLeader] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const [originalDepartmentId, setOriginalDepartmentId] = useState(null);
-  const [originalRole, setOriginalRole] = useState('employee');
 
   const [formData, setFormData] = useState({
     employeeId: '',
@@ -49,7 +48,7 @@ const EditEmployeePage = () => {
         // Step 2: Fetch approvers
         const users = await userService.getAll();
         const approverList = users.filter(
-          (u) => u.role === 'department_leader' || u.role === 'hr' || u.role === 'admin'
+          (u) => u.role === 'hr' || u.role === 'admin' 
         );
         setApprovers(approverList);
         
@@ -74,9 +73,8 @@ const EditEmployeePage = () => {
           approverId: '',
         });
 
-        setIsDepartmentLeader(user.role === 'department_leader');
+        setIsDepartmentLeader(user.position === 'Department leader');
         setOriginalDepartmentId(user.departmentId);
-        setOriginalRole(user.role === 'department_leader' ? 'employee' : user.role);
         
         // Step 4: Check department leader availability (use deptList from Step 1)
         if (user.departmentId && deptList.length > 0) {
@@ -129,8 +127,7 @@ const EditEmployeePage = () => {
           setFormData((prev) => ({ 
             ...prev, 
             departmentId: value,
-            role: prev.role === 'department_leader' ? originalRole : prev.role,
-            position: ''
+            position: prev.position === 'Department leader' ? '' : prev.position
           }));
         }
       } else {
@@ -143,13 +140,11 @@ const EditEmployeePage = () => {
       if (checked) {
         setFormData((prev) => ({ 
           ...prev, 
-          role: 'department_leader',
           position: 'Department leader'
         }));
       } else {
         setFormData((prev) => ({ 
           ...prev,
-          role: originalRole,
           position: ''
         }));
       }
@@ -176,10 +171,8 @@ const EditEmployeePage = () => {
         dataToSend.departmentId = null;
       }
 
-      // Position: only send if not empty (don't send null, DTO validation requires string)
-      if (formData.position && formData.position.trim() !== '') {
-        dataToSend.position = formData.position;
-      }
+      // Position: always send position (empty string to clear department leader)
+      dataToSend.position = formData.position || '';
 
       if (formData.joinDate) {
         dataToSend.joinDate = formData.joinDate;
@@ -307,7 +300,6 @@ const EditEmployeePage = () => {
                   value={formData.role}
                   onChange={handleInputChange}
                   required
-                  disabled={isDepartmentLeader}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {ROLES.map((role) => (

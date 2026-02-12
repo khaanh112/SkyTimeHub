@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { LoadingSpinner } from '../components';
 import { userService, departmentService, approverService } from '../services';
 
-const ROLES = ['employee', 'hr', 'admin', 'department_leader', 'bod'];
+const ROLES = ['employee', 'hr', 'admin'];
 const GENDERS = ['male', 'female'];
 
 const AddEmployeePage = () => {
@@ -53,7 +53,7 @@ const AddEmployeePage = () => {
     try {
       const users = await userService.getAll();
       const approverList = users.filter(
-        (u) => u.role === 'department_leader' || u.role === 'hr' || u.role === 'admin'
+        (u) => u.role === 'hr' || u.role === 'admin'
       );
       setApprovers(approverList);
     } catch (error) {
@@ -80,7 +80,6 @@ const AddEmployeePage = () => {
           setFormData((prev) => ({ 
             ...prev, 
             departmentId: value,
-            role: 'employee',
             position: ''
           }));
         }
@@ -94,7 +93,6 @@ const AddEmployeePage = () => {
       if (checked) {
         setFormData((prev) => ({ 
           ...prev, 
-          role: 'department_leader',
           position: 'Department leader'
         }));
       } else {
