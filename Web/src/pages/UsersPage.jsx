@@ -23,6 +23,7 @@ import { useAuth } from '../context';
 
 const ROLES = ['admin', 'hr', 'employee'];
 const STATUSES = ['pending', 'active', 'inactive'];
+const GENDERS = ['male', 'female'];
 
 const UsersPage = () => {
   const navigate = useNavigate();
@@ -49,6 +50,7 @@ const UsersPage = () => {
     employeeId: '',
     username: '',
     email: '',
+    gender: 'male',
     role: 'employee',
     status: 'pending',
     position: '',
@@ -91,6 +93,7 @@ const UsersPage = () => {
       employeeId: '',
       username: '',
       email: '',
+      gender: 'male',
       role: 'employee',
       status: 'pending',
       position: '',
@@ -107,6 +110,7 @@ const UsersPage = () => {
         employeeId: formData.employeeId,
         username: formData.username,
         email: formData.email,
+        gender: formData.gender,
         role: formData.role,
       };
       
@@ -139,6 +143,7 @@ const UsersPage = () => {
       // Prepare data - only send fields that can be updated
       const dataToSend = {
         username: formData.username,
+        gender: formData.gender,
         role: formData.role,
       };
       
@@ -186,6 +191,7 @@ const UsersPage = () => {
       employeeId: user.employeeId || '',
       username: user.username || '',
       email: user.email || '',
+      gender: user.gender || 'male',
       role: user.role || 'employee',
       status: user.status || 'pending',
       position: user.position || '',
@@ -658,6 +664,24 @@ const UsersPage = () => {
                 placeholder="Nhập email"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Gender *
+              </label>
+              <select
+                name="gender"
+                value={formData.gender}
+                onChange={handleInputChange}
+                required
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {GENDERS.map((gender) => (
+                  <option key={gender} value={gender}>
+                    {gender.charAt(0).toUpperCase() + gender.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -784,6 +808,24 @@ const UsersPage = () => {
                 disabled
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Gender *
+              </label>
+              <select
+                name="gender"
+                value={formData.gender}
+                onChange={handleInputChange}
+                required
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {GENDERS.map((gender) => (
+                  <option key={gender} value={gender}>
+                    {gender.charAt(0).toUpperCase() + gender.slice(1)}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

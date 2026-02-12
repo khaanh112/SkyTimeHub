@@ -10,6 +10,7 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
+import { UserGender } from '@common/enums/user-genders';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'EMP001', description: 'Employee ID', maxLength: 20, required: true })
@@ -27,6 +28,11 @@ export class CreateUserDto {
   @IsNotEmpty({ message: 'Username is required' })
   @IsString()
   username: string;
+
+  @ApiProperty({ enum: UserGender, example: UserGender.MALE, description: 'Gender', required: true })
+  @IsNotEmpty({ message: 'Gender is required' })
+  @IsEnum(UserGender)
+  gender: UserGender;
 
   @ApiPropertyOptional({ enum: UserRole, example: UserRole.EMPLOYEE, description: 'User role' })
   @IsOptional()

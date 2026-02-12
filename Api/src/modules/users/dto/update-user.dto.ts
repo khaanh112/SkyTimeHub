@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsString, IsOptional, IsDateString, Length } from 'class-validator';
 import { UserRole } from '@common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
+import { UserGender } from '@common/enums/user-genders';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({ example: 'EMP001', description: 'Employee ID', maxLength: 20 })
@@ -14,6 +15,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   username?: string;
+
+  @ApiPropertyOptional({ enum: UserGender, example: UserGender.MALE, description: 'Gender' })
+  @IsOptional()
+  @IsEnum(UserGender)
+  gender?: UserGender;
 
   @ApiPropertyOptional({ enum: UserRole, example: UserRole.EMPLOYEE, description: 'User role' })
   @IsOptional()

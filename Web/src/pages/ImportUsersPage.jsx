@@ -296,6 +296,7 @@ const ImportUsersPage = () => {
                 <li>• <strong>employeeId</strong> (bắt buộc): Mã nhân viên duy nhất (VD: EMP240001)</li>
                 <li>• <strong>email</strong> (bắt buộc): Địa chỉ email hợp lệ</li>
                 <li>• <strong>username</strong> (bắt buộc): Họ và tên đầy đủ</li>
+                <li>• <strong>gender</strong> (bắt buộc): male hoặc female</li>
                 <li>• <strong>role</strong> (tùy chọn): admin, hr, employee, department_leader, bod</li>
                 <li>• <strong>departmentId</strong> (tùy chọn): Số ID phòng ban</li>
                 <li>• <strong>position</strong> (tùy chọn): Chức vụ công việc</li>
@@ -354,6 +355,7 @@ const ImportUsersPage = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee ID</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gender</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Errors</th>
@@ -373,6 +375,13 @@ const ImportUsersPage = () => {
                       <td className="px-4 py-3 text-sm text-gray-900">{row.employeeId || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.email}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.username}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          row.gender === 'male' ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800'
+                        }`}>
+                          {row.gender ? row.gender.charAt(0).toUpperCase() + row.gender.slice(1) : '-'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.role || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.position || '-'}</td>
                       <td className="px-4 py-3">

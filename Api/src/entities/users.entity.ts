@@ -14,6 +14,7 @@ import { UserRole } from '../common/enums/roles.enum';
 import { UserStatus } from 'src/common/enums/user-status.enum';
 import { Department } from './departments.entity';
 import { LeaveRequest } from './leave_request.entity';
+import { UserGender } from '@/common/enums/user-genders';
 
 @Entity('users')
 export class User {
@@ -32,6 +33,10 @@ export class User {
   @ApiProperty({ example: 'user@example.com', description: 'Email address' })
   @Column({ unique: true })
   email: string;
+
+  @ApiProperty({ example: 'male', description: 'Gender' })
+  @Column({ type: 'enum', enum: UserGender, nullable: false })
+  gender: UserGender;
 
   @ApiProperty({ enum: UserRole, example: UserRole.EMPLOYEE, description: 'User role' })
   @Column({ type: 'enum', enum: UserRole, default: UserRole.EMPLOYEE })

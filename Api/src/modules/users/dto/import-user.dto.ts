@@ -10,6 +10,8 @@ export interface ImportUserRow {
   email: string;
   /** Username */
   username: string;
+  /** Gender */
+  gender: string;
   /** User role */
   role?: string;
   /** Department ID */

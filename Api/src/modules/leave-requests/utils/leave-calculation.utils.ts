@@ -9,6 +9,7 @@
 import { Repository } from 'typeorm';
 import { LeaveRequest } from '@entities/leave_request.entity';
 import { LeaveRequestStatus } from '@common/enums/request_status';
+import { LeaveType } from '@/common/enums/leave-type.enum';
 import { BadRequestException } from '@nestjs/common';
 
 export interface LeaveDaysCalculation {
@@ -24,7 +25,7 @@ export interface OverlapCheckResult {
 
 export interface LeaveTypeClassification {
   isPaid: boolean;
-  leaveType: 'annual' | 'sick' | 'unpaid' | 'other';
+  leaveType: LeaveType;
   description: string;
 }
 
@@ -200,7 +201,7 @@ export function classifyLeaveType(
   if (totalDays > 14) {
     return {
       isPaid: false,
-      leaveType: 'unpaid',
+      leaveType: LeaveType.UNPAID_LEAVE,
       description: 'Extended leave (exceeds standard paid leave)',
     };
   }
@@ -208,7 +209,7 @@ export function classifyLeaveType(
   // Default: assume paid annual leave
   return {
     isPaid: true,
-    leaveType: 'annual',
+    leaveType: LeaveType.POLICY_LEAVE,
     description: 'Annual paid leave',
   };
 }

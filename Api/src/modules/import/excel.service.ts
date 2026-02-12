@@ -5,6 +5,7 @@ import { ImportExecuteResult, ImportUserRow } from '../users/dto/import-user.dto
 import { ImportPreviewResult } from '../users/dto/import-user.dto';
 import { UsersService } from '../users/users.service';
 import { UserStatus } from '@common/enums/user-status.enum';
+import { UserGender } from '@common/enums/user-genders';
 import { CreateUserDto } from '@modules/users/dto/create-user.dto';
 import { Repository } from 'typeorm';
 import { User } from '@entities/users.entity';
@@ -104,7 +105,7 @@ export class ExcelService {
       }
 
       // Validate required columns exist
-      const requiredColumns = ['email', 'username', 'employeeId'];
+      const requiredColumns = ['email', 'username', 'employeeId', 'gender'];
       const firstRow = data[0];
       const missingColumns = requiredColumns.filter((col) => !(col in firstRow));
       if (missingColumns.length > 0) {
@@ -164,6 +165,20 @@ export class ExcelService {
             errors.push('Employee ID is required');
           } else if (employeeId.length > 20) {
             errors.push('Employee ID must be max 20 characters');
+          }
+
+          // Validate gender (REQUIRED)
+          const gender =
+            rowData.gender !== null && rowData.gender !== undefined
+              ? String(rowData.gender).trim().toLowerCase()
+              : '';
+          if (!gender) {
+            errors.push('Gender is required');
+          } else {
+            const validGenders = Object.values(UserGender);
+            if (!validGenders.includes(gender as UserGender)) {
+              errors.push(`Invalid gender. Must be one of: ${validGenders.join(', ')}`);
+            }
           }
 
           // Validate optional fields with null safety
@@ -235,6 +250,7 @@ export class ExcelService {
             employeeId: employeeId || undefined,
             email: email,
             username: username,
+            gender: gender || undefined,
             role:
               rowData.role !== null && rowData.role !== undefined && String(rowData.role).trim()
                 ? String(rowData.role).trim()
@@ -274,6 +290,7 @@ export class ExcelService {
             employeeId: undefined,
             email: '',
             username: '',
+            gender: undefined,
             role: undefined,
             departmentId: undefined,
             position: undefined,
@@ -338,15 +355,16 @@ export class ExcelService {
 
       for (const row of validRows) {
         try {
-          // Validate row data - email, username, and employeeId are required
-          if (!row.email || !row.username || !row.employeeId) {
-            throw new Error('Missing required fields: email, username, or employeeId');
+          // Validate row data - email, username, employeeId, and gender are required
+          if (!row.email || !row.username || !row.employeeId || !row.gender) {
+            throw new Error('Missing required fields: email, username, employeeId, or gender');
           }
 
           const userData: CreateUserDto = {
             employeeId: row.employeeId,
             email: row.email,
             username: row.username,
+            gender: row.gender as UserGender,
             role: row.role as UserRole,
             position: row.position,
             joinDate: row.joinDate ? new Date(row.joinDate) : undefined,

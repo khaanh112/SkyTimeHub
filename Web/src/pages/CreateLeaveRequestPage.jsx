@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { leaveRequestService } from '../services';
+import { leaveRequestService, approverService } from '../services';
 import { UserMultiSelect } from '../components';
+import { useAuth } from '../context';
 import { toast } from 'react-toastify';
 import { ArrowLeft, Calendar, AlertCircle, CheckCircle, User } from 'lucide-react';
 
 const CreateLeaveRequestPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [approver, setApprover] = useState(null);
+  const [loadingApprover, setLoadingApprover] = useState(true);
   const [formData, setFormData] = useState({
     startDate: '',
     endDate: '',
@@ -22,16 +25,37 @@ const CreateLeaveRequestPage = () => {
   }, []);
 
   const fetchApprover = async () => {
+    if (!user?.id) {
+      console.warn('User ID not available');
+      setLoadingApprover(false);
+      return;
+    }
+
     try {
-      // Get approver from existing leave requests
-      const requests = await leaveRequestService.getMyLeaveRequests();
-      const requestsData = requests.data || requests;
-      if (requestsData && requestsData.length > 0 && requestsData[0].approver) {
-        setApprover(requestsData[0].approver);
+      setLoadingApprover(true);
+      // Get approver directly from approver service
+      const approvers = await approverService.getApproversForUser(user.id);
+      
+      if (approvers && approvers.length > 0) {
+        // Set the first active approver
+        setApprover(approvers[0]);
+      } else {
+        // Fallback: try to get from existing leave requests
+        try {
+          const requests = await leaveRequestService.getMyLeaveRequests();
+          const requestsData = requests.data || requests;
+          if (requestsData && requestsData.length > 0 && requestsData[0].approver) {
+            setApprover(requestsData[0].approver);
+          }
+        } catch (fallbackError) {
+          console.log('No previous requests found');
+        }
       }
     } catch (error) {
       console.error('Error fetching approver:', error);
-      // If no requests exist yet, approver will remain null
+      toast.warning('Could not load your approver. Please contact HR if this issue persists.');
+    } finally {
+      setLoadingApprover(false);
     }
   };
 
@@ -46,6 +70,12 @@ const CreateLeaveRequestPage = () => {
 
     if (new Date(formData.endDate) < new Date(formData.startDate)) {
       toast.error('End date must be after start date');
+      return;
+    }
+
+    // Check if user has an approver
+    if (!approver && !loadingApprover) {
+      toast.error('You must have an approver assigned before submitting a leave request. Please contact HR.');
       return;
     }
 
@@ -186,7 +216,12 @@ const CreateLeaveRequestPage = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Approver</label>
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  {approver ? (
+                  {loadingApprover ? (
+                    <div className="flex items-center gap-2 text-gray-400">
+                      <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
+                      <p className="text-sm">Loading approver...</p>
+                    </div>
+                  ) : approver ? (
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0">
                         {approver.username?.charAt(0).toUpperCase() || 'A'}
@@ -202,9 +237,12 @@ const CreateLeaveRequestPage = () => {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 text-gray-400">
-                      <User className="w-5 h-5" />
-                      <p className="text-sm italic">No approver assigned</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-amber-600">
+                        <AlertCircle className="w-5 h-5" />
+                        <p className="text-sm font-medium">No approver assigned</p>
+                      </div>
+                      <p className="text-xs text-gray-500">Please contact HR to set up your approver before submitting leave requests.</p>
                     </div>
                   )}
                 </div>
@@ -238,13 +276,19 @@ const CreateLeaveRequestPage = () => {
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || loadingApprover || !approver}
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              title={!approver && !loadingApprover ? 'You need an approver assigned before submitting' : ''}
             >
               {submitting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   Submitting...
+                </>
+              ) : loadingApprover ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Loading...
                 </>
               ) : (
                 <>

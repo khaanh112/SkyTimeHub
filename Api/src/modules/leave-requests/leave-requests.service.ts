@@ -293,16 +293,21 @@ async updateLeaveRequest(
     }
 
     // Update fields
+    const originalVersion = leaveRequest.version;
     leaveRequest.startDate = dto.startDate;
     leaveRequest.endDate = dto.endDate;
     leaveRequest.reason = dto.reason;
     leaveRequest.workSolution = dto.workSolution ?? leaveRequest.workSolution;
 
-    // Save (version auto increment)
+    // Check if CC recipients are being updated
+    const isCCUpdated = dto.ccUserIds !== undefined;
+
+    // Save (version auto increment if fields changed)
     updatedEntity = await leaveRequestRepo.save(leaveRequest);
+    const versionIncreasedFromFields = updatedEntity.version > originalVersion;
 
     // Update CC recipients if provided
-    if (dto.ccUserIds !== undefined) {
+    if (isCCUpdated) {
       // Remove old CC recipients (only CC type, keep APPROVER and HR)
       await recipientRepo.delete({
         requestId,
@@ -320,6 +325,21 @@ async updateLeaveRequest(
         );
 
         await recipientRepo.save(newRecipients);
+      }
+
+      // IMPORTANT: Force version increment if CC updated but version didn't increase from field changes
+      // This ensures approvers must refresh when CC list changes
+      if (!versionIncreasedFromFields) {
+        leaveRequest.version = updatedEntity.version + 1;
+        updatedEntity = await leaveRequestRepo.save(leaveRequest);
+        
+        this.logger.log(
+          `[updateLeaveRequest] CC recipients updated for request ${requestId}, version force incremented to ${updatedEntity.version}`,
+        );
+      } else {
+        this.logger.log(
+          `[updateLeaveRequest] CC recipients updated for request ${requestId}, version already incremented to ${updatedEntity.version}`,
+        );
       }
     }
 
