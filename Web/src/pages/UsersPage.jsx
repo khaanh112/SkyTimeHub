@@ -192,83 +192,7 @@ const UsersPage = () => {
     }
   };
 
-  const handleReactivate = async (user) => {
-    if (!window.confirm(`Reactivate user ${user.username}?`)) {
-      return;
-    }
-    try {
-      await userService.reactivate(user.id);
-      toast.success('Đã reactivate user thành công!');
-      fetchUsers();
-    } catch (error) {
-      console.error('Failed to reactivate user:', error);
-      toast.error('Không thể reactivate user');
-    }
-  };
-
-  const openSetApproverModal = async (user) => {
-    setSelectedUser(user);
-    setSelectedApproverId('');
-    setIsSetApproverModalOpen(true);
-    
-    setLoadingApprovers(true);
-    try {
-      // Fetch current approvers for the user
-      const approvers = await approverService.getApproversForUser(user.id);
-      setCurrentApprovers(approvers);
-      if (approvers.length > 0) {
-        setSelectedApproverId(approvers[0].id.toString());
-      }
-
-      // Fetch list of potential approvers (active admin/hr users)
-      const allUsers = await userService.getAll();
-      const filteredApprovers = allUsers.filter(
-        (u) => 
-          u.status === 'active' && 
-          u.id !== user.id &&
-          (u.role === 'admin' || u.role === 'hr')
-      );
-      setPotentialApprovers(filteredApprovers);
-    } catch (error) {
-      console.error('Failed to fetch approvers:', error);
-      setCurrentApprovers([]);
-      setPotentialApprovers([]);
-    } finally {
-      setLoadingApprovers(false);
-    }
-  };
-
-  const handleSetApprover = async () => {
-    if (!selectedUser || !selectedApproverId) {
-      toast.error('Vui lòng chọn approver');
-      return;
-    }
-
-    if (selectedApproverId === selectedUser.id.toString()) {
-      toast.error('User không thể là approver của chính mình');
-      return;
-    }
-
-    setFormLoading(true);
-    try {
-      await approverService.setApproverForUser(
-        selectedUser.id, 
-        parseInt(selectedApproverId),
-        currentUser.id
-      );
-      toast.success('Đã set approver thành công!');
-      setIsSetApproverModalOpen(false);
-      setSelectedUser(null);
-      setSelectedApproverId('');
-      setCurrentApprovers([]);
-      setPotentialApprovers([]);
-    } catch (error) {
-      console.error('Failed to set approver:', error);
-      toast.error(error.response?.data?.message || 'Không thể set approver');
-    } finally {
-      setFormLoading(false);
-    }
-  };
+  
 
   const getRoleBadge = (role) => {
     const styles = {
@@ -293,10 +217,8 @@ const UsersPage = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quản lý Users</h1>
-          <p className="text-gray-500 mt-1">
-            Quản lý tất cả users trong hệ thống
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Employee Management</h1>
+          
         </div>
           <div className="flex items-center space-x-3">
             <button
@@ -304,14 +226,14 @@ const UsersPage = () => {
               className="inline-flex items-center space-x-2 px-4 py-2.5 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-xl transition-colors shadow-sm border border-gray-200"
             >
               <Upload className="w-5 h-5" />
-              <span>Import Excel</span>
+              <span>Import Users</span>
             </button>
             <button
               onClick={() => navigate('/users/add')}
               className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors shadow-lg shadow-blue-600/30"
             >
               <Plus className="w-5 h-5" />
-              <span>Thêm User</span>
+              <span>Create User</span>
             </button>
           </div>
         </div>
@@ -339,7 +261,7 @@ const UsersPage = () => {
                 onChange={(e) => setFilterRole(e.target.value)}
                 className="px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="">Tất cả Role</option>
+                <option value="">All Roles</option>
                 {ROLES.map((role) => (
                   <option key={role} value={role}>
                     {role.charAt(0).toUpperCase() + role.slice(1)}
@@ -354,7 +276,7 @@ const UsersPage = () => {
               onChange={(e) => setFilterStatus(e.target.value)}
               className="px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">Tất cả Status</option>
+              <option value="">All Status</option>
               {STATUSES.map((status) => (
                 <option key={status} value={status}>
                   {status.charAt(0).toUpperCase() + status.slice(1)}

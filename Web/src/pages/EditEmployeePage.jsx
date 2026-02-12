@@ -247,28 +247,37 @@ const EditEmployeePage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4">
-        {/* Header */}
-        <div className="mb-6">
-          <button
-            onClick={() => navigate('/users')}
-            className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
-          >
-            <ArrowLeft className="w-5 h-5 mr-2" />
-            <span>Employee Management</span>
-          </button>
-          <h1 className="text-2xl font-bold text-gray-900">Update Employee</h1>
-        </div>
+  <div className="min-h-screen bg-slate-50 py-10">
+    <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8">
+      {/* Header */}
+      <div className="mb-8">
+        <button
+          onClick={() => navigate('/users')}
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900"
+        >
+          <ArrowLeft className="h-5 w-5" />
+          <span>Employee Management</span>
+        </button>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Account Information */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Account Information</h2>
-            <div className="grid grid-cols-2 gap-4">
+        <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-900">
+          Update Employee
+        </h1>
+      </div>
+
+      {/* Form */}
+      <form onSubmit={handleSubmit} className="space-y-8">
+        {/* Account Information */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-5">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Account Information
+            </h2>
+          </div>
+
+          <div className="px-6 py-6">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Employee ID <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -276,11 +285,12 @@ const EditEmployeePage = () => {
                   value={formData.employeeId}
                   readOnly
                   disabled
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 text-slate-600 placeholder:text-slate-400 cursor-not-allowed"
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Email <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -288,11 +298,12 @@ const EditEmployeePage = () => {
                   value={formData.email}
                   readOnly
                   disabled
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 text-slate-600 placeholder:text-slate-400 cursor-not-allowed"
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Role <span className="text-red-500">*</span>
                 </label>
                 <select
@@ -300,7 +311,7 @@ const EditEmployeePage = () => {
                   value={formData.role}
                   onChange={handleInputChange}
                   required
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                 >
                   {ROLES.map((role) => (
                     <option key={role} value={role}>
@@ -309,25 +320,35 @@ const EditEmployeePage = () => {
                   ))}
                 </select>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Status
+                </label>
                 <input
                   type="text"
                   value={formData.status.charAt(0).toUpperCase() + formData.status.slice(1)}
                   readOnly
                   disabled
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 text-slate-600 cursor-not-allowed"
                 />
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Personal Details */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Personal Details</h2>
-            <div className="grid grid-cols-2 gap-4">
+        {/* Personal Details */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-5">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Personal Details
+            </h2>
+          </div>
+
+          <div className="px-6 py-6">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Full Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -336,44 +357,58 @@ const EditEmployeePage = () => {
                   value={formData.username}
                   onChange={handleInputChange}
                   required
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                   placeholder="Nguyen Van A"
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
-                <div className="flex items-center space-x-4 mt-2">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Gender
+                </label>
+
+                <div className="mt-2 flex flex-wrap items-center gap-3">
                   {GENDERS.map((gender) => (
-                    <label key={gender} className="flex items-center">
+                    <label
+                      key={gender}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
                       <input
                         type="radio"
                         name="gender"
                         value={gender}
                         checked={formData.gender === gender}
                         onChange={handleInputChange}
-                        className="mr-2"
+                        className="h-4 w-4 accent-blue-600"
                       />
-                      <span className="text-sm capitalize">{gender}</span>
+                      <span className="capitalize">{gender}</span>
                     </label>
                   ))}
                 </div>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Work Information */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Work Information</h2>
-            <div className="grid grid-cols-2 gap-4">
+        {/* Work Information */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-5">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Work Information
+            </h2>
+          </div>
+
+          <div className="px-6 py-6">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Department <span className="text-red-500">*</span>
                 </label>
                 <select
                   name="departmentId"
                   value={formData.departmentId}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                 >
                   <option value="">Select Department</option>
                   {Array.isArray(departments) &&
@@ -384,32 +419,43 @@ const EditEmployeePage = () => {
                     ))}
                 </select>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Position <span className="text-red-500">*</span>
                 </label>
-                <div className="flex items-center">
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <input
                     type="text"
                     name="position"
                     value={isDepartmentLeader ? 'Department leader' : formData.position}
                     onChange={handleInputChange}
                     disabled={isDepartmentLeader}
-                    className={`flex-1 px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      isDepartmentLeader ? 'bg-gray-100 text-gray-600 cursor-not-allowed' : ''
+                    className={`h-11 w-full flex-1 rounded-xl border border-slate-200 px-4 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100 ${
+                      isDepartmentLeader
+                        ? 'bg-slate-100 text-slate-600 cursor-not-allowed'
+                        : 'bg-white text-slate-900'
                     }`}
                     placeholder="BA"
                   />
-                  <label className="ml-3 flex items-center whitespace-nowrap">
+
+                  <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
                     <input
                       type="checkbox"
                       name="isDepartmentLeader"
                       checked={isDepartmentLeader}
                       onChange={handleInputChange}
                       disabled={!formData.departmentId || !canBeLeader}
-                      className={`mr-2 ${!formData.departmentId || !canBeLeader ? 'cursor-not-allowed opacity-50' : ''}`}
+                      className={`h-4 w-4 accent-blue-600 ${
+                        !formData.departmentId || !canBeLeader ? 'cursor-not-allowed opacity-50' : ''
+                      }`}
                     />
-                    <span className={`text-sm ${!formData.departmentId || !canBeLeader ? 'text-gray-400' : 'text-gray-900'}`}>
+                    <span
+                      className={`whitespace-nowrap ${
+                        !formData.departmentId || !canBeLeader ? 'text-slate-400' : 'text-slate-700'
+                      }`}
+                    >
                       Department leader
                       {!formData.departmentId && ' (Chọn dept.)'}
                       {formData.departmentId && !canBeLeader && ' (Đã có leader)'}
@@ -417,8 +463,9 @@ const EditEmployeePage = () => {
                   </label>
                 </div>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Official Contract Date <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -426,11 +473,12 @@ const EditEmployeePage = () => {
                   name="officialContractDate"
                   value={formData.officialContractDate}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Date of Joining <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -438,18 +486,19 @@ const EditEmployeePage = () => {
                   name="joinDate"
                   value={formData.joinDate}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                 />
               </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+
+              <div className="md:col-span-2">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Approver <span className="text-red-500">*</span>
                 </label>
                 <select
                   name="approverId"
                   value={formData.approverId}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                 >
                   <option value="">Select Approver</option>
                   {approvers.map((approver) => (
@@ -461,29 +510,32 @@ const EditEmployeePage = () => {
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-end space-x-4">
-            <button
-              type="button"
-              onClick={() => navigate('/users')}
-              className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
-            >
-              {saving && <LoadingSpinner size="sm" />}
-              <span>Update</span>
-            </button>
-          </div>
-        </form>
-      </div>
+        {/* Action Buttons */}
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-4">
+          <button
+            type="button"
+            onClick={() => navigate('/users')}
+            className="h-11 rounded-xl border border-slate-300 bg-white px-6 text-sm font-medium text-slate-700 hover:bg-slate-50 active:scale-[0.99]"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving && <LoadingSpinner size="sm" />}
+            <span>Update</span>
+          </button>
+        </div>
+      </form>
     </div>
-  );
+  </div>
+);
+
 };
 
 export default EditEmployeePage;

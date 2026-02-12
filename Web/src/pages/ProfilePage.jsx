@@ -129,19 +129,10 @@ const ProfilePage = () => {
             </div>
           </div>
 
-          {/* Department */}
-          {user.department && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
-                <Building2 className="w-5 h-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Phòng ban</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">{user.department.name}</p>
-              </div>
-            </div>
-          )}
+         
 
+      
+          
           {/* Position */}
           {user.position && (
             <div className="flex items-start space-x-3">
