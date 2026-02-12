@@ -21,10 +21,14 @@ The Excel template file `users-import-template.xlsx` contains the following colu
 - **departmentId** - Department ID (positive integer)
   - Must be a valid existing department ID
 - **position** - Job position/title (max 100 characters)
-  - Example: Software Engineer, HR Manager
+  - Example: Software Engineer, HR Manager, Department Leader
 - **joinDate** - Date when employee joined
   - Format: YYYY-MM-DD
   - Example: 2024-01-15
+- **officialContractDate** - Official contract start date
+  - Format: YYYY-MM-DD
+  - Example: 2024-03-01
+  - Can differ from joinDate (e.g., after probation period)
 
 ## Import Rules
 
@@ -46,10 +50,10 @@ The Excel template file `users-import-template.xlsx` contains the following colu
 ## Excel Template Structure
 
 ```
-| employeeId | email              | username    | gender | role     | departmentId | position           | joinDate   |
-|------------|--------------------|-------------|--------|----------|--------------|--------------------|-----------:|
-| EMP240001  | john@example.com   | John Doe    | male   | employee | 1            | Software Engineer  | 2024-01-15 |
-| EMP240002  | jane@example.com   | Jane Smith  | female | hr       | 2            | HR Manager         | 2024-02-01 |
+| employeeId | email              | username    | gender | role     | departmentId | position           | joinDate   | officialContractDate |
+|------------|--------------------|-------------|--------|----------|--------------|--------------------|-----------:|---------------------:|
+| EMP240001  | john@example.com   | John Doe    | male   | employee | 1            | Software Engineer  | 2024-01-15 | 2024-03-15           |
+| EMP240002  | jane@example.com   | Jane Smith  | female | hr       | 2            | HR Manager         | 2024-02-01 | 2024-02-01           |
 ```
 
 ## How to Use

@@ -20,6 +20,8 @@ export interface ImportUserRow {
   position?: string;
   /** Join date */
   joinDate?: string;
+  /** Official contract date */
+  officialContractDate?: string;
   /** Validation errors for this row */
   errors: string[];
 }

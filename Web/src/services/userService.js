@@ -25,6 +25,12 @@ export const userService = {
     return response.data.data || response.data;
   },
 
+  // Get user approver by user ID
+  getApprover: async (userId) => {
+    const response = await api.get(`/users/${userId}/approver`);
+    return response.data.data || response.data;
+  },
+
   // Create new user
   create: async (userData) => {
     const response = await api.post('/users', userData);

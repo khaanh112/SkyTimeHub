@@ -18,3 +18,6 @@ export * from './interceptors/excelfile.interceptor';
 
 // Filters
 export * from './filters/http-exception.filter';
+
+// Utils
+export * from './utils/user.utils';

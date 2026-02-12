@@ -15,10 +15,11 @@ import {
   Copy,
   Mail,
   UserCog,
+  Eye,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { LoadingSpinner, Modal } from '../components';
-import { userService, approverService } from '../services';
+import { userService, approverService, departmentService } from '../services';
 import { useAuth } from '../context';
 
 const ROLES = ['admin', 'hr', 'employee'];
@@ -29,6 +30,7 @@ const UsersPage = () => {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('');
@@ -53,8 +55,10 @@ const UsersPage = () => {
     gender: 'male',
     role: 'employee',
     status: 'pending',
+    departmentId: '',
     position: '',
     joinDate: '',
+    officialContractDate: '',
   });
   const [formLoading, setFormLoading] = useState(false);
 
@@ -70,8 +74,19 @@ const UsersPage = () => {
     }
   };
 
+  const fetchDepartments = async () => {
+    try {
+      const data = await departmentService.getAll();
+      setDepartments(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Failed to fetch departments:', error);
+      setDepartments([]);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchDepartments();
   }, []);
 
   const filteredUsers = users.filter((user) => {
@@ -96,8 +111,10 @@ const UsersPage = () => {
       gender: 'male',
       role: 'employee',
       status: 'pending',
+      departmentId: '',
       position: '',
       joinDate: '',
+      officialContractDate: '',
     });
   };
 
@@ -118,8 +135,16 @@ const UsersPage = () => {
         dataToSend.position = formData.position;
       }
       
+      if (formData.departmentId) {
+        dataToSend.departmentId = parseInt(formData.departmentId);
+      }
+      
       if (formData.joinDate) {
         dataToSend.joinDate = formData.joinDate;
+      }
+      
+      if (formData.officialContractDate) {
+        dataToSend.officialContractDate = formData.officialContractDate;
       }
       
       await userService.create(dataToSend);
@@ -151,8 +176,16 @@ const UsersPage = () => {
         dataToSend.position = formData.position;
       }
       
+      if (formData.departmentId !== undefined) {
+        dataToSend.departmentId = formData.departmentId ? parseInt(formData.departmentId) : null;
+      }
+      
       if (formData.joinDate) {
         dataToSend.joinDate = formData.joinDate;
+      }
+      
+      if (formData.officialContractDate !== undefined) {
+        dataToSend.officialContractDate = formData.officialContractDate || null;
       }
       
       await userService.update(selectedUser.id, dataToSend);
@@ -194,8 +227,10 @@ const UsersPage = () => {
       gender: user.gender || 'male',
       role: user.role || 'employee',
       status: user.status || 'pending',
+      departmentId: user.departmentId || '',
       position: user.position || '',
       joinDate: user.joinDate ? new Date(user.joinDate).toISOString().split('T')[0] : '',
+      officialContractDate: user.officialContractDate ? new Date(user.officialContractDate).toISOString().split('T')[0] : '',
     });
     setIsEditModalOpen(true);
   };
@@ -375,10 +410,7 @@ const UsersPage = () => {
               <span>Import Excel</span>
             </button>
             <button
-              onClick={() => {
-                resetForm();
-                setIsCreateModalOpen(true);
-              }}
+              onClick={() => navigate('/users/add')}
               className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors shadow-lg shadow-blue-600/30"
             >
               <Plus className="w-5 h-5" />
@@ -577,25 +609,17 @@ const UsersPage = () => {
                             </button>
                           )}
                           
-                          {/* Set Approver button - visible for active users */}
-                          {user.status === 'active' && (
-                            <button
-                              onClick={() => openSetApproverModal(user)}
-                              className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                              title="Set Approver"
-                            >
-                              <UserCog className="w-4 h-4" />
-                            </button>
-                          )}
+              
                           
-                          {/* Edit button - always visible */}
+                          {/* View button - always visible */}
                           <button
-                            onClick={() => openEditModal(user)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Chỉnh sửa"
+                            onClick={() => navigate(`/users/${user.id}`)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                            title="Xem chi tiết"
                           >
-                            <Pencil className="w-4 h-4" />
+                            <Eye className="w-4 h-4" />
                           </button>
+                          
                           
                           {/* Delete button - always visible */}
                           <button
@@ -698,12 +722,44 @@ const UsersPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Department
+                </label>
+                <select
+                  name="departmentId"
+                  value={formData.departmentId}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select Department</option>
+                  {Array.isArray(departments) && departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Join Date
                 </label>
                 <input
                   type="date"
                   name="joinDate"
                   value={formData.joinDate}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Official Contract Date
+                </label>
+                <input
+                  type="date"
+                  name="officialContractDate"
+                  value={formData.officialContractDate}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -843,12 +899,44 @@ const UsersPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Department
+                </label>
+                <select
+                  name="departmentId"
+                  value={formData.departmentId}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select Department</option>
+                  {Array.isArray(departments) && departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Join Date
                 </label>
                 <input
                   type="date"
                   name="joinDate"
                   value={formData.joinDate}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Official Contract Date
+                </label>
+                <input
+                  type="date"
+                  name="officialContractDate"
+                  value={formData.officialContractDate}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />

@@ -7,6 +7,9 @@ import {
   LoginPage,
   AuthCallback,
   UsersPage,
+  AddEmployeePage,
+  EditEmployeePage,
+  EmployeeDetailPage,
   ProfilePage,
   ActivateAccountPage,
   LeaveRequestManagementPage,
@@ -83,6 +86,30 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <UsersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users/add"
+        element={
+          <ProtectedRoute>
+            <AddEmployeePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users/:id/edit"
+        element={
+          <ProtectedRoute>
+            <EditEmployeePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users/:id"
+        element={
+          <ProtectedRoute>
+            <EmployeeDetailPage />
           </ProtectedRoute>
         }
       />

@@ -8,8 +8,7 @@ import { UserStatus } from '@common/enums/user-status.enum';
 import { AppException } from '@common/exceptions/app.exception';
 import { ErrorCode } from '@common/enums/errror-code.enum';
 import { NotificationsService } from '@modules/notifications/notifications.service';
-
-import * as crypto from 'crypto';
+import { generateEmployeeId, generateActivationToken } from '@common/utils/user.utils';
 
 @Injectable()
 export class UsersService {
@@ -21,31 +20,7 @@ export class UsersService {
     private notificationsService: NotificationsService,
   ) {}
 
-  async generateEmployeeId(): Promise<string> {
-    const year = new Date().getFullYear().toString().slice(-2);
-    const prefix = `EMP${year}`;
 
-    const latestUser = await this.usersRepository
-      .createQueryBuilder('user')
-      .where('user.employee_id LIKE :prefix', { prefix: `${prefix}%` })
-      .orderBy('user.employee_id', 'DESC')
-      .getOne();
-
-    let nextNumber = 1;
-    if (latestUser && latestUser.employeeId) {
-      const lastNumber = parseInt(latestUser.employeeId.slice(-4));
-      nextNumber = lastNumber + 1;
-    }
-
-    return `${prefix}${nextNumber.toString().padStart(4, '0')}`;
-  }
-
-  /**
-   * Generate activation token for new users
-   */
-  generateActivationToken(): string {
-    return crypto.randomBytes(32).toString('hex');
-  }
 
   async getUsers(): Promise<User[]> {
     return await this.usersRepository.find({});
@@ -122,7 +97,7 @@ export class UsersService {
     }
 
     // Generate activation token for pending users
-    const activationToken = this.generateActivationToken();
+    const activationToken = generateActivationToken();
 
     // Set default status to PENDING
     const userData = {
@@ -210,7 +185,6 @@ export class UsersService {
 
     if (!user) {
       this.logger.error(`❌ No user found with activation token: ${token}`);
-      this.logger.log('========== ACTIVATE ACCOUNT FAILED ==========');
       throw new AppException(
         ErrorCode.INVALID_ACTIVATION_TOKEN,
         'Invalid activation token',
@@ -218,17 +192,9 @@ export class UsersService {
       );
     }
 
-    this.logger.log(`✓ User found`);
-    this.logger.log(`   - User ID: ${user.id}`);
-    this.logger.log(`   - Email: ${user.email}`);
-    this.logger.log(`   - Current Status: ${user.status}`);
-    this.logger.log(`   - Current Activation Token: ${user.activationToken}`);
-
     // Check if user status is PENDING before allowing activation
     if (user.status !== UserStatus.PENDING) {
       this.logger.error(`❌ Cannot activate account with status: ${user.status}`);
-      this.logger.log('   - Only PENDING accounts can be activated via link');
-      this.logger.log('========== ACTIVATE ACCOUNT FAILED ==========');
       throw new AppException(
         ErrorCode.INVALID_INPUT,
         `Cannot activate account. Current status is ${user.status}. Only pending accounts can be activated via activation link.`,
@@ -243,19 +209,11 @@ export class UsersService {
     user.activationToken = null;
 
     const savedUser = await this.usersRepository.save(user);
-
-    this.logger.log(`✓ User account activated successfully`);
-    this.logger.log(`   - New Status: ${savedUser.status}`);
-    this.logger.log(
-      `   - Activation Token: ${savedUser.activationToken === null ? 'CLEARED' : savedUser.activationToken}`,
-    );
     this.logger.log(`   - Activated At: ${savedUser.activatedAt}`);
-    this.logger.log('========== ACTIVATE ACCOUNT SUCCESS ==========');
-
     return savedUser;
   }
 
-  async deacativateAccount(userId: number): Promise<User> {
+  async deactivateAccount(userId: number): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
@@ -335,7 +293,7 @@ export class UsersService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const newToken = this.generateActivationToken();
+    const newToken = generateActivationToken();
     user.activationToken = newToken;
     await this.usersRepository.save(user);
     return newToken;
@@ -375,7 +333,7 @@ export class UsersService {
     this.logger.log(`✓ User status is PENDING - eligible for activation link resend`);
 
     // 3. Generate new activation token
-    const newActivationToken = this.generateActivationToken();
+    const newActivationToken = generateActivationToken();
     this.logger.log(`✓ New activation token generated`);
 
     // 4. Update user with new token

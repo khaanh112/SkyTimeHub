@@ -74,6 +74,17 @@ export class UsersController {
     return await this.usersService.getUser(id);
   }
 
+  @Get(':id/approver')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get approver for specific user' })
+  @ApiResponse({ status: 200, description: 'User approver retrieved successfully.' })
+  async getUserApprover(@Param('id') id: number): Promise<{ approverId: number | null }> {
+    const userApprover = await this.userApproverRepository.findOne({
+      where: { userId: id, active: true },
+    });
+    return { approverId: userApprover?.approverId || null };
+  }
+
   @Roles(UserRole.HR)
   @Post()
   @ApiBearerAuth()
@@ -126,7 +137,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Deactivate user account' })
   @ApiResponse({ status: 200, description: 'User account deactivated successfully.' })
   async deactivateAccount(@Param('id') id: number): Promise<User> {
-    return await this.usersService.deacativateAccount(id);
+    return await this.usersService.deactivateAccount(id);
   }
 
   @Roles(UserRole.HR)

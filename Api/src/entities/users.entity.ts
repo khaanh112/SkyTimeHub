@@ -74,6 +74,10 @@ export class User {
   @Column({ name: 'join_date', type: 'date', nullable: true })
   joinDate: Date;
 
+  @ApiPropertyOptional({example: '2022-01-01', description: 'Official contract date' })
+  @Column({ name: 'official_contract_date', type: 'date', nullable: true })
+  officialContractDate: Date;
+
   @Exclude()
   @Column({ name: 'activation_token', nullable: true })
   activationToken: string;

@@ -3,3 +3,4 @@ export { default as authService } from './authService';
 export { default as userService } from './userService';
 export { default as leaveRequestService } from './leaveRequestService';
 export { default as approverService } from './approverService';
+export { default as departmentService } from './departmentService';

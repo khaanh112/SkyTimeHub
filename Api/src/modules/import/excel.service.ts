@@ -220,6 +220,18 @@ export class ExcelService {
             }
           }
 
+          if (
+            rowData.officialContractDate !== null &&
+            rowData.officialContractDate !== undefined &&
+            String(rowData.officialContractDate).trim()
+          ) {
+            const dateStr = String(rowData.officialContractDate).trim();
+            const dateObj = new Date(dateStr);
+            if (isNaN(dateObj.getTime())) {
+              errors.push('Invalid official contract date format. Use YYYY-MM-DD');
+            }
+          }
+
           // Check for duplicate email in database (only if email is valid)
           if (email && this.isValidEmail(email)) {
             try {
@@ -273,6 +285,12 @@ export class ExcelService {
               String(rowData.joinDate).trim()
                 ? String(rowData.joinDate).trim()
                 : undefined,
+            officialContractDate:
+              rowData.officialContractDate !== null &&
+              rowData.officialContractDate !== undefined &&
+              String(rowData.officialContractDate).trim()
+                ? String(rowData.officialContractDate).trim()
+                : undefined,
             errors,
           };
 
@@ -295,6 +313,7 @@ export class ExcelService {
             departmentId: undefined,
             position: undefined,
             joinDate: undefined,
+            officialContractDate: undefined,
             errors: [`Failed to process row: ${rowError.message || 'Unknown error'}`],
           };
           rows.push(errorRow);
@@ -366,8 +385,10 @@ export class ExcelService {
             username: row.username,
             gender: row.gender as UserGender,
             role: row.role as UserRole,
+            departmentId: row.departmentId,
             position: row.position,
             joinDate: row.joinDate ? new Date(row.joinDate) : undefined,
+            officialContractDate: row.officialContractDate ? new Date(row.officialContractDate) : undefined,
             status: UserStatus.PENDING, // All imported users auto-set to pending
           };
 

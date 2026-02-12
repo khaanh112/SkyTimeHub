@@ -1,8 +1,10 @@
 export { default as LoginPage } from './LoginPage';
 export { default as AuthCallback } from './AuthCallback';
 export { default as ActivateAccountPage } from './ActivateAccountPage';
-export { default as Dashboard } from './Dashboard';
 export { default as UsersPage } from './UsersPage';
+export { default as AddEmployeePage } from './AddEmployeePage';
+export { default as EditEmployeePage } from './EditEmployeePage';
+export { default as EmployeeDetailPage } from './EmployeeDetailPage';
 export { default as ProfilePage } from './ProfilePage';
 export { default as LeaveRequestsPage } from './LeaveRequestsPage';
 export { default as LeaveRequestManagementPage } from './LeaveRequestManagementPage';
@@ -10,3 +12,4 @@ export { default as LeaveRequestDetailPage } from './LeaveRequestDetailPage';
 export { default as CreateLeaveRequestPage } from './CreateLeaveRequestPage';
 export { default as EditLeaveRequestPage } from './EditLeaveRequestPage';
 export { default as ApprovalsPage } from './ApprovalsPage';
+export { default as ImportUsersPage } from './ImportUsersPage';

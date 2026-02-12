@@ -44,6 +44,9 @@ export class CreateUserDto {
   @IsEnum(UserStatus)
   status?: UserStatus;
 
+  @ApiPropertyOptional({ example: 1, description: 'Department ID' })
+  departmentId?: number | null;
+
   @ApiPropertyOptional({
     example: 'Software Engineer',
     description: 'Job position',
@@ -63,4 +66,14 @@ export class CreateUserDto {
   @IsOptional()
   @IsDateString()
   joinDate?: Date;
+
+  @ApiPropertyOptional({
+    example: '2024-01-01',
+    description: 'Official contract date',
+    type: String,
+    format: 'date',
+  })
+  @IsOptional()
+  @IsDateString()
+  officialContractDate?: Date;
 }

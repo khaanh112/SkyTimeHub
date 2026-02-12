@@ -155,18 +155,7 @@ const ProfilePage = () => {
             </div>
           )}
 
-          {/* Phone */}
-          {user.phone && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-pink-50 rounded-lg flex items-center justify-center shrink-0">
-                <Phone className="w-5 h-5 text-pink-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Số điện thoại</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">{user.phone}</p>
-              </div>
-            </div>
-          )}
+         
 
           {/* Join Date */}
           {user.joinDate && (
@@ -178,6 +167,20 @@ const ProfilePage = () => {
                 <p className="text-sm font-medium text-gray-500">Ngày tham gia</p>
                 <p className="text-base font-semibold text-gray-900 mt-1">
                   {new Date(user.joinDate).toLocaleDateString('vi-VN')}
+                </p>
+              </div>
+            </div>
+          )}
+          {/* officialContractDate */}
+          {user.officialContractDate && (
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
+                <Calendar className="w-5 h-5 text-indigo-500" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Ngày tham gia chính thức</p>
+                <p className="text-base font-semibold text-gray-900 mt-1">
+                  {new Date(user.officialContractDate).toLocaleDateString('vi-VN')}
                 </p>
               </div>
             </div>

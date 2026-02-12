@@ -6,18 +6,3 @@ export enum UserRole {
   BOD = 'bod',
 }
 
-export enum LeaveStatus {
-  PENDING = 'pending',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
-  CANCELLED = 'cancelled',
-  DONE = 'done',
-}
-
-export enum OTStatus {
-  PENDING = 'pending',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
-  CANCELLED = 'cancelled',
-  DONE = 'done',
-}
