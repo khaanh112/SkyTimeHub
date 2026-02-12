@@ -24,7 +24,7 @@ import { useAuth } from '../context';
 
 const ROLES = ['admin', 'hr', 'employee'];
 const STATUSES = ['pending', 'active', 'inactive'];
-const GENDERS = ['male', 'female'];
+
 
 const UsersPage = () => {
   const navigate = useNavigate();
@@ -37,16 +37,11 @@ const UsersPage = () => {
   const [filterStatus, setFilterStatus] = useState('');
 
   // Modal states
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isSetApproverModalOpen, setIsSetApproverModalOpen] = useState(false);
+
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedApproverId, setSelectedApproverId] = useState('');
-  const [currentApprovers, setCurrentApprovers] = useState([]);
-  const [potentialApprovers, setPotentialApprovers] = useState([]);
-  const [loadingApprovers, setLoadingApprovers] = useState(false);
-
+ 
   // Form state
   const [formData, setFormData] = useState({
     employeeId: '',
@@ -118,89 +113,6 @@ const UsersPage = () => {
     });
   };
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    setFormLoading(true);
-    try {
-      // Prepare data - remove empty optional fields
-      const dataToSend = {
-        employeeId: formData.employeeId,
-        username: formData.username,
-        email: formData.email,
-        gender: formData.gender,
-        role: formData.role,
-      };
-      
-      if (formData.position) {
-        dataToSend.position = formData.position;
-      }
-      
-      if (formData.departmentId) {
-        dataToSend.departmentId = parseInt(formData.departmentId);
-      }
-      
-      if (formData.joinDate) {
-        dataToSend.joinDate = formData.joinDate;
-      }
-      
-      if (formData.officialContractDate) {
-        dataToSend.officialContractDate = formData.officialContractDate;
-      }
-      
-      await userService.create(dataToSend);
-      toast.success('Tạo user thành công!');
-      setIsCreateModalOpen(false);
-      resetForm();
-      fetchUsers();
-    } catch (error) {
-      console.error('Failed to create user:', error);
-      toast.error(error.response?.data?.message || 'Không thể tạo user');
-    } finally {
-      setFormLoading(false);
-    }
-  };
-
-  const handleEdit = async (e) => {
-    e.preventDefault();
-    if (!selectedUser) return;
-    setFormLoading(true);
-    try {
-      // Prepare data - only send fields that can be updated
-      const dataToSend = {
-        username: formData.username,
-        gender: formData.gender,
-        role: formData.role,
-      };
-      
-      if (formData.position !== undefined) {
-        dataToSend.position = formData.position;
-      }
-      
-      if (formData.departmentId !== undefined) {
-        dataToSend.departmentId = formData.departmentId ? parseInt(formData.departmentId) : null;
-      }
-      
-      if (formData.joinDate) {
-        dataToSend.joinDate = formData.joinDate;
-      }
-      
-      if (formData.officialContractDate !== undefined) {
-        dataToSend.officialContractDate = formData.officialContractDate || null;
-      }
-      
-      await userService.update(selectedUser.id, dataToSend);
-      toast.success('Cập nhật user thành công!');
-      setIsEditModalOpen(false);
-      setSelectedUser(null);
-      resetForm();
-      fetchUsers();
-    } catch (error) {
-      console.error('Failed to update user:', error);
-      toast.error(error.response?.data?.message || 'Không thể cập nhật user');
-    } finally {
-      setFormLoading(false);
-    }
-  };
 
   const handleDelete = async () => {
     if (!selectedUser) return;
@@ -218,22 +130,7 @@ const UsersPage = () => {
     }
   };
 
-  const openEditModal = (user) => {
-    setSelectedUser(user);
-    setFormData({
-      employeeId: user.employeeId || '',
-      username: user.username || '',
-      email: user.email || '',
-      gender: user.gender || 'male',
-      role: user.role || 'employee',
-      status: user.status || 'pending',
-      departmentId: user.departmentId || '',
-      position: user.position || '',
-      joinDate: user.joinDate ? new Date(user.joinDate).toISOString().split('T')[0] : '',
-      officialContractDate: user.officialContractDate ? new Date(user.officialContractDate).toISOString().split('T')[0] : '',
-    });
-    setIsEditModalOpen(true);
-  };
+  
 
   const openDeleteModal = (user) => {
     setSelectedUser(user);
@@ -581,33 +478,9 @@ const UsersPage = () => {
                               >
                                 <Mail className="w-4 h-4" />
                               </button>
-                              <button
-                                onClick={() => handleDeactivate(user)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Deactivate Account"
-                              >
-                                <UserX className="w-4 h-4" />
-                              </button>
                             </>
                           )}
-                          {user.status === 'active' && (
-                            <button
-                              onClick={() => handleDeactivate(user)}
-                              className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                              title="Deactivate Account"
-                            >
-                              <UserX className="w-4 h-4" />
-                            </button>
-                          )}
-                          {user.status === 'inactive' && (
-                            <button
-                              onClick={() => handleReactivate(user)}
-                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                              title="Reactivate Account"
-                            >
-                              <UserCheck className="w-4 h-4" />
-                            </button>
-                          )}
+                       
                           
               
                           
@@ -618,6 +491,15 @@ const UsersPage = () => {
                             title="Xem chi tiết"
                           >
                             <Eye className="w-4 h-4" />
+                          </button>
+
+                          {/* Edit button - always visible */}
+                          <button
+                            onClick={() => navigate(`/users/${user.id}/edit`)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Chỉnh sửa"
+                          >
+                            <Pencil className="w-4 h-4" />
                           </button>
                           
                           
@@ -639,452 +521,8 @@ const UsersPage = () => {
           )}
         </div>
 
-        {/* Create Modal */}
-        <Modal
-          isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
-          title="Thêm User mới"
-        >
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Employee ID *
-              </label>
-              <input
-                type="text"
-                name="employeeId"
-                value={formData.employeeId}
-                onChange={handleInputChange}
-                required
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="VD: EMP001"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Username *
-              </label>
-              <input
-                type="text"
-                name="username"
-                value={formData.username}
-                onChange={handleInputChange}
-                required
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Nhập username"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email *
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                required
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Nhập email"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Gender *
-              </label>
-              <select
-                name="gender"
-                value={formData.gender}
-                onChange={handleInputChange}
-                required
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                {GENDERS.map((gender) => (
-                  <option key={gender} value={gender}>
-                    {gender.charAt(0).toUpperCase() + gender.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position
-                </label>
-                <input
-                  type="text"
-                  name="position"
-                  value={formData.position}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="VD: Software Engineer"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Department
-                </label>
-                <select
-                  name="departmentId"
-                  value={formData.departmentId}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select Department</option>
-                  {Array.isArray(departments) && departments.map((dept) => (
-                    <option key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Join Date
-                </label>
-                <input
-                  type="date"
-                  name="joinDate"
-                  value={formData.joinDate}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Official Contract Date
-                </label>
-                <input
-                  type="date"
-                  name="officialContractDate"
-                  value={formData.officialContractDate}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Role
-                </label>
-                <select
-                  name="role"
-                  value={formData.role}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  {ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {role.charAt(0).toUpperCase() + role.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status (mặc định: Pending)
-                </label>
-                <input
-                  type="text"
-                  value="Pending"
-                  readOnly
-                  disabled
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => setIsCreateModalOpen(false)}
-                className="px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                disabled={formLoading}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center space-x-2"
-              >
-                {formLoading && <LoadingSpinner size="sm" />}
-                <span>Tạo User</span>
-              </button>
-            </div>
-          </form>
-        </Modal>
+      
 
-        {/* Edit Modal */}
-        <Modal
-          isOpen={isEditModalOpen}
-          onClose={() => {
-            setIsEditModalOpen(false);
-            setSelectedUser(null);
-          }}
-          title="Chỉnh sửa User"
-        >
-          <form onSubmit={handleEdit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Employee ID * (không thể chỉnh sửa)
-              </label>
-              <input
-                type="text"
-                name="employeeId"
-                value={formData.employeeId}
-                readOnly
-                disabled
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Username *
-              </label>
-              <input
-                type="text"
-                name="username"
-                value={formData.username}
-                onChange={handleInputChange}
-                required
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email * (không thể chỉnh sửa)
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                readOnly
-                disabled
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Gender *
-              </label>
-              <select
-                name="gender"
-                value={formData.gender}
-                onChange={handleInputChange}
-                required
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                {GENDERS.map((gender) => (
-                  <option key={gender} value={gender}>
-                    {gender.charAt(0).toUpperCase() + gender.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Position
-                </label>
-                <input
-                  type="text"
-                  name="position"
-                  value={formData.position}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="VD: Software Engineer"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Department
-                </label>
-                <select
-                  name="departmentId"
-                  value={formData.departmentId}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select Department</option>
-                  {Array.isArray(departments) && departments.map((dept) => (
-                    <option key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Join Date
-                </label>
-                <input
-                  type="date"
-                  name="joinDate"
-                  value={formData.joinDate}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Official Contract Date
-                </label>
-                <input
-                  type="date"
-                  name="officialContractDate"
-                  value={formData.officialContractDate}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Role
-                </label>
-                <select
-                  name="role"
-                  value={formData.role}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  {ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {role.charAt(0).toUpperCase() + role.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                {formData.status === 'pending' ? (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value="Pending (chỉ có thể kích hoạt qua link)"
-                      readOnly
-                      disabled
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
-                    />
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleGetActivationLink(selectedUser)}
-                        className="px-3 py-2 text-xs bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                      >
-                        <LinkIcon className="w-3 h-3" />
-                        <span>Get Link</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleResetActivationToken(selectedUser)}
-                        className="px-3 py-2 text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                        <span>Reset Token</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleResendActivationLink(selectedUser);
-                          setIsEditModalOpen(false);
-                          setSelectedUser(null);
-                        }}
-                        className="px-3 py-2 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                      >
-                        <Mail className="w-3 h-3" />
-                        <span>Send Email</span>
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleDeactivate(selectedUser);
-                        setIsEditModalOpen(false);
-                        setSelectedUser(null);
-                      }}
-                      className="w-full px-3 py-2 text-xs bg-red-50 text-red-700 hover:bg-red-100 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                    >
-                      <UserX className="w-3 h-3" />
-                      <span>Deactivate Account</span>
-                    </button>
-                  </div>
-                ) : formData.status === 'active' ? (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value="Active"
-                      readOnly
-                      disabled
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-green-100 text-green-700 cursor-not-allowed"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleDeactivate(selectedUser);
-                        setIsEditModalOpen(false);
-                        setSelectedUser(null);
-                      }}
-                      className="w-full px-3 py-2 text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                    >
-                      <UserX className="w-3 h-3" />
-                      <span>Deactivate Account</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value="Inactive"
-                      readOnly
-                      disabled
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleReactivate(selectedUser);
-                        setIsEditModalOpen(false);
-                        setSelectedUser(null);
-                      }}
-                      className="w-full px-3 py-2 text-xs bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                    >
-                      <UserCheck className="w-3 h-3" />
-                      <span>Reactivate Account</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsEditModalOpen(false);
-                  setSelectedUser(null);
-                }}
-                className="px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                disabled={formLoading}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center space-x-2"
-              >
-                {formLoading && <LoadingSpinner size="sm" />}
-                <span>Lưu thay đổi</span>
-              </button>
-            </div>
-          </form>
-        </Modal>
 
         {/* Delete Confirmation Modal */}
         <Modal
@@ -1128,93 +566,6 @@ const UsersPage = () => {
           </div>
         </Modal>
 
-        {/* Set Approver Modal */}
-        <Modal
-          isOpen={isSetApproverModalOpen}
-          onClose={() => {
-            setIsSetApproverModalOpen(false);
-            setSelectedUser(null);
-            setSelectedApproverId('');
-            setCurrentApprovers([]);
-            setPotentialApprovers([]);
-          }}
-          title="Set Approver"
-          size="md"
-        >
-          <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <p className="text-sm text-blue-800">
-                <strong>User:</strong> {selectedUser?.username} ({selectedUser?.email})
-              </p>
-            </div>
-
-            {loadingApprovers ? (
-              <div className="flex justify-center py-8">
-                <LoadingSpinner size="md" />
-              </div>
-            ) : (
-              <>
-                {currentApprovers.length > 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                    <p className="text-sm text-green-800 font-medium mb-2">
-                      Current Approver:
-                    </p>
-                    <p className="text-sm text-green-700">
-                      {currentApprovers[0].username} ({currentApprovers[0].email})
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Chọn Approver *
-                  </label>
-                  <select
-                    value={selectedApproverId}
-                    onChange={(e) => setSelectedApproverId(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  >
-                    <option value="">-- Chọn approver --</option>
-                    {potentialApprovers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.username} ({user.email}) - {user.role}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Chỉ hiển thị active users với role admin hoặc hr
-                  </p>
-                </div>
-              </>
-            )}
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSetApproverModalOpen(false);
-                  setSelectedUser(null);
-                  setSelectedApproverId('');
-                  setCurrentApprovers([]);
-                  setPotentialApprovers([]);
-                }}
-                className="px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={handleSetApprover}
-                disabled={formLoading || loadingApprovers || !selectedApproverId}
-                className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center space-x-2"
-              >
-                {formLoading && <LoadingSpinner size="sm" />}
-                <UserCog className="w-4 h-4" />
-                <span>Set Approver</span>
-              </button>
-            </div>
-          </div>
-        </Modal>
       </div>
   );
 };
