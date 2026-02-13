@@ -6,9 +6,7 @@ import { User } from '@entities/users.entity';
  * Generate employee ID with format: EMP{YY}{0000}
  * Example: EMP2401, EMP2402, etc.
  */
-export async function generateEmployeeId(
-  usersRepository: Repository<User>,
-): Promise<string> {
+export async function generateEmployeeId(usersRepository: Repository<User>): Promise<string> {
   const year = new Date().getFullYear().toString().slice(-2);
   const prefix = `EMP${year}`;
 

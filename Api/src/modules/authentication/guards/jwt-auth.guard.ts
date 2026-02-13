@@ -4,11 +4,14 @@ import {
   ExecutionContext,
   UnauthorizedException,
   Logger,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { AppException } from '@/common';
+import { ErrorCode } from '@/common/enums/errror-code.enum';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -40,7 +43,7 @@ export class JwtAuthGuard implements CanActivate {
 
     if (!token) {
       this.logger.warn(`[${method}] ${url} - No token provided`);
-      throw new UnauthorizedException('No token provided');
+      throw new AppException(ErrorCode.UNAUTHORIZED, 'No token provided', HttpStatus.UNAUTHORIZED);
     }
 
     this.logger.log(`[${method}] ${url} - Token found, verifying...`);
@@ -58,11 +61,13 @@ export class JwtAuthGuard implements CanActivate {
         username: payload.username,
         role: payload.role,
       };
-
-      this.logger.log(`[${method}] ${url} - User set on request: ${JSON.stringify(request.user)}`);
     } catch (error) {
       this.logger.error(`[${method}] ${url} - Token verification failed: ${error.message}`);
-      throw new UnauthorizedException('Invalid token');
+      throw new AppException(
+        ErrorCode.UNAUTHORIZED,
+        'Invalid or expired token',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     return true;

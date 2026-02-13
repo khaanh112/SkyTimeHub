@@ -8,7 +8,7 @@ import { UserStatus } from '@common/enums/user-status.enum';
 import { AppException } from '@common/exceptions/app.exception';
 import { ErrorCode } from '@common/enums/errror-code.enum';
 import { NotificationsService } from '@modules/notifications/notifications.service';
-import { generateEmployeeId, generateActivationToken } from '@common/utils/user.utils';
+import { generateEmployeeId, generateActivationToken } from '@/modules/users/utils/user.utils';
 
 @Injectable()
 export class UsersService {
@@ -19,8 +19,6 @@ export class UsersService {
     private usersRepository: Repository<User>,
     private notificationsService: NotificationsService,
   ) {}
-
-
 
   async getUsers(): Promise<User[]> {
     return await this.usersRepository.find({});

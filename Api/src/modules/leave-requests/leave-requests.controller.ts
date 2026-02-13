@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Patch, Body, Param, Request, Put, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Request,
+  Put,
+  ParseIntPipe,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -58,18 +68,17 @@ export class LeaveRequestsController {
     try {
       const result = await this.leaveRequestsService.findUserLeaveRequests(req.user.id);
       console.log('[LeaveRequestsController] findAll result count:', result?.length);
-      
+
       // Transform each request to include ccUserIds from notificationRecipients
       const transformedResult = result.map((request) => {
-        const ccUserIds = request.notificationRecipients
-          ?.filter(r => r.type === 'CC')
-          .map(r => r.userId) || [];
+        const ccUserIds =
+          request.notificationRecipients?.filter((r) => r.type === 'CC').map((r) => r.userId) || [];
         return {
           ...request,
           ccUserIds,
         };
       });
-      
+
       return transformedResult;
     } catch (error) {
       console.error('[LeaveRequestsController] findAll error:', error);
@@ -86,7 +95,12 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 200, description: 'List of leave requests retrieved successfully.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async findForManagement(@Request() req) {
-    console.log('[LeaveRequestsController] findForManagement called for user:', req.user?.id, 'role:', req.user?.role);
+    console.log(
+      '[LeaveRequestsController] findForManagement called for user:',
+      req.user?.id,
+      'role:',
+      req.user?.role,
+    );
     try {
       const result = await this.leaveRequestsService.findRequestsForManagement(req.user);
       console.log('[LeaveRequestsController] findForManagement result count:', result?.length);
@@ -97,7 +111,6 @@ export class LeaveRequestsController {
     }
   }
 
-  
   @Get(':id')
   @ApiOperation({
     summary: 'Get leave request by ID',
@@ -109,17 +122,16 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     const leaveRequest = await this.leaveRequestsService.findOne(id);
-    
+
     // Transform notificationRecipients to ccUserIds for frontend
-    const ccUserIds = leaveRequest.notificationRecipients
-      ?.filter(r => r.type === 'CC')
-      .map(r => r.userId) || [];
-    
+    const ccUserIds =
+      leaveRequest.notificationRecipients?.filter((r) => r.type === 'CC').map((r) => r.userId) ||
+      [];
+
     // Also include ccRecipients with full user info for detail view
-    const ccRecipients = leaveRequest.notificationRecipients
-      ?.filter(r => r.type === 'CC')
-      .map(r => r.user) || [];
-    
+    const ccRecipients =
+      leaveRequest.notificationRecipients?.filter((r) => r.type === 'CC').map((r) => r.user) || [];
+
     return {
       ...leaveRequest,
       ccUserIds,
@@ -146,8 +158,7 @@ export class LeaveRequestsController {
   })
   @ApiResponse({
     status: 409,
-    description:
-      'Version conflict - the request has been modified. Please refresh and try again.',
+    description: 'Version conflict - the request has been modified. Please refresh and try again.',
   })
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -163,11 +174,7 @@ export class LeaveRequestsController {
       updateDto,
     );
     try {
-      const result = await this.leaveRequestsService.updateLeaveRequest(
-        id,
-        req.user.id,
-        updateDto,
-      );
+      const result = await this.leaveRequestsService.updateLeaveRequest(id, req.user.id, updateDto);
       return result;
     } catch (error) {
       console.error('[LeaveRequestsController] update error:', error.message);

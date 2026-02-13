@@ -24,7 +24,6 @@ export class CreateLeaveRequestDto {
   @Length(5, 500)
   reason: string;
 
-
   @ApiPropertyOptional({
     description: 'Work solution/handover plan for leave',
     example: 'Handover to John, OT compensation',
@@ -32,7 +31,7 @@ export class CreateLeaveRequestDto {
   @IsOptional()
   @IsString()
   @Length(0, 1000)
-  workSolution?: string;  
+  workSolution?: string;
 
   @ApiPropertyOptional({
     description: 'Array of user IDs to CC on notifications',

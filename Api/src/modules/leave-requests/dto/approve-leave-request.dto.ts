@@ -9,8 +9,7 @@ export class ApproveLeaveRequestDto {
     example: 1,
   })
   @IsNotEmpty({
-    message:
-      'Version is required for optimistic locking. Please refresh the page and try again.',
+    message: 'Version is required for optimistic locking. Please refresh the page and try again.',
   })
   @Type(() => Number)
   @IsInt({ message: 'Version must be a valid integer' })

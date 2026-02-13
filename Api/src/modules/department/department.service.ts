@@ -20,40 +20,48 @@ export class DepartmentService {
     private readonly dataSource: DataSource,
   ) {}
 
-
   async createDepartment(createDepartmentDto: CreateDepartmentDto) {
     const { name, leaderId } = createDepartmentDto;
-    
+
     const existingDepartment = await this.departmentRepository.findOne({ where: { name } });
     if (existingDepartment) {
-      throw new AppException(ErrorCode.INVALID_INPUT, 'Department with this name already exists', 400);
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        'Department with this name already exists',
+        400,
+      );
     }
     const department = this.departmentRepository.create({ name });
 
     if (leaderId) {
       const leader = await this.userRepository.findOne({ where: { id: leaderId } });
       if (!leader) {
-        throw new AppException(ErrorCode.INVALID_INPUT, `Leader with ID ${leaderId} not found`, 400);
+        throw new AppException(
+          ErrorCode.INVALID_INPUT,
+          `Leader with ID ${leaderId} not found`,
+          400,
+        );
       }
       department.leader = leader;
     }
-    
+
     return this.departmentRepository.save(department);
   }
 
   async getAllDepartments() {
     return this.departmentRepository.find({ relations: ['leader'] });
-
   }
 
   async getDepartmentById(id: string) {
-    const department = await this.departmentRepository.findOne({ where: { id: parseInt(id) }, relations: ['leader'] });
+    const department = await this.departmentRepository.findOne({
+      where: { id: parseInt(id) },
+      relations: ['leader'],
+    });
     if (!department) {
       throw new AppException(ErrorCode.NOT_FOUND, `Department with ID ${id} not found`, 404);
     }
     return department;
   }
-
 
   async deleteDepartment(id: string) {
     const department = await this.departmentRepository.findOne({ where: { id: parseInt(id) } });
@@ -76,14 +84,18 @@ export class DepartmentService {
       if (leaderId) {
         const leader = await manager.findOne(User, { where: { id: leaderId } });
         if (!leader) {
-          throw new AppException(ErrorCode.INVALID_INPUT, `Leader with ID ${leaderId} not found`, 400);
+          throw new AppException(
+            ErrorCode.INVALID_INPUT,
+            `Leader with ID ${leaderId} not found`,
+            400,
+          );
         }
 
         // Remove user from being leader of any other department
-        const oldDepartment = await manager.findOne(Department, { 
-          where: { leaderId } 
+        const oldDepartment = await manager.findOne(Department, {
+          where: { leaderId },
         });
-        
+
         if (oldDepartment && oldDepartment.id !== parseInt(id)) {
           oldDepartment.leader = null;
           await manager.save(Department, oldDepartment);
@@ -100,17 +112,17 @@ export class DepartmentService {
   }
 
   async checkDepartmentHasLeader(id: string) {
-    const department = await this.departmentRepository.findOne({ 
-      where: { id: parseInt(id) }, 
-      relations: ['leader'] 
+    const department = await this.departmentRepository.findOne({
+      where: { id: parseInt(id) },
+      relations: ['leader'],
     });
     if (!department) {
       throw new AppException(ErrorCode.NOT_FOUND, `Department with ID ${id} not found`, 404);
     }
-    return { 
+    return {
       hasLeader: !!department.leaderId,
       leaderId: department.leaderId,
-      leaderName: department.leader?.username || null
+      leaderName: department.leader?.username || null,
     };
   }
 }

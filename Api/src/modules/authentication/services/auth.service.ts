@@ -21,9 +21,6 @@ export class AuthService {
     private zohoAuthService: ZohoAuthService,
   ) {}
 
-  // =====================================================
-  // ZOHO OAUTH
-  // =====================================================
 
   async validateUserFromZoho(zohoProfile: ZohoProfileDto): Promise<LoginResponseDto> {
     try {

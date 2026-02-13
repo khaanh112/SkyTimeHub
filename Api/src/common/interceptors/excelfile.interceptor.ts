@@ -1,5 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { AppException } from '../exceptions/app.exception';
+import { ErrorCode } from '../enums/errror-code.enum';
 
 export const ExcelFileInterceptor = FileInterceptor('file', {
   limits: {
@@ -9,7 +11,14 @@ export const ExcelFileInterceptor = FileInterceptor('file', {
   fileFilter: (req, file, callback) => {
     // Check file extension
     if (!file.originalname.match(/\.(xlsx|xls)$/i)) {
-      return callback(new BadRequestException('Only Excel files (.xlsx, .xls) are allowed'), false);
+      return callback(
+        new AppException(
+          ErrorCode.INVALID_INPUT,
+          'Only xlsx file accepted',
+          HttpStatus.BAD_REQUEST,
+        ),
+        false,
+      );
     }
 
     // Check mime type
@@ -20,7 +29,14 @@ export const ExcelFileInterceptor = FileInterceptor('file', {
     ];
 
     if (!validMimeTypes.includes(file.mimetype)) {
-      return callback(new BadRequestException('Invalid file type'), false);
+      return callback(
+        new AppException(
+          ErrorCode.INVALID_INPUT,
+          'Only xlsx file accepted',
+          HttpStatus.BAD_REQUEST,
+        ),
+        false,
+      );
     }
 
     callback(null, true);

@@ -1,6 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
-import { DepartmentEnum } from '@/common/enums/departments.enum';
+import { IsInt, IsOptional, Min } from 'class-validator';
 
 export class UpdateDepartmentDto {
   @ApiPropertyOptional({ example: 12 })

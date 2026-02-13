@@ -35,11 +35,9 @@ export class UpdateUserDto {
   @IsEnum(UserStatus)
   status?: UserStatus;
 
-  
   @ApiPropertyOptional({ example: 1, description: 'Department ID' })
   @IsOptional()
   departmentId?: number | null;
-
 
   @ApiPropertyOptional({
     example: 'Software Engineer',

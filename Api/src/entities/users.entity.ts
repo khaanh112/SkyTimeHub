@@ -51,14 +51,6 @@ export class User {
   departmentId: number | null;
 
   @Exclude()
-  @OneToMany(() => LeaveRequest, (leaveRequest) => leaveRequest.user)
-  leaveRequests: LeaveRequest[];
-
-  @Exclude()
-  @OneToMany(() => LeaveRequest, (leaveRequest) => leaveRequest.approver)
-  approvalsToReview: LeaveRequest[];
-
-  @Exclude()
   @ManyToOne(() => Department, (department) => department.users, {
     nullable: true,
     onDelete: 'SET NULL',
@@ -70,11 +62,19 @@ export class User {
   @Column({ type: 'varchar', length: 100, nullable: true })
   position: string;
 
+  @Exclude()
+  @OneToMany(() => LeaveRequest, (leaveRequest) => leaveRequest.user)
+  leaveRequests: LeaveRequest[];
+
+  @Exclude()
+  @OneToMany(() => LeaveRequest, (leaveRequest) => leaveRequest.approver)
+  approvalsToReview: LeaveRequest[];
+
   @ApiPropertyOptional({ example: '2024-01-01', description: 'Join date' })
   @Column({ name: 'join_date', type: 'date', nullable: true })
   joinDate: Date;
 
-  @ApiPropertyOptional({example: '2022-01-01', description: 'Official contract date' })
+  @ApiPropertyOptional({ example: '2022-01-01', description: 'Official contract date' })
   @Column({ name: 'official_contract_date', type: 'date', nullable: true })
   officialContractDate: Date;
 

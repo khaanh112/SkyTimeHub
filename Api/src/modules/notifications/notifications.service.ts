@@ -12,7 +12,6 @@ import { EmailStatus } from '@common/enums/email_status';
 import { LeaveRequest } from '@/entities/leave_request.entity';
 import { LeaveRequestNotificationRecipient } from '@/entities/leave-request-notification-recipient.entity';
 
-
 @Injectable()
 export class NotificationsService implements OnModuleDestroy {
   private readonly logger = new Logger(NotificationsService.name);
@@ -200,7 +199,7 @@ export class NotificationsService implements OnModuleDestroy {
     const subject = this.getEmailSubject(email.type, email.context);
 
     this.logger.debug(`📤 Sending email ${email.id} to ${email.recipientUser.email} via SMTP...`);
-    
+
     const mailOptions = {
       from: `"${process.env.SMTP_FROM_NAME || 'SkyTimeHub'}" <${process.env.SMTP_USER}>`,
       to: email.recipientUser.email,
@@ -231,7 +230,7 @@ export class NotificationsService implements OnModuleDestroy {
           );
           // Wait 2 seconds before retry
           await new Promise((resolve) => setTimeout(resolve, 2000));
-          
+
           // On timeout, verify and potentially recreate connection
           if (isTimeout) {
             try {
@@ -317,7 +316,7 @@ export class NotificationsService implements OnModuleDestroy {
 
     const savedEmail = await this.emailQueueRepository.save(emailQueue);
     this.logger.log(`✅ Activation email queued for user ${userId}`);
-    
+
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
   }
@@ -367,7 +366,7 @@ export class NotificationsService implements OnModuleDestroy {
     this.logger.log(
       `✅ Leave request notification queued for request ${leaveRequestId}, user ${recipientUserId}`,
     );
-    
+
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
   }
@@ -416,8 +415,8 @@ export class NotificationsService implements OnModuleDestroy {
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
 
-    for(const recipient of recipients) {
-      if(recipient.userId !== recipientUserId) {
+    for (const recipient of recipients) {
+      if (recipient.userId !== recipientUserId) {
         await this.enqueueLeaveRequestApprovedNotification(
           leaveRequestId,
           recipient.userId,
@@ -470,7 +469,7 @@ export class NotificationsService implements OnModuleDestroy {
 
     const savedEmail = await this.emailQueueRepository.save(emailQueue);
     this.logger.log(`✅ Leave request rejected notification queued for request ${leaveRequestId}`);
-    
+
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
   }
@@ -505,7 +504,7 @@ export class NotificationsService implements OnModuleDestroy {
 
     const savedEmail = await this.emailQueueRepository.save(emailQueue);
     this.logger.log(`✅ Leave request updated notification queued for request ${leaveRequestId}`);
-    
+
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
   }
@@ -541,7 +540,7 @@ export class NotificationsService implements OnModuleDestroy {
 
     const savedEmail = await this.emailQueueRepository.save(emailQueue);
     this.logger.log(`✅ Leave request cancelled notification queued for request ${leaveRequestId}`);
-    
+
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
   }

@@ -1,11 +1,10 @@
-import {Delete, Put, Param, Get, Post, Body, Controller} from '@nestjs/common';
-import {DepartmentService} from './department.service';
-import {CreateDepartmentDto} from './dto/create-department.dto';
-import {UpdateDepartmentDto} from './dto/update-department.dto';
+import { Delete, Put, Param, Get, Post, Body, Controller } from '@nestjs/common';
+import { DepartmentService } from './department.service';
+import { CreateDepartmentDto } from './dto/create-department.dto';
+import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { Roles } from '../authorization/decorators/roles.decorator';
 import { UserRole } from '@/common/enums/roles.enum';
-
 
 @ApiBearerAuth()
 @Controller('department')
@@ -43,5 +42,4 @@ export class DepartmentController {
   updateDepartment(@Param('id') id: string, @Body() updateDepartmentDto: UpdateDepartmentDto) {
     return this.departmentService.updateDepartmentLeader(id, updateDepartmentDto);
   }
-
 }

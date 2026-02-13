@@ -15,6 +15,7 @@ export class UserResponseDto {
 
   @ApiProperty({ example: 'johndoe' })
   @IsString()
+  @Length(1, 50)
   username: string;
 
   @ApiProperty({ enum: UserRole, example: UserRole.EMPLOYEE })

@@ -59,7 +59,9 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user approver ID' })
   @ApiResponse({ status: 200, description: 'Approver ID retrieved successfully.' })
-  async getCurrentUserApproverId(@CurrentUser('id') userId: number): Promise<{ approverId: number | null }> {
+  async getCurrentUserApproverId(
+    @CurrentUser('id') userId: number,
+  ): Promise<{ approverId: number | null }> {
     const userApprover = await this.userApproverRepository.findOne({
       where: { userId, active: true },
     });

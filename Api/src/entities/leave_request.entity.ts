@@ -60,7 +60,10 @@ export class LeaveRequest {
   @Column({ type: 'text', nullable: false })
   reason: string;
 
-  @ApiProperty({ example: 'Handover to John, OT compensation', description: 'Work solution/handover plan for leave'})
+  @ApiProperty({
+    example: 'Handover to John, OT compensation',
+    description: 'Work solution/handover plan for leave',
+  })
   @Column({ name: 'work_solution', type: 'text', nullable: true })
   workSolution?: string;
 

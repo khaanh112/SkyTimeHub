@@ -4,7 +4,6 @@ import {
   CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
-  Unique,
   ManyToOne,
   JoinColumn,
   Index,
@@ -13,7 +12,6 @@ import { Exclude } from 'class-transformer';
 import { User } from './users.entity';
 
 @Entity('user_approvers')
-// Removed @Unique decorator - will use partial unique index via migration
 @Index('idx_user_approvers_user_active', ['userId', 'active'])
 export class UserApprover {
   @PrimaryGeneratedColumn()

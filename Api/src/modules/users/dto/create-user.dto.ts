@@ -29,7 +29,12 @@ export class CreateUserDto {
   @IsString()
   username: string;
 
-  @ApiProperty({ enum: UserGender, example: UserGender.MALE, description: 'Gender', required: true })
+  @ApiProperty({
+    enum: UserGender,
+    example: UserGender.MALE,
+    description: 'Gender',
+    required: true,
+  })
   @IsNotEmpty({ message: 'Gender is required' })
   @IsEnum(UserGender)
   gender: UserGender;

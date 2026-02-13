@@ -48,7 +48,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Zoho OAuth callback' })
   @ApiResponse({ status: 302, description: 'Redirects to frontend with tokens' })
   async zohoCallback(@Req() req: any, @Res() res: Response) {
-    this.logger.log('========== ZOHO CALLBACK START ==========');
+    
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
 
     // Handle OAuth errors from Zoho (e.g., user denied access)
@@ -79,7 +79,6 @@ export class AuthController {
       this.logger.log(
         `Zoho profile extracted - Email: ${zohoProfile.email}, Name: ${zohoProfile.firstName} ${zohoProfile.lastName}`,
       );
-      this.logger.log('Calling authService.validateUserFromZoho...');
 
       const loginResponse = await this.authService.validateUserFromZoho(zohoProfile);
 
@@ -99,7 +98,7 @@ export class AuthController {
       this.logger.error(`Error message: ${error.message}`);
       this.logger.error(`Error stack: ${error.stack}`);
 
-      const errorCode = error.code || 'INTERNAL_ERROR';
+      const errorCode = error.code || ErrorCode.UNAUTHORIZED;
       const errorMessage = encodeURIComponent(
         error.message || 'Đăng nhập thất bại. Vui lòng thử lại.',
       );

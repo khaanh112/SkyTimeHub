@@ -55,7 +55,7 @@ export class EmailQueue {
 
   // Email content (context for template rendering)
   @Column({ type: 'jsonb', nullable: false })
-  context: Record<string, any>;
+  context: Record<string, unknown>;
 
   // Status workflow
   @Column({ type: 'enum', enum: EmailStatus, default: EmailStatus.PENDING })

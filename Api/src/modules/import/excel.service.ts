@@ -388,7 +388,9 @@ export class ExcelService {
             departmentId: row.departmentId,
             position: row.position,
             joinDate: row.joinDate ? new Date(row.joinDate) : undefined,
-            officialContractDate: row.officialContractDate ? new Date(row.officialContractDate) : undefined,
+            officialContractDate: row.officialContractDate
+              ? new Date(row.officialContractDate)
+              : undefined,
             status: UserStatus.PENDING, // All imported users auto-set to pending
           };
 

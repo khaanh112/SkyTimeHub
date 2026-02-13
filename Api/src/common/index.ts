@@ -20,4 +20,4 @@ export * from './interceptors/excelfile.interceptor';
 export * from './filters/http-exception.filter';
 
 // Utils
-export * from './utils/user.utils';
+export * from '../modules/users/utils/user.utils';

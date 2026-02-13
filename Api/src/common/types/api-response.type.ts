@@ -1,7 +1,7 @@
 /**
  * Cấu trúc response API thống nhất cho success responses
  */
-export type ApiSuccessResponse<T = any> = {
+export type ApiSuccessResponse<T = unknown> = {
   success: true;
   data: T;
   message?: string;

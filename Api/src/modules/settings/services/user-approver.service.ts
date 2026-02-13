@@ -30,22 +30,12 @@ export class UserApproverService {
     return userApprovers.map((ua) => ua.approver);
   }
 
-  
-  async setApproverForUser(
-    userId: number,
-    dto: UserApproverDto,
-  ): Promise<UserApprover> {
-    this.logger.log(
-      `Setting approver for user ID: ${userId} to approver ID: ${dto.approverId}`,
-    );
+  async setApproverForUser(userId: number, dto: UserApproverDto): Promise<UserApprover> {
+    this.logger.log(`Setting approver for user ID: ${userId} to approver ID: ${dto.approverId}`);
     this.logger.debug(`Input DTO: ${JSON.stringify(dto)}`);
 
     if (dto.approverId === userId) {
-      throw new AppException(
-        ErrorCode.INVALID_INPUT,
-        'A user cannot be their own approver.',
-        400,
-      );
+      throw new AppException(ErrorCode.INVALID_INPUT, 'A user cannot be their own approver.', 400);
     }
 
     // (optional) ensure user exists
@@ -58,11 +48,7 @@ export class UserApproverService {
       where: { id: dto.approverId },
     });
     if (!approver) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'Approver user not found.',
-        404,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'Approver user not found.', 404);
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -71,11 +57,7 @@ export class UserApproverService {
 
     try {
       // Deactivate all currently active approvers for this user
-      await queryRunner.manager.update(
-        UserApprover,
-        { userId, active: true },
-        { active: false },
-      );
+      await queryRunner.manager.update(UserApprover, { userId, active: true }, { active: false });
 
       // Check if a record with this approverId already exists (active or inactive)
       let userApprover = await queryRunner.manager.findOne(UserApprover, {
@@ -84,9 +66,7 @@ export class UserApproverService {
 
       if (userApprover) {
         // Reuse existing record - just reactivate it
-        this.logger.debug(
-          `Reusing existing user_approver record ID: ${userApprover.id}`,
-        );
+        this.logger.debug(`Reusing existing user_approver record ID: ${userApprover.id}`);
         userApprover.active = true;
         userApprover.createdBy = dto.createdBy;
         await queryRunner.manager.save(UserApprover, userApprover);
@@ -115,6 +95,4 @@ export class UserApproverService {
       await queryRunner.release();
     }
   }
-
-
 }

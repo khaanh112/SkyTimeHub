@@ -56,7 +56,7 @@ export class EmailWorkerService implements OnModuleInit {
    */
   async onModuleInit() {
     this.logger.log('Email Worker module initialized, checking for stuck emails...');
-    
+
     // Find all PROCESSING emails (from old workers)
     const stuckEmails = await this.emailQueueRepository.find({
       where: { status: EmailStatus.PROCESSING },
@@ -70,7 +70,8 @@ export class EmailWorkerService implements OnModuleInit {
       for (const email of stuckEmails) {
         const newAttemptCount = email.attemptCount + 1;
         // Faster retry on startup: 30s, 1min, 2min
-        const retryDelaySeconds = newAttemptCount === 1 ? 30 : Math.pow(2, newAttemptCount - 1) * 60;
+        const retryDelaySeconds =
+          newAttemptCount === 1 ? 30 : Math.pow(2, newAttemptCount - 1) * 60;
         const nextRetryAt = new Date(Date.now() + retryDelaySeconds * 1000);
 
         await this.emailQueueRepository.update(email.id, {
@@ -82,7 +83,9 @@ export class EmailWorkerService implements OnModuleInit {
           errorMessage: `Recovered on startup from worker ${email.workerId || 'unknown'}`,
         });
 
-        this.logger.log(`Recovered stuck email ${email.id}, scheduled retry at ${nextRetryAt.toISOString()}`);
+        this.logger.log(
+          `Recovered stuck email ${email.id}, scheduled retry at ${nextRetryAt.toISOString()}`,
+        );
       }
 
       this.logger.log(`Successfully recovered ${stuckEmails.length} stuck emails`);
