@@ -166,28 +166,7 @@ export class AuthService {
     this.logger.log(`User logged out successfully: ${userId}`);
   }
 
-  // =====================================================
-  // USER VALIDATION
-  // =====================================================
-
-  async validateUser(userId: number): Promise<User> {
-    const user = await this.usersService.getUser(userId);
-
-    if (!user) {
-      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.UNAUTHORIZED);
-    }
-
-    if (user.status !== UserStatus.ACTIVE) {
-      throw new AppException(
-        ErrorCode.ACCOUNT_NOT_ACTIVE,
-        'User account is not active',
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
-
-    return user;
-  }
-
+  
   /**
    * Activate user account via activation token
    * Used when user clicks activation link from invitation email
