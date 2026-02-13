@@ -2,6 +2,5 @@ export enum LeaveRequestStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
-  CANCELLED = 'cancelled',
-  DONE = 'done',
+  CANCELLED = 'cancelled'
 }
