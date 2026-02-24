@@ -43,11 +43,16 @@ export class LeaveRequestsService {
    * Create a new leave request
    */
   async createLeaveRequest(userId: number, dto: CreateLeaveRequestDto): Promise<LeaveRequest> {
+    this.logger.log(`[createLeaveRequest] User ${userId} attempting to create leave request: ${JSON.stringify(dto)}`);
+
     // Validate dates
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
 
     if (endDate < startDate) {
+      this.logger.warn(
+        `[createLeaveRequest] Date validation failed for user ${userId}: endDate (${dto.endDate}) is before startDate (${dto.startDate})`,
+      );
       throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
 
@@ -58,6 +63,9 @@ export class LeaveRequestsService {
     });
 
     if (!userApprover) {
+      this.logger.warn(
+        `[createLeaveRequest] No active approver found for user ${userId}`,
+      );
       throw new AppException(
         ErrorCode.INVALID_INPUT,
         'No active approver assigned to this user',
@@ -66,6 +74,9 @@ export class LeaveRequestsService {
     }
 
     if (!dto.reason) {
+      this.logger.warn(
+        `[createLeaveRequest] Missing reason for user ${userId}`,
+      );
       throw new AppException(ErrorCode.INVALID_INPUT, 'Reason for leave request is required', 400);
     }
 
@@ -73,6 +84,9 @@ export class LeaveRequestsService {
     const requester = await this.userRepository.findOne({ where: { id: userId } });
 
     if (dto.ccUserIds && dto.ccUserIds.includes(userId)) {
+      this.logger.warn(
+        `[createLeaveRequest] User ${userId} attempted to CC themselves`,
+      );
       throw new AppException(
         ErrorCode.INVALID_INPUT,
         'You cannot CC yourself on your own leave request',
@@ -82,6 +96,9 @@ export class LeaveRequestsService {
 
     // Validate ccUserIds: không được chứa approver
     if (dto.ccUserIds && dto.ccUserIds.includes(userApprover.approverId)) {
+      this.logger.warn(
+        `[createLeaveRequest] User ${userId} included approver ${userApprover.approverId} in CC list`,
+      );
       throw new AppException(
         ErrorCode.INVALID_INPUT,
         'Approver is automatically notified and should not be in CC list',
@@ -97,6 +114,9 @@ export class LeaveRequestsService {
       const hrUserIds = hrUsers.map((hr) => hr.id);
       const hasHrInCC = dto.ccUserIds.some((id) => hrUserIds.includes(id));
       if (hasHrInCC) {
+        this.logger.warn(
+          `[createLeaveRequest] User ${userId} included HR user(s) in CC list: ${dto.ccUserIds.filter((id) => hrUserIds.includes(id)).join(', ')}`,
+        );
         throw new AppException(
           ErrorCode.INVALID_INPUT,
           'HR users are automatically notified and should not be in CC list',
@@ -116,6 +136,9 @@ export class LeaveRequestsService {
       const overlappingDates = overlapCheck.overlappingRequests
         .map((req) => `${req.startDate} to ${req.endDate}`)
         .join(', ');
+      this.logger.warn(
+        `[createLeaveRequest] Overlap detected for user ${userId}: ${overlappingDates}`,
+      );
       throw new AppException(
         ErrorCode.INVALID_INPUT,
         `Leave dates overlap with existing request(s): ${overlappingDates}`,

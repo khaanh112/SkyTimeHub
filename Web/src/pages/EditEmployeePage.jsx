@@ -183,8 +183,8 @@ const EditEmployeePage = () => {
         dataToSend.departmentId = null;
       }
 
-      // Position: always send position (empty string to clear department leader)
-      dataToSend.position = formData.position || '';
+      // Position: send null to clear, or trimmed value (cannot send empty string, backend requires Length(1,100))
+      dataToSend.position = formData.position?.trim() || null;
 
       if (formData.joinDate) {
         dataToSend.joinDate = formData.joinDate;
@@ -213,7 +213,12 @@ const EditEmployeePage = () => {
     } catch (error) {
       console.error('Failed to update employee:', error);
       console.error('Error details:', error.response?.data);
-      toast.error(error.response?.data?.message || 'Failed to update employee');
+      const data = error.response?.data;
+      if (data?.details && Array.isArray(data.details) && data.details.length > 0) {
+        data.details.forEach((msg) => toast.error(msg));
+      } else {
+        toast.error(data?.message || 'Failed to update employee');
+      }
     } finally {
       setSaving(false);
     }

@@ -73,6 +73,21 @@ const CreateLeaveRequestPage = () => {
       return;
     }
 
+    if (!formData.reason || formData.reason.trim().length < 5) {
+      toast.error('Reason must be at least 5 characters');
+      return;
+    }
+
+    if (formData.reason.trim().length > 500) {
+      toast.error('Reason must not exceed 500 characters');
+      return;
+    }
+
+    if (formData.workSolution && formData.workSolution.length > 1000) {
+      toast.error('Work solution must not exceed 1000 characters');
+      return;
+    }
+
     // Check if user has an approver
     if (!approver && !loadingApprover) {
       toast.error('You must have an approver assigned before submitting a leave request. Please contact HR.');
@@ -86,7 +101,12 @@ const CreateLeaveRequestPage = () => {
       navigate('/leave-requests');
     } catch (error) {
       console.error('Error creating leave request:', error);
-      toast.error(error.response?.data?.message || 'Failed to create leave request');
+      const data = error.response?.data;
+      if (data?.details && Array.isArray(data.details) && data.details.length > 0) {
+        data.details.forEach((msg) => toast.error(msg));
+      } else {
+        toast.error(data?.message || 'Failed to create leave request');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -185,10 +205,17 @@ const CreateLeaveRequestPage = () => {
                   value={formData.reason}
                   onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
                   rows="6"
+                  maxLength={500}
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   placeholder="Please provide the reason for your leave request..."
                   required
                 />
+                <div className="flex justify-between mt-1">
+                  <p className="text-xs text-gray-500">Minimum 5 characters required</p>
+                  <p className={`text-xs ${formData.reason.length > 450 ? 'text-amber-500' : 'text-gray-400'}`}>
+                    {formData.reason.length}/500
+                  </p>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -198,9 +225,16 @@ const CreateLeaveRequestPage = () => {
                   value={formData.workSolution}
                   onChange={(e) => setFormData({ ...formData, workSolution: e.target.value })}
                   rows="6"
+                  maxLength={1000}
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                  placeholder="Describe how your work will be handled during your absence..."
+                  placeholder="Describe how your work will be handled during your absence (e.g. handover to colleague, tasks to pause)..."
                 />
+                <div className="flex justify-between mt-1">
+                  <p className="text-xs text-gray-500">Optional — describe handover plan</p>
+                  <p className={`text-xs ${formData.workSolution.length > 900 ? 'text-amber-500' : 'text-gray-400'}`}>
+                    {formData.workSolution.length}/1000
+                  </p>
+                </div>
               </div>
             </div>
           </div>
