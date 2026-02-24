@@ -15,6 +15,7 @@ import { User } from '@entities/users.entity';
 import { LeaveRequestStatus } from '@common/enums/request_status';
 import { RecipientType } from '@common/enums/recipient-type.enum';
 import { UserRole } from '@common/enums/roles.enum';
+import { UserStatus } from '@common/enums/user-status.enum';
 import { NotificationsService } from '@modules/notifications/notifications.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
@@ -88,9 +89,11 @@ export class LeaveRequestsService {
       );
     }
 
-    // Validate ccUserIds: không được chứa HR users
+    // Validate ccUserIds: không được chứa active HR users
     if (dto.ccUserIds && dto.ccUserIds.length > 0) {
-      const hrUsers = await this.userRepository.find({ where: { role: UserRole.HR } });
+      const hrUsers = await this.userRepository.find({
+        where: { role: UserRole.HR, status: UserStatus.ACTIVE },
+      });
       const hrUserIds = hrUsers.map((hr) => hr.id);
       const hasHrInCC = dto.ccUserIds.some((id) => hrUserIds.includes(id));
       if (hasHrInCC) {
@@ -142,10 +145,13 @@ export class LeaveRequestsService {
       // Add notification recipients
       const recipients: LeaveRequestNotificationRecipient[] = [];
 
-      // 1. Add HR users (always, except if requester is HR themselves)
+      // 1. Add active HR users (always, except if requester is HR themselves)
       // HR receives notification when request is approved
+      // Only include ACTIVE HR users - pending/inactive HR should not receive notifications
       if (requester.role !== UserRole.HR) {
-        const hrUsers = await this.userRepository.find({ where: { role: UserRole.HR } });
+        const hrUsers = await this.userRepository.find({
+          where: { role: UserRole.HR, status: UserStatus.ACTIVE },
+        });
         for (const hrUser of hrUsers) {
           recipients.push(
             this.notificationRecipientRepository.create({
@@ -307,9 +313,11 @@ export class LeaveRequestsService {
         );
       }
 
-      // Validate ccUserIds: không được chứa HR users
+      // Validate ccUserIds: không được chứa active HR users
       if (dto.ccUserIds && dto.ccUserIds.length > 0) {
-        const hrUsers = await this.userRepository.find({ where: { role: UserRole.HR } });
+        const hrUsers = await this.userRepository.find({
+          where: { role: UserRole.HR, status: UserStatus.ACTIVE },
+        });
         const hrUserIds = hrUsers.map((hr) => hr.id);
         const hasHrInCC = dto.ccUserIds.some((id) => hrUserIds.includes(id));
         if (hasHrInCC) {
