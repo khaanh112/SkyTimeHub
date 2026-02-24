@@ -19,6 +19,7 @@ import { Public } from '../decorators/public.decorator';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { RefreshTokenDto, LoginEmailDto, AuthenticatedUser } from '../dto';
 import { ActivateAccountDto } from '../dto/activate-account.dto';
+import { ResendActivationEmailDto } from '../dto/resend-activation-email.dto';
 import { ApiOperation, ApiTags, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { SuccessResponseDto } from '@/common/dto/success-response.dto';
 import { AppException, ErrorCode } from '@/common';
@@ -102,7 +103,12 @@ export class AuthController {
       const errorMessage = encodeURIComponent(
         error.message || 'Đăng nhập thất bại. Vui lòng thử lại.',
       );
-      const redirectUrl = `${frontendUrl}/auth/callback?error=${errorCode}&message=${errorMessage}`;
+
+      // Pass email for ACCOUNT_NOT_ACTIVATED so frontend can offer resend
+      const emailParam = errorCode === ErrorCode.ACCOUNT_NOT_ACTIVATED && req.user?.email
+        ? `&email=${encodeURIComponent(req.user.email)}`
+        : '';
+      const redirectUrl = `${frontendUrl}/auth/callback?error=${errorCode}&message=${errorMessage}${emailParam}`;
 
       this.logger.log(`Redirecting to frontend with error: ${errorCode}`);
       this.logger.log('========== ZOHO CALLBACK FAILED ==========');
@@ -190,5 +196,16 @@ export class AuthController {
   async activateAccount(@Param() dto: ActivateAccountDto) {
     const result = await this.authService.activateAccount(dto.token);
     return new SuccessResponseDto(result, 'User account activated successfully');
+  }
+
+  @Public()
+  @Post('resend-activation-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resend activation email for pending account' })
+  @ApiResponse({ status: 200, description: 'Activation email sent if account is pending.' })
+  @ApiResponse({ status: 429, description: 'Rate limited - must wait before resending.' })
+  async resendActivationEmail(@Body() dto: ResendActivationEmailDto) {
+    const result = await this.authService.resendActivationEmail(dto.email);
+    return new SuccessResponseDto(result, result.message);
   }
 }

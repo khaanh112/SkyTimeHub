@@ -15,6 +15,7 @@ import { UserStatus } from 'src/common/enums/user-status.enum';
 import { Department } from './departments.entity';
 import { LeaveRequest } from './leave_request.entity';
 import { UserGender } from '@/common/enums/user-genders';
+import { ContractType } from '@/common/enums/contract-type.enum';
 
 @Entity('users')
 export class User {
@@ -61,6 +62,22 @@ export class User {
   @ApiPropertyOptional({ example: 'Software Engineer', description: 'Job position' })
   @Column({ type: 'varchar', length: 100, nullable: true })
   position: string;
+
+  @ApiPropertyOptional({ example: '0901234567', description: 'Phone number' })
+  @Column({ name: 'phone_number', type: 'varchar', length: 20, nullable: true })
+  phoneNumber: string;
+
+  @ApiPropertyOptional({ example: '1995-06-15', description: 'Date of birth' })
+  @Column({ name: 'date_of_birth', type: 'date', nullable: true })
+  dateOfBirth: Date;
+
+  @ApiPropertyOptional({ example: '123 Main St, Hanoi', description: 'Address' })
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  address: string;
+
+  @ApiPropertyOptional({ enum: ContractType, example: ContractType.FULL_TIME, description: 'Contract type' })
+  @Column({ name: 'contract_type', type: 'enum', enum: ContractType, nullable: true })
+  contractType: ContractType;
 
   @Exclude()
   @OneToMany(() => LeaveRequest, (leaveRequest) => leaveRequest.user)

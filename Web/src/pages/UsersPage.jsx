@@ -11,9 +11,6 @@ import {
   Upload,
   UserCheck,
   UserX,
-  Link as LinkIcon,
-  Copy,
-  Mail,
   UserCog,
   Eye,
 } from 'lucide-react';
@@ -135,47 +132,6 @@ const UsersPage = () => {
   const openDeleteModal = (user) => {
     setSelectedUser(user);
     setIsDeleteModalOpen(true);
-  };
-
-  const handleGetActivationLink = async (user) => {
-    try {
-      const data = await userService.getActivationLink(user.id);
-      // Copy to clipboard
-      await navigator.clipboard.writeText(data.activationLink);
-      toast.success('Activation link đã được copy vào clipboard!');
-    } catch (error) {
-      console.error('Failed to get activation link:', error);
-      toast.error('Không thể lấy activation link');
-    }
-  };
-
-  const handleResetActivationToken = async (user) => {
-    if (!window.confirm(`Reset activation token cho user ${user.username}?`)) {
-      return;
-    }
-    try {
-      const data = await userService.resetActivationToken(user.id);
-      await navigator.clipboard.writeText(data.activationLink);
-      toast.success('Activation token đã được reset và link mới đã copy vào clipboard!');
-      fetchUsers();
-    } catch (error) {
-      console.error('Failed to reset activation token:', error);
-      toast.error('Không thể reset activation token');
-    }
-  };
-
-  const handleResendActivationLink = async (user) => {
-    if (!window.confirm(`Gửi lại activation link qua email cho user ${user.username} (${user.email})?`)) {
-      return;
-    }
-    try {
-      const data = await userService.resendActivationLink(user.id);
-      toast.success(data.message || 'Activation link đã được gửi lại qua email!');
-      fetchUsers();
-    } catch (error) {
-      console.error('Failed to resend activation link:', error);
-      toast.error(error.response?.data?.message || 'Không thể gửi lại activation link');
-    }
   };
 
   const handleDeactivate = async (user) => {
@@ -376,36 +332,6 @@ const UsersPage = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end space-x-2">
-                          {/* Action buttons based on status */}
-                          {user.status === 'pending' && (
-                            <>
-                              <button
-                                onClick={() => handleGetActivationLink(user)}
-                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                title="Get Activation Link"
-                              >
-                                <LinkIcon className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleResetActivationToken(user)}
-                                className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                                title="Reset Activation Token"
-                              >
-                                <RefreshCw className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleResendActivationLink(user)}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Resend Activation Link (Email)"
-                              >
-                                <Mail className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-                       
-                          
-              
-                          
                           {/* View button - always visible */}
                           <button
                             onClick={() => navigate(`/users/${user.id}`)}

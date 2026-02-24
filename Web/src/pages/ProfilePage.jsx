@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Briefcase, Phone, Calendar, Shield, CheckCircle, XCircle, Building2 } from 'lucide-react';
+import { User, Mail, Briefcase, Phone, Calendar, Shield, CheckCircle, XCircle, Building2, MapPin, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { userService } from '../services';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -128,6 +128,62 @@ const ProfilePage = () => {
               <p className="text-base font-semibold text-gray-900 mt-1 break-all">{user.email}</p>
             </div>
           </div>
+
+          {/* Phone Number */}
+          {user.phoneNumber && (
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
+                <Phone className="w-5 h-5 text-green-500" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Số điện thoại</p>
+                <p className="text-base font-semibold text-gray-900 mt-1">{user.phoneNumber}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Date of Birth */}
+          {user.dateOfBirth && (
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 bg-pink-50 rounded-lg flex items-center justify-center shrink-0">
+                <Calendar className="w-5 h-5 text-pink-500" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Ngày sinh</p>
+                <p className="text-base font-semibold text-gray-900 mt-1">
+                  {new Date(user.dateOfBirth).toLocaleDateString('vi-VN')}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Address */}
+          {user.address && (
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center shrink-0">
+                <MapPin className="w-5 h-5 text-teal-500" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Địa chỉ</p>
+                <p className="text-base font-semibold text-gray-900 mt-1">{user.address}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Contract Type */}
+          {user.contractType && (
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Loại hợp đồng</p>
+                <p className="text-base font-semibold text-gray-900 mt-1">
+                  {user.contractType.charAt(0).toUpperCase() + user.contractType.slice(1).replace('_', ' ')}
+                </p>
+              </div>
+            </div>
+          )}
 
          
 

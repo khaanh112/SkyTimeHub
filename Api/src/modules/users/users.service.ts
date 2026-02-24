@@ -244,129 +244,55 @@ export class UsersService {
     return await this.usersRepository.save(user);
   }
   /**
-   * Get activation token for user (for HR to send activation link)
+   * Resend activation email by email address (self-service)
+   * Rate limited: 5 minutes between requests
    */
-  async getActivationToken(userId: number): Promise<string> {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
+  async resendActivationEmailByEmail(email: string): Promise<{ message: string }> {
+    this.logger.log(`Resend activation email requested for: ${email}`);
 
+    // 1. Find user by email
+    const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) {
-      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
+      // Return generic message to avoid email enumeration
+      return { message: 'If the email exists and account is pending, an activation email will be sent.' };
     }
 
-    if (user.status === UserStatus.ACTIVE) {
-      throw new AppException(
-        ErrorCode.ACCOUNT_ALREADY_ACTIVE,
-        'User account is already active',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    if (!user.activationToken) {
-      throw new AppException(
-        ErrorCode.NO_ACTIVATION_TOKEN,
-        'No activation token found for this user',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    return user.activationToken;
-  }
-
-  async resetActivationToken(userId: number): Promise<string> {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
-    }
+    // 2. Check PENDING status
     if (user.status !== UserStatus.PENDING) {
-      throw new AppException(
-        ErrorCode.ACCOUNT_ALREADY_ACTIVE,
-        'User account is already active, contact HR for assistance',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    if (!user.activationToken) {
-      throw new AppException(
-        ErrorCode.NO_ACTIVATION_TOKEN,
-        'No activation token found for this user',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    const newToken = generateActivationToken();
-    user.activationToken = newToken;
-    await this.usersRepository.save(user);
-    return newToken;
-  }
-
-  /**
-   * Resend activation link - Generate new token and send email
-   * HR only - with strict validation
-   */
-  async resendActivationLink(userId: number): Promise<{ message: string; activationLink: string }> {
-    this.logger.log(`========== RESEND ACTIVATION LINK START ==========`);
-    this.logger.log(`Attempting to resend activation link for user ID: ${userId}`);
-
-    // 1. Check if user exists
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      this.logger.error(`❌ User not found with ID: ${userId}`);
-      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
+      return { message: 'If the email exists and account is pending, an activation email will be sent.' };
     }
 
-    this.logger.log(`✓ User found: ${user.email}`);
-    this.logger.log(`   - Current Status: ${user.status}`);
-    this.logger.log(`   - Current Activation Token: ${user.activationToken ? 'EXISTS' : 'NULL'}`);
-
-    // 2. Check if user status is PENDING
-    if (user.status !== UserStatus.PENDING) {
-      this.logger.error(`❌ Cannot resend activation link. User status is: ${user.status}`);
-      this.logger.log(`   - Only PENDING users can receive activation links`);
-      this.logger.log(`   - Current user status: ${user.status}`);
-      throw new AppException(
-        ErrorCode.INVALID_INPUT,
-        `Cannot resend activation link. User status is ${user.status}. Only pending users can receive activation links.`,
-        HttpStatus.BAD_REQUEST,
-      );
+    // 3. Rate limit: check last activation email sent within 5 minutes
+    const lastSentAt = await this.notificationsService.getLastActivationEmailTime(user.id);
+    if (lastSentAt) {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      if (lastSentAt > fiveMinutesAgo) {
+        const waitSeconds = Math.ceil((lastSentAt.getTime() + 5 * 60 * 1000 - Date.now()) / 1000);
+        throw new AppException(
+          ErrorCode.RESEND_RATE_LIMITED,
+          `Vui lòng đợi ${waitSeconds} giây trước khi gửi lại email kích hoạt.`,
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
     }
 
-    this.logger.log(`✓ User status is PENDING - eligible for activation link resend`);
-
-    // 3. Generate new activation token
+    // 4. Generate new activation token
     const newActivationToken = generateActivationToken();
-    this.logger.log(`✓ New activation token generated`);
-
-    // 4. Update user with new token
     user.activationToken = newActivationToken;
     await this.usersRepository.save(user);
-    this.logger.log(`✓ User updated with new activation token`);
 
-    // 5. Generate activation link
+    // 5. Send activation email
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const activationLink = `${frontendUrl}/auth/activate?token=${newActivationToken}`;
-    this.logger.log(`✓ Activation link generated: ${activationLink.substring(0, 50)}...`);
 
-    // 6. Send activation email
-    try {
-      await this.notificationsService.enqueueActivationEmail(
-        user.id,
-        newActivationToken,
-        activationLink,
-      );
-      this.logger.log(`✅ Activation email queued successfully for user: ${user.email}`);
-    } catch (error) {
-      this.logger.error(`❌ Failed to queue activation email: ${error.message}`);
-      throw new AppException(
-        ErrorCode.INTERNAL_SERVER_ERROR,
-        'Failed to send activation email',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-
-    this.logger.log(`========== RESEND ACTIVATION LINK SUCCESS ==========`);
-
-    return {
-      message: "Activation link has been sent to the user's email",
+    await this.notificationsService.enqueueActivationEmail(
+      user.id,
+      newActivationToken,
       activationLink,
-    };
+    );
+
+    this.logger.log(`Activation email resent for user: ${user.email}`);
+    return { message: 'Email kích hoạt đã được gửi. Vui lòng kiểm tra hộp thư.' };
   }
 
   // =====================================================

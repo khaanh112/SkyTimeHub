@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Waves, Mail, ArrowRight, Cloud } from 'lucide-react';
+import { Waves, Mail, ArrowRight, Cloud, Send } from 'lucide-react';
 import { authService } from '../services';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -11,6 +11,8 @@ const LoginPage = () => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState(null);
+  const [resending, setResending] = useState(false);
 
   const handleZohoLogin = () => {
     window.location.href = authService.getZohoLoginUrl();
@@ -24,6 +26,7 @@ const LoginPage = () => {
       return;
     }
 
+    setPendingEmail(null);
     setLoading(true);
     try {
       const response = await authService.loginWithEmail(email);
@@ -31,8 +34,25 @@ const LoginPage = () => {
       navigate('/', { replace: true });
     } catch (error) {
       console.error('Login failed:', error);
+      const errorCode = error.response?.data?.code;
+      if (errorCode === 'ACCOUNT_NOT_ACTIVATED') {
+        setPendingEmail(email);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendActivation = async () => {
+    if (!pendingEmail) return;
+    setResending(true);
+    try {
+      const result = await authService.resendActivationEmail(pendingEmail);
+      toast.success(result.message || 'Email kích hoạt đã được gửi!');
+    } catch (error) {
+      console.error('Resend failed:', error);
+    } finally {
+      setResending(false);
     }
   };
 
@@ -130,6 +150,32 @@ const LoginPage = () => {
                 )}
               </button>
             </form>
+
+            {/* Pending account - resend activation email */}
+            {pendingEmail && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+                <p className="text-sm text-amber-800 mb-3">
+                  Tài khoản <strong>{pendingEmail}</strong> chưa được kích hoạt. Vui lòng kiểm tra email hoặc gửi lại email kích hoạt.
+                </p>
+                <button
+                  onClick={handleResendActivation}
+                  disabled={resending}
+                  className="inline-flex items-center space-x-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {resending ? (
+                    <>
+                      <LoadingSpinner size="sm" />
+                      <span>Đang gửi...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Gửi lại email kích hoạt</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
             <div className="relative my-8">
               <div className="absolute inset-0 flex items-center">

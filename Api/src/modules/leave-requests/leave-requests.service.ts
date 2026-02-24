@@ -393,6 +393,7 @@ export class LeaveRequestsService {
     await this.notificationsService.enqueueLeaveRequestUpdatedNotification(
       updatedRequest.id,
       updatedRequest.approverId,
+      updatedRequest.notificationRecipients || [],
       {
         requesterName: updatedRequest.user.username,
         startDate: updatedRequest.startDate,
@@ -547,9 +548,15 @@ export class LeaveRequestsService {
     leaveRequest.rejectedReason = rejectedReason;
     const updated = await this.leaveRequestRepository.save(leaveRequest);
 
+    const rejectRecipients = await this.notificationRecipientRepository.find({
+      where: { requestId: leaveRequest.id },
+      relations: ['user'],
+    });
+
     await this.notificationsService.enqueueLeaveRequestRejectedNotification(
       leaveRequest.id,
       leaveRequest.userId,
+      rejectRecipients,
       {
         requesterName: leaveRequest.user.username,
         approverName: leaveRequest.approver.username,
@@ -571,6 +578,7 @@ export class LeaveRequestsService {
   async cancelLeaveRequest(requestId: number, userId: number): Promise<LeaveRequest> {
     const leaveRequest = await this.leaveRequestRepository.findOne({
       where: { id: requestId },
+      relations: ['user'],
     });
 
     if (!leaveRequest) {
@@ -584,6 +592,12 @@ export class LeaveRequestsService {
     if (leaveRequest.status !== LeaveRequestStatus.PENDING) {
       throw new BadRequestException(`Cannot cancel request with status: ${leaveRequest.status}`);
     }
+
+    // Load recipients BEFORE transaction deletes them (needed for notification)
+    const cancelRecipients = await this.notificationRecipientRepository.find({
+      where: { requestId: leaveRequest.id },
+      relations: ['user'],
+    });
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -607,7 +621,8 @@ export class LeaveRequestsService {
 
     await this.notificationsService.enqueueLeaveRequestCancelledNotification(
       leaveRequest.id,
-      leaveRequest.userId,
+      leaveRequest.approverId,
+      cancelRecipients,
       {
         requesterName: leaveRequest.user.username,
         startDate: leaveRequest.startDate,

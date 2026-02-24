@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Search, Check } from 'lucide-react';
+import { X, Search, Check, Shield } from 'lucide-react';
 import { userService } from '../services';
 
 const UserMultiSelect = ({ selectedUserIds = [], onChange, excludeCurrentUser = false }) => {
   const [users, setUsers] = useState([]);
+  const [hrUsers, setHrUsers] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,25 +40,34 @@ const UserMultiSelect = ({ selectedUserIds = [], onChange, excludeCurrentUser = 
     try {
       setLoading(true);
       const data = await userService.getAll();
-      let userList = data;
+      let allUsers = data;
       
-      // Exclude current user if needed
+      // Get current user
+      let currentUserId = null;
       if (excludeCurrentUser) {
         const currentUserStr = localStorage.getItem('user');
         if (currentUserStr) {
           const currentUser = JSON.parse(currentUserStr);
-          userList = userList.filter(u => u.id !== currentUser.id);
+          currentUserId = currentUser.id;
         }
       }
       
-      // Always exclude HR users from CC selection
-      // (HR automatically receives notifications for all leave requests)
-      userList = userList.filter(u => u.role !== 'HR');
+      // Separate HR users (pinned as default recipients)
+      const hrList = allUsers.filter(u => u.role === 'hr');
+      setHrUsers(hrList);
+      
+      // CC selectable list: exclude current user, HR users, and approver (filtered later)
+      let userList = allUsers.filter(u => {
+        if (u.role === 'hr') return false;
+        if (currentUserId && u.id === currentUserId) return false;
+        return true;
+      });
       
       setUsers(userList);
     } catch (error) {
       console.error('Error fetching users:', error);
       setUsers([]);
+      setHrUsers([]);
     } finally {
       setLoading(false);
     }
@@ -99,6 +109,23 @@ const UserMultiSelect = ({ selectedUserIds = [], onChange, excludeCurrentUser = 
           - Your approver and HR will be notified automatically
         </span>
       </label>
+
+      {/* Pinned HR recipients */}
+      {hrUsers.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {hrUsers.map(hr => (
+            <span
+              key={hr.id}
+              className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-xs"
+              title={hr.email}
+            >
+              <Shield className="w-3 h-3" />
+              <span className="font-medium">{hr.username}</span>
+              <span className="text-emerald-500">HR</span>
+            </span>
+          ))}
+        </div>
+      )}
       
       <div
         onClick={() => setIsOpen(!isOpen)}

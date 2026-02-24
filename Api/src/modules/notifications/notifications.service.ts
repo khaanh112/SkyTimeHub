@@ -278,6 +278,21 @@ export class NotificationsService implements OnModuleDestroy {
   }
 
   /**
+   * Get the timestamp of the last activation email sent/queued for a user
+   * Used for rate limiting resend requests
+   */
+  async getLastActivationEmailTime(userId: number): Promise<Date | null> {
+    const lastEmail = await this.emailQueueRepository.findOne({
+      where: {
+        recipientUserId: userId,
+        type: EmailType.ACTIVATION,
+      },
+      order: { createdAt: 'DESC' },
+    });
+    return lastEmail?.createdAt || null;
+  }
+
+  /**
    * Enqueue activation email
    */
   async enqueueActivationEmail(
@@ -429,11 +444,12 @@ export class NotificationsService implements OnModuleDestroy {
   }
 
   /**
-   * Enqueue leave request rejected notification
+   * Enqueue leave request rejected notification (requester + recipients)
    */
   async enqueueLeaveRequestRejectedNotification(
     leaveRequestId: number,
     recipientUserId: number,
+    recipients: LeaveRequestNotificationRecipient[],
     context: {
       requesterName: string;
       approverName: string;
@@ -468,18 +484,31 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await this.emailQueueRepository.save(emailQueue);
-    this.logger.log(`✅ Leave request rejected notification queued for request ${leaveRequestId}`);
 
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
+
+    // Also notify recipients (HR, CC)
+    for (const recipient of recipients) {
+      if (recipient.userId !== recipientUserId) {
+        await this.enqueueLeaveRequestRejectedNotification(
+          leaveRequestId,
+          recipient.userId,
+          recipients,
+          context,
+        );
+      }
+    }
+    this.logger.log(`✅ Leave request rejected notification queued for request ${leaveRequestId}`);
   }
 
   /**
-   * Enqueue leave request updated notification
+   * Enqueue leave request updated notification (approver + recipients)
    */
   async enqueueLeaveRequestUpdatedNotification(
     leaveRequestId: number,
     recipientUserId: number,
+    recipients: LeaveRequestNotificationRecipient[],
     context: {
       requesterName: string;
       startDate: string;
@@ -503,18 +532,31 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await this.emailQueueRepository.save(emailQueue);
-    this.logger.log(`✅ Leave request updated notification queued for request ${leaveRequestId}`);
 
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
+
+    // Also notify recipients (HR, CC)
+    for (const recipient of recipients) {
+      if (recipient.userId !== recipientUserId) {
+        await this.enqueueLeaveRequestUpdatedNotification(
+          leaveRequestId,
+          recipient.userId,
+          recipients,
+          context,
+        );
+      }
+    }
+    this.logger.log(`✅ Leave request updated notification queued for request ${leaveRequestId}`);
   }
 
   /**
-   * Enqueue leave request cancelled notification
+   * Enqueue leave request cancelled notification (requester + recipients)
    */
   async enqueueLeaveRequestCancelledNotification(
     leaveRequestId: number,
     recipientUserId: number,
+    recipients: LeaveRequestNotificationRecipient[],
     context: {
       requesterName: string;
       startDate: string;
@@ -539,9 +581,21 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await this.emailQueueRepository.save(emailQueue);
-    this.logger.log(`✅ Leave request cancelled notification queued for request ${leaveRequestId}`);
 
     // Try to send immediately (fire and forget)
     setImmediate(() => this.trySendImmediately(savedEmail.id));
+
+    // Also notify recipients (HR, CC)
+    for (const recipient of recipients) {
+      if (recipient.userId !== recipientUserId) {
+        await this.enqueueLeaveRequestCancelledNotification(
+          leaveRequestId,
+          recipient.userId,
+          recipients,
+          context,
+        );
+      }
+    }
+    this.logger.log(`✅ Leave request cancelled notification queued for request ${leaveRequestId}`);
   }
 }

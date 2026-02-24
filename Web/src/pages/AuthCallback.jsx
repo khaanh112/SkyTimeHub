@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinner } from '../components';
+import { authService } from '../services';
+import { toast } from 'react-toastify';
 
 const AuthCallback = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { login } = useAuth();
   const [error, setError] = useState(null);
+  const [pendingEmail, setPendingEmail] = useState(null);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -15,6 +19,7 @@ const AuthCallback = () => {
       const refreshToken = searchParams.get('refreshToken');
       const errorCode = searchParams.get('error');
       const errorMessage = searchParams.get('message');
+      const emailParam = searchParams.get('email');
 
       if (errorCode) {
         // Handle error cases from OAuth callback
@@ -30,6 +35,9 @@ const AuthCallback = () => {
             break;
           case 'ACCOUNT_NOT_ACTIVATED':
             displayMessage = 'Tài khoản chưa được kích hoạt. Vui lòng kiểm tra email và nhấn vào link kích hoạt.';
+            if (emailParam) {
+              setPendingEmail(decodeURIComponent(emailParam));
+            }
             break;
           case 'ACCOUNT_INACTIVE':
             displayMessage = 'Tài khoản không hoạt động. Vui lòng liên hệ HR.';
@@ -50,6 +58,19 @@ const AuthCallback = () => {
 
     handleCallback();
   }, [searchParams, login, navigate]);
+
+  const handleResendActivation = async () => {
+    if (!pendingEmail) return;
+    setResending(true);
+    try {
+      const result = await authService.resendActivationEmail(pendingEmail);
+      toast.success(result.message || 'Email kích hoạt đã được gửi!');
+    } catch (error) {
+      console.error('Resend failed:', error);
+    } finally {
+      setResending(false);
+    }
+  };
 
   if (error) {
     return (
@@ -75,6 +96,15 @@ const AuthCallback = () => {
               Đăng nhập thất bại
             </h2>
             <p className="text-center text-gray-600 mb-6">{error}</p>
+            {pendingEmail && (
+              <button
+                onClick={handleResendActivation}
+                disabled={resending}
+                className="w-full mb-3 bg-amber-500 text-white py-2 px-4 rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resending ? 'Đang gửi...' : 'Gửi lại email kích hoạt'}
+              </button>
+            )}
             <button
               onClick={() => navigate('/login', { replace: true })}
               className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"

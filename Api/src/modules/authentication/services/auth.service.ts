@@ -47,6 +47,16 @@ export class AuthService {
 
       if (user.status !== UserStatus.ACTIVE) {
         this.logger.warn(`User account not active: ${user.id}, status: ${user.status}`);
+
+        // Distinguish pending accounts so frontend can show resend option
+        if (user.status === UserStatus.PENDING) {
+          throw new AppException(
+            ErrorCode.ACCOUNT_NOT_ACTIVATED,
+            'Tài khoản chưa được kích hoạt. Vui lòng kiểm tra email và nhấn vào link kích hoạt.',
+            HttpStatus.UNAUTHORIZED,
+          );
+        }
+
         throw new AppException(
           ErrorCode.ACCOUNT_NOT_ACTIVE,
           'User account is not active, contact HR department.',
@@ -186,5 +196,12 @@ export class AuthService {
       this.logger.error(`Account activation failed: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  /**
+   * Resend activation email for pending accounts (self-service)
+   */
+  async resendActivationEmail(email: string): Promise<{ message: string }> {
+    return this.usersService.resendActivationEmailByEmail(email);
   }
 }

@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { LoadingSpinner } from '../components';
-import { userService, departmentService, approverService } from '../services';
+import { userService, departmentService } from '../services';
 
 const ROLES = ['employee', 'hr', 'admin'];
 const GENDERS = ['male', 'female'];
+const CONTRACT_TYPES = ['intern', 'probation', 'part_time', 'full_time'];
 
 const AddEmployeePage = () => {
   const navigate = useNavigate();
@@ -28,6 +29,10 @@ const AddEmployeePage = () => {
     officialContractDate: '',
     joinDate: '',
     approverId: '',
+    phoneNumber: '',
+    dateOfBirth: '',
+    address: '',
+    contractType: '',
   });
 
   useEffect(() => {
@@ -119,6 +124,7 @@ const AddEmployeePage = () => {
         username: formData.username,
         gender: formData.gender,
         role: formData.role,
+        isDepartmentLeader: isDepartmentLeader,
       };
 
       if (formData.departmentId) {
@@ -137,30 +143,27 @@ const AddEmployeePage = () => {
         dataToSend.officialContractDate = formData.officialContractDate;
       }
 
-      const newUser = await userService.create(dataToSend);
-
-      // Set as department leader if checkbox is checked
-      if (isDepartmentLeader && formData.departmentId && newUser.id) {
-        try {
-          await departmentService.update(formData.departmentId, {
-            leaderId: newUser.id
-          });
-          console.log('Department leader updated successfully');
-        } catch (error) {
-          console.error('Failed to set department leader:', error);
-          toast.warning('User created but failed to set as department leader');
-        }
+      if (formData.approverId) {
+        dataToSend.approverId = parseInt(formData.approverId);
       }
 
-      // Set approver if selected
-      if (formData.approverId && newUser.id) {
-        try {
-          await approverService.setApprover(newUser.id, parseInt(formData.approverId));
-        } catch (error) {
-          console.error('Failed to set approver:', error);
-          toast.warning('User created but failed to set approver');
-        }
+      if (formData.phoneNumber && formData.phoneNumber.trim() !== '') {
+        dataToSend.phoneNumber = formData.phoneNumber.trim();
       }
+
+      if (formData.dateOfBirth) {
+        dataToSend.dateOfBirth = formData.dateOfBirth;
+      }
+
+      if (formData.address && formData.address.trim() !== '') {
+        dataToSend.address = formData.address.trim();
+      }
+
+      if (formData.contractType) {
+        dataToSend.contractType = formData.contractType;
+      }
+
+      await userService.createProfile(dataToSend);
 
       toast.success('Employee created successfully!');
       navigate('/users');
@@ -291,6 +294,44 @@ const AddEmployeePage = () => {
                   ))}
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  name="phoneNumber"
+                  value={formData.phoneNumber}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="0901234567"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  name="dateOfBirth"
+                  value={formData.dateOfBirth}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Address
+                </label>
+                <input
+                  type="text"
+                  name="address"
+                  value={formData.address}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="123 Main St, Hanoi"
+                />
+              </div>
             </div>
           </div>
 
@@ -370,6 +411,24 @@ const AddEmployeePage = () => {
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contract Type
+                </label>
+                <select
+                  name="contractType"
+                  value={formData.contractType}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select Contract Type</option>
+                  {CONTRACT_TYPES.map((ct) => (
+                    <option key={ct} value={ct}>
+                      {ct.charAt(0).toUpperCase() + ct.slice(1).replace('_', ' ')}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

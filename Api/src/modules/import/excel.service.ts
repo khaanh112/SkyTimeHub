@@ -6,6 +6,7 @@ import { ImportPreviewResult } from '../users/dto/import-user.dto';
 import { UsersService } from '../users/users.service';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { UserGender } from '@common/enums/user-genders';
+import { ContractType } from '@common/enums/contract-type.enum';
 import { CreateUserDto } from '@modules/users/dto/create-user.dto';
 import { Repository } from 'typeorm';
 import { User } from '@entities/users.entity';
@@ -232,6 +233,56 @@ export class ExcelService {
             }
           }
 
+          // Validate phoneNumber (optional)
+          if (
+            rowData.phoneNumber !== null &&
+            rowData.phoneNumber !== undefined &&
+            String(rowData.phoneNumber).trim()
+          ) {
+            const phone = String(rowData.phoneNumber).trim();
+            if (phone.length > 20) {
+              errors.push('Phone number is too long (max 20 characters)');
+            }
+          }
+
+          // Validate dateOfBirth (optional)
+          if (
+            rowData.dateOfBirth !== null &&
+            rowData.dateOfBirth !== undefined &&
+            String(rowData.dateOfBirth).trim()
+          ) {
+            const dateStr = String(rowData.dateOfBirth).trim();
+            const dateObj = new Date(dateStr);
+            if (isNaN(dateObj.getTime())) {
+              errors.push('Invalid date of birth format. Use YYYY-MM-DD');
+            }
+          }
+
+          // Validate address (optional)
+          if (
+            rowData.address !== null &&
+            rowData.address !== undefined &&
+            String(rowData.address).trim()
+          ) {
+            const addr = String(rowData.address).trim();
+            if (addr.length > 255) {
+              errors.push('Address is too long (max 255 characters)');
+            }
+          }
+
+          // Validate contractType (optional)
+          if (
+            rowData.contractType !== null &&
+            rowData.contractType !== undefined &&
+            String(rowData.contractType).trim()
+          ) {
+            const ctStr = String(rowData.contractType).trim();
+            const validContractTypes = Object.values(ContractType);
+            if (!validContractTypes.includes(ctStr as ContractType)) {
+              errors.push(`Invalid contract type. Must be one of: ${validContractTypes.join(', ')}`);
+            }
+          }
+
           // Check for duplicate email in database (only if email is valid)
           if (email && this.isValidEmail(email)) {
             try {
@@ -291,6 +342,30 @@ export class ExcelService {
               String(rowData.officialContractDate).trim()
                 ? String(rowData.officialContractDate).trim()
                 : undefined,
+            phoneNumber:
+              rowData.phoneNumber !== null &&
+              rowData.phoneNumber !== undefined &&
+              String(rowData.phoneNumber).trim()
+                ? String(rowData.phoneNumber).trim()
+                : undefined,
+            dateOfBirth:
+              rowData.dateOfBirth !== null &&
+              rowData.dateOfBirth !== undefined &&
+              String(rowData.dateOfBirth).trim()
+                ? String(rowData.dateOfBirth).trim()
+                : undefined,
+            address:
+              rowData.address !== null &&
+              rowData.address !== undefined &&
+              String(rowData.address).trim()
+                ? String(rowData.address).trim()
+                : undefined,
+            contractType:
+              rowData.contractType !== null &&
+              rowData.contractType !== undefined &&
+              String(rowData.contractType).trim()
+                ? String(rowData.contractType).trim()
+                : undefined,
             errors,
           };
 
@@ -314,6 +389,10 @@ export class ExcelService {
             position: undefined,
             joinDate: undefined,
             officialContractDate: undefined,
+            phoneNumber: undefined,
+            dateOfBirth: undefined,
+            address: undefined,
+            contractType: undefined,
             errors: [`Failed to process row: ${rowError.message || 'Unknown error'}`],
           };
           rows.push(errorRow);
@@ -391,6 +470,10 @@ export class ExcelService {
             officialContractDate: row.officialContractDate
               ? new Date(row.officialContractDate)
               : undefined,
+            phoneNumber: row.phoneNumber || undefined,
+            dateOfBirth: row.dateOfBirth ? new Date(row.dateOfBirth) : undefined,
+            address: row.address || undefined,
+            contractType: row.contractType as ContractType || undefined,
             status: UserStatus.PENDING, // All imported users auto-set to pending
           };
 

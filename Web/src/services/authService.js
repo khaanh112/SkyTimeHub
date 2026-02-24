@@ -33,6 +33,12 @@ export const authService = {
     return response.data.data || response.data;
   },
 
+  // Resend activation email for pending account
+  resendActivationEmail: async (email) => {
+    const response = await api.post('/auth/resend-activation-email', { email });
+    return response.data.data || response.data;
+  },
+
   // Check if user is authenticated
   isAuthenticated: () => {
     return !!localStorage.getItem('accessToken');

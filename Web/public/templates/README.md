@@ -15,8 +15,15 @@ The Excel template file `users-import-template.xlsx` contains the following colu
   - Valid values: `male` or `female`
 
 ### Optional Fields
+- **phoneNumber** - Phone number (max 20 characters)
+  - Example: 0901234567
+- **dateOfBirth** - Date of birth
+  - Format: YYYY-MM-DD
+  - Example: 1995-06-15
+- **address** - Address (max 255 characters)
+  - Example: 123 Main St, Hanoi
 - **role** - User role in the system
-  - Valid values: `admin`, `hr`, `employee`, `department_leader`, `bod`
+  - Valid values: `admin`, `hr`, `employee`
   - Default: `employee` if not specified
 - **departmentId** - Department ID (positive integer)
   - Must be a valid existing department ID
@@ -29,6 +36,8 @@ The Excel template file `users-import-template.xlsx` contains the following colu
   - Format: YYYY-MM-DD
   - Example: 2024-03-01
   - Can differ from joinDate (e.g., after probation period)
+- **contractType** - Type of employment contract
+  - Valid values: `intern`, `probation`, `part_time`, `full_time`
 
 ## Import Rules
 
@@ -50,10 +59,10 @@ The Excel template file `users-import-template.xlsx` contains the following colu
 ## Excel Template Structure
 
 ```
-| employeeId | email              | username    | gender | role     | departmentId | position           | joinDate   | officialContractDate |
-|------------|--------------------|-------------|--------|----------|--------------|--------------------|-----------:|---------------------:|
-| EMP240001  | john@example.com   | John Doe    | male   | employee | 1            | Software Engineer  | 2024-01-15 | 2024-03-15           |
-| EMP240002  | jane@example.com   | Jane Smith  | female | hr       | 2            | HR Manager         | 2024-02-01 | 2024-02-01           |
+| employeeId | email              | username    | phoneNumber  | gender | dateOfBirth | address             | role     | departmentId | position           | joinDate   | officialContractDate | contractType |
+|------------|--------------------|-------------|--------------|--------|-------------|---------------------|----------|--------------|--------------------|-----------:|---------------------:|:-------------|
+| EMP240001  | john@example.com   | John Doe    | 0901234567   | male   | 1995-06-15  | 123 Main St, Hanoi  | employee | 1            | Software Engineer  | 2024-01-15 | 2024-03-15           | full_time    |
+| EMP240002  | jane@example.com   | Jane Smith  | 0912345678   | female | 1998-03-20  | 456 Le Loi, HCM     | hr       | 2            | HR Manager         | 2024-02-01 | 2024-02-01           | probation    |
 ```
 
 ## How to Use

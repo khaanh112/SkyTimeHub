@@ -5,37 +5,33 @@ import {
   IsOptional,
   IsDateString,
   IsNotEmpty,
+  IsNumber,
+  IsBoolean,
   Length,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@common/enums/roles.enum';
-import { UserStatus } from '@common/enums/user-status.enum';
 import { UserGender } from '@common/enums/user-genders';
 import { ContractType } from '@common/enums/contract-type.enum';
 
-export class CreateUserDto {
-  @ApiProperty({ example: 'EMP001', description: 'Employee ID', maxLength: 20, required: true })
+export class CreateUserProfileDto {
+  @ApiProperty({ example: 'EMP001', description: 'Employee ID', maxLength: 20 })
   @IsNotEmpty({ message: 'Employee ID is required' })
   @IsString()
   @Length(1, 20)
   employeeId: string;
 
-  @ApiProperty({ example: 'user@example.com', description: 'User email address', required: true })
+  @ApiProperty({ example: 'user@example.com', description: 'User email address' })
   @IsNotEmpty({ message: 'Email is required' })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: 'johndoe', description: 'Username', required: true })
+  @ApiProperty({ example: 'johndoe', description: 'Username' })
   @IsNotEmpty({ message: 'Username is required' })
   @IsString()
   username: string;
 
-  @ApiProperty({
-    enum: UserGender,
-    example: UserGender.MALE,
-    description: 'Gender',
-    required: true,
-  })
+  @ApiProperty({ enum: UserGender, example: UserGender.MALE, description: 'Gender' })
   @IsNotEmpty({ message: 'Gender is required' })
   @IsEnum(UserGender)
   gender: UserGender;
@@ -45,40 +41,23 @@ export class CreateUserDto {
   @IsEnum(UserRole)
   role?: UserRole;
 
-  @ApiPropertyOptional({ enum: UserStatus, example: UserStatus.ACTIVE, description: 'User status' })
-  @IsOptional()
-  @IsEnum(UserStatus)
-  status?: UserStatus;
-
   @ApiPropertyOptional({ example: 1, description: 'Department ID' })
+  @IsOptional()
+  @IsNumber()
   departmentId?: number | null;
 
-  @ApiPropertyOptional({
-    example: 'Software Engineer',
-    description: 'Job position',
-    maxLength: 100,
-  })
+  @ApiPropertyOptional({ example: 'Software Engineer', description: 'Job position', maxLength: 100 })
   @IsOptional()
   @IsString()
   @Length(1, 100)
   position?: string;
 
-  @ApiPropertyOptional({
-    example: '2024-01-01',
-    description: 'Join date',
-    type: String,
-    format: 'date',
-  })
+  @ApiPropertyOptional({ example: '2024-01-01', description: 'Join date', type: String, format: 'date' })
   @IsOptional()
   @IsDateString()
   joinDate?: Date;
 
-  @ApiPropertyOptional({
-    example: '2024-01-01',
-    description: 'Official contract date',
-    type: String,
-    format: 'date',
-  })
+  @ApiPropertyOptional({ example: '2024-01-01', description: 'Official contract date', type: String, format: 'date' })
   @IsOptional()
   @IsDateString()
   officialContractDate?: Date;
@@ -89,12 +68,7 @@ export class CreateUserDto {
   @Length(1, 20)
   phoneNumber?: string;
 
-  @ApiPropertyOptional({
-    example: '1995-06-15',
-    description: 'Date of birth',
-    type: String,
-    format: 'date',
-  })
+  @ApiPropertyOptional({ example: '1995-06-15', description: 'Date of birth', type: String, format: 'date' })
   @IsOptional()
   @IsDateString()
   dateOfBirth?: Date;
@@ -109,4 +83,14 @@ export class CreateUserDto {
   @IsOptional()
   @IsEnum(ContractType)
   contractType?: ContractType;
+
+  @ApiPropertyOptional({ example: 1, description: 'Approver user ID' })
+  @IsOptional()
+  @IsNumber()
+  approverId?: number | null;
+
+  @ApiPropertyOptional({ example: true, description: 'Set user as department leader' })
+  @IsOptional()
+  @IsBoolean()
+  isDepartmentLeader?: boolean;
 }

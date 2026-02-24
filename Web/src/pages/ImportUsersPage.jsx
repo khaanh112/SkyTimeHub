@@ -297,10 +297,15 @@ const ImportUsersPage = () => {
                 <li>• <strong>email</strong> (bắt buộc): Địa chỉ email hợp lệ</li>
                 <li>• <strong>username</strong> (bắt buộc): Họ và tên đầy đủ</li>
                 <li>• <strong>gender</strong> (bắt buộc): male hoặc female</li>
-                <li>• <strong>role</strong> (tùy chọn): admin, hr, employee, department_leader, bod</li>
+                <li>• <strong>phoneNumber</strong> (tùy chọn): Số điện thoại (tối đa 20 ký tự)</li>
+                <li>• <strong>dateOfBirth</strong> (tùy chọn): Định dạng: YYYY-MM-DD</li>
+                <li>• <strong>address</strong> (tùy chọn): Địa chỉ (tối đa 255 ký tự)</li>
+                <li>• <strong>role</strong> (tùy chọn): admin, hr, employee</li>
                 <li>• <strong>departmentId</strong> (tùy chọn): Số ID phòng ban</li>
                 <li>• <strong>position</strong> (tùy chọn): Chức vụ công việc</li>
                 <li>• <strong>joinDate</strong> (tùy chọn): Định dạng: YYYY-MM-DD</li>
+                <li>• <strong>officialContractDate</strong> (tùy chọn): Định dạng: YYYY-MM-DD</li>
+                <li>• <strong>contractType</strong> (tùy chọn): intern, probation, part_time, full_time</li>
                 <li className="mt-2 pt-2 border-t border-blue-300">
                   <strong>⚠️ Lưu ý:</strong> Tất cả user import sẽ có trạng thái <strong className="text-red-700">inactive</strong> mặc định
                 </li>
@@ -355,9 +360,13 @@ const ImportUsersPage = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee ID</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gender</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">DOB</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contract</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Errors</th>
                   </tr>
                 </thead>
@@ -375,6 +384,7 @@ const ImportUsersPage = () => {
                       <td className="px-4 py-3 text-sm text-gray-900">{row.employeeId || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.email}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.username}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.phoneNumber || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           row.gender === 'male' ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800'
@@ -382,8 +392,15 @@ const ImportUsersPage = () => {
                           {row.gender ? row.gender.charAt(0).toUpperCase() + row.gender.slice(1) : '-'}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.dateOfBirth || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.address || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.role || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.position || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {row.contractType
+                          ? row.contractType.charAt(0).toUpperCase() + row.contractType.slice(1).replace('_', ' ')
+                          : '-'}
+                      </td>
                       <td className="px-4 py-3">
                         {row.errors.length > 0 ? (
                           <div className="flex items-start space-x-1">

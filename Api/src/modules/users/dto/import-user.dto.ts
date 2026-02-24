@@ -22,6 +22,14 @@ export interface ImportUserRow {
   joinDate?: string;
   /** Official contract date */
   officialContractDate?: string;
+  /** Phone number */
+  phoneNumber?: string;
+  /** Date of birth */
+  dateOfBirth?: string;
+  /** Address */
+  address?: string;
+  /** Contract type */
+  contractType?: string;
   /** Validation errors for this row */
   errors: string[];
 }

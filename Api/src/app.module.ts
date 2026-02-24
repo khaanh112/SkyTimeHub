@@ -17,6 +17,7 @@ import { RolesGuard } from '@modules/authorization/guards/roles.guard';
 import { TransformInterceptor } from '@/common/interceptors/transform.interceptor';
 import { SettingsModule } from '@modules/settings/settings.module';
 import { DepartmentModule } from '@modules/department/department.module';
+import { UserProfileModule } from '@modules/user-profile/user-profile.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { DepartmentModule } from '@modules/department/department.module';
     LeaveRequestsModule,
     SettingsModule,
     DepartmentModule,
+    UserProfileModule,
   ],
   controllers: [AppController],
   providers: [

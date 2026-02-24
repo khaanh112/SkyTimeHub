@@ -208,6 +208,37 @@ const EmployeeDetailPage = () => {
                   </label>
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <input
+                  type="text"
+                  value={user.phoneNumber || ''}
+                  readOnly
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-600"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                <input
+                  type="text"
+                  value={
+                    user.dateOfBirth
+                      ? new Date(user.dateOfBirth).toLocaleDateString()
+                      : ''
+                  }
+                  readOnly
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-600"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <input
+                  type="text"
+                  value={user.address || ''}
+                  readOnly
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-600"
+                />
+              </div>
             </div>
           </div>
 
@@ -258,6 +289,21 @@ const EmployeeDetailPage = () => {
                   type="text"
                   value={
                     user.joinDate ? new Date(user.joinDate).toLocaleDateString() : ''
+                  }
+                  readOnly
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-600"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contract Type
+                </label>
+                <input
+                  type="text"
+                  value={
+                    user.contractType
+                      ? user.contractType.charAt(0).toUpperCase() + user.contractType.slice(1).replace('_', ' ')
+                      : ''
                   }
                   readOnly
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-600"

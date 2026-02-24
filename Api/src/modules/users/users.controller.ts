@@ -115,62 +115,12 @@ export class UsersController {
   }
 
   @Roles(UserRole.HR)
-  @Get(':id/activation-link')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get activation link for a user' })
-  @ApiResponse({ status: 200, description: 'Activation link generated successfully.' })
-  async getActivationLink(
-    @Param('id') id: number,
-  ): Promise<{ activationLink: string; token: string }> {
-    const token = await this.usersService.getActivationToken(id);
-
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const activationLink = `${frontendUrl}/auth/activate?token=${token}`;
-
-    return {
-      activationLink,
-      token,
-    };
-  }
-
-  @Roles(UserRole.HR)
   @Post(':id/deactivate')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Deactivate user account' })
   @ApiResponse({ status: 200, description: 'User account deactivated successfully.' })
   async deactivateAccount(@Param('id') id: number): Promise<User> {
     return await this.usersService.deactivateAccount(id);
-  }
-
-  @Roles(UserRole.HR)
-  @Get(':id/reset-activation-token')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Reset activation token for user (HR only)' })
-  @ApiResponse({ status: 200, description: 'Activation token reset successfully.' })
-  async resetActivationToken(
-    @Param('id') id: number,
-  ): Promise<{ activationLink: string; token: string }> {
-    const token = await this.usersService.resetActivationToken(id);
-
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const activationLink = `${frontendUrl}/auth/activate?token=${token}`;
-
-    return {
-      activationLink,
-      token,
-    };
-  }
-
-  @Roles(UserRole.HR)
-  @Post(':id/resend-activation-link')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Resend activation link to user email (HR only)' })
-  @ApiResponse({ status: 200, description: 'Activation link sent successfully.' })
-  @HttpCode(HttpStatus.OK)
-  async resendActivationLink(
-    @Param('id') id: number,
-  ): Promise<{ message: string; activationLink: string }> {
-    return await this.usersService.resendActivationLink(id);
   }
 
   @Roles(UserRole.HR)

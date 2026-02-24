@@ -3,10 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { LoadingSpinner } from '../components';
-import { userService, departmentService, approverService } from '../services';
+import { userService, departmentService } from '../services';
 
 const ROLES = ['employee', 'hr', 'admin'];
 const GENDERS = ['male', 'female'];
+const CONTRACT_TYPES = ['intern', 'probation', 'part_time', 'full_time'];
 
 const EditEmployeePage = () => {
   const navigate = useNavigate();
@@ -33,6 +34,10 @@ const EditEmployeePage = () => {
     officialContractDate: '',
     joinDate: '',
     approverId: '',
+    phoneNumber: '',
+    dateOfBirth: '',
+    address: '',
+    contractType: '',
   });
 
   useEffect(() => {
@@ -71,6 +76,12 @@ const EditEmployeePage = () => {
             : '',
           joinDate: user.joinDate ? new Date(user.joinDate).toISOString().split('T')[0] : '',
           approverId: '',
+          phoneNumber: user.phoneNumber || '',
+          dateOfBirth: user.dateOfBirth
+            ? new Date(user.dateOfBirth).toISOString().split('T')[0]
+            : '',
+          address: user.address || '',
+          contractType: user.contractType || '',
         });
 
         setIsDepartmentLeader(user.position === 'Department leader');
@@ -162,6 +173,7 @@ const EditEmployeePage = () => {
         username: formData.username,
         gender: formData.gender,
         role: formData.role,
+        isDepartmentLeader: isDepartmentLeader,
       };
 
       // Department: send null if empty, otherwise send parsed int
@@ -182,50 +194,19 @@ const EditEmployeePage = () => {
         dataToSend.officialContractDate = formData.officialContractDate;
       }
 
-      console.log('Sending data to update user:', dataToSend);
-      await userService.update(id, dataToSend);
-
-      // Update department leader based on checkbox
-      if (formData.departmentId) {
-        const deptId = parseInt(formData.departmentId);
-        
-        if (isDepartmentLeader) {
-          // Set this user as department leader
-          try {
-            await departmentService.update(deptId, {
-              leaderId: parseInt(id)
-            });
-            console.log('Department leader updated successfully');
-          } catch (error) {
-            console.error('Failed to set department leader:', error);
-            toast.warning('User updated but failed to set as department leader');
-          }
-        } else if (originalDepartmentId === deptId) {
-          // If unchecked and this is the original department, remove leader
-          const dept = departments.find(d => d.id === deptId);
-          if (dept?.leaderId === parseInt(id)) {
-            try {
-              await departmentService.update(deptId, {
-                leaderId: null
-              });
-              console.log('Department leader removed successfully');
-            } catch (error) {
-              console.error('Failed to remove department leader:', error);
-              toast.warning('User updated but failed to remove as department leader');
-            }
-          }
-        }
+      // Approver: send if changed
+      if (formData.approverId) {
+        dataToSend.approverId = parseInt(formData.approverId);
       }
 
-      // Update approver if changed
-      if (formData.approverId && formData.approverId !== currentApproverId) {
-        try {
-          await approverService.setApprover(id, parseInt(formData.approverId));
-        } catch (error) {
-          console.error('Failed to update approver:', error);
-          toast.warning('User updated but failed to update approver');
-        }
-      }
+      // New fields
+      dataToSend.phoneNumber = formData.phoneNumber?.trim() || null;
+      dataToSend.dateOfBirth = formData.dateOfBirth || null;
+      dataToSend.address = formData.address?.trim() || null;
+      dataToSend.contractType = formData.contractType || null;
+
+      console.log('Sending data to update user profile:', dataToSend);
+      await userService.updateProfile(id, dataToSend);
 
       toast.success('Employee updated successfully!');
       navigate('/users');
@@ -386,6 +367,47 @@ const EditEmployeePage = () => {
                   ))}
                 </div>
               </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  name="phoneNumber"
+                  value={formData.phoneNumber}
+                  onChange={handleInputChange}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                  placeholder="0901234567"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  name="dateOfBirth"
+                  value={formData.dateOfBirth}
+                  onChange={handleInputChange}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Address
+                </label>
+                <input
+                  type="text"
+                  name="address"
+                  value={formData.address}
+                  onChange={handleInputChange}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                  placeholder="123 Main St, Hanoi"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -488,6 +510,25 @@ const EditEmployeePage = () => {
                   onChange={handleInputChange}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
                 />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Contract Type
+                </label>
+                <select
+                  name="contractType"
+                  value={formData.contractType}
+                  onChange={handleInputChange}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                >
+                  <option value="">Select Contract Type</option>
+                  {CONTRACT_TYPES.map((ct) => (
+                    <option key={ct} value={ct}>
+                      {ct.charAt(0).toUpperCase() + ct.slice(1).replace('_', ' ')}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="md:col-span-2">
