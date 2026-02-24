@@ -290,26 +290,69 @@ const ImportUsersPage = () => {
 
             {/* Instructions */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-blue-900 mb-2">Yêu cầu định dạng Excel:</h3>
-              <ul className="text-sm text-blue-800 space-y-1">
-                <li>• <strong>Giới hạn file</strong>: Tối đa 10MB, 1000 dòng</li>
-                <li>• <strong>employeeId</strong> (bắt buộc): Mã nhân viên duy nhất (VD: EMP240001)</li>
-                <li>• <strong>email</strong> (bắt buộc): Địa chỉ email hợp lệ</li>
-                <li>• <strong>username</strong> (bắt buộc): Họ và tên đầy đủ</li>
-                <li>• <strong>gender</strong> (bắt buộc): male hoặc female</li>
-                <li>• <strong>phoneNumber</strong> (tùy chọn): Số điện thoại (tối đa 20 ký tự)</li>
-                <li>• <strong>dateOfBirth</strong> (tùy chọn): Định dạng: YYYY-MM-DD</li>
-                <li>• <strong>address</strong> (tùy chọn): Địa chỉ (tối đa 255 ký tự)</li>
-                <li>• <strong>role</strong> (tùy chọn): admin, hr, employee</li>
-                <li>• <strong>departmentId</strong> (tùy chọn): Số ID phòng ban</li>
-                <li>• <strong>position</strong> (tùy chọn): Chức vụ công việc</li>
-                <li>• <strong>joinDate</strong> (tùy chọn): Định dạng: YYYY-MM-DD</li>
-                <li>• <strong>officialContractDate</strong> (tùy chọn): Định dạng: YYYY-MM-DD</li>
-                <li>• <strong>contractType</strong> (tùy chọn): intern, probation, part_time, full_time</li>
-                <li className="mt-2 pt-2 border-t border-blue-300">
-                  <strong>⚠️ Lưu ý:</strong> Tất cả user import sẽ có trạng thái <strong className="text-red-700">inactive</strong> mặc định
-                </li>
-              </ul>
+              <h3 className="text-sm font-medium text-blue-900 mb-2">📋 Hướng dẫn Import nhân viên từ Excel:</h3>
+              <p className="text-sm text-blue-800 mb-3">Tải template Excel ở góc trên bên phải, điền thông tin và upload lại. Hệ thống sẽ kiểm tra dữ liệu trước khi import.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Required fields */}
+                <div>
+                  <h4 className="text-sm font-semibold text-blue-900 mb-1">🔴 Cột bắt buộc:</h4>
+                  <ul className="text-sm text-blue-800 space-y-1">
+                    <li>• <strong>employeeId</strong>: Mã nhân viên (VD: EMP240001)</li>
+                    <li>• <strong>email</strong>: Địa chỉ email hợp lệ</li>
+                    <li>• <strong>username</strong>: Họ và tên đầy đủ</li>
+                    <li>• <strong>gender</strong>: <code className="bg-blue-100 px-1 rounded">male</code> hoặc <code className="bg-blue-100 px-1 rounded">female</code> (hoặc: M, F, Nam, Nữ)</li>
+                  </ul>
+                </div>
+
+                {/* Optional fields */}
+                <div>
+                  <h4 className="text-sm font-semibold text-blue-900 mb-1">🔵 Cột tùy chọn:</h4>
+                  <ul className="text-sm text-blue-800 space-y-1">
+                    <li>• <strong>phoneNumber</strong>: Số điện thoại</li>
+                    <li>• <strong>dateOfBirth</strong>: Ngày sinh (YYYY-MM-DD)</li>
+                    <li>• <strong>address</strong>: Địa chỉ</li>
+                    <li>• <strong>role</strong>: <code className="bg-blue-100 px-1 rounded">admin</code>, <code className="bg-blue-100 px-1 rounded">hr</code>, <code className="bg-blue-100 px-1 rounded">employee</code> (mặc định: employee)</li>
+                    <li>• <strong>position</strong>: Chức vụ (VD: Software Engineer)</li>
+                    <li>• <strong>joinDate</strong>: Ngày vào làm (YYYY-MM-DD)</li>
+                    <li>• <strong>officialContractDate</strong>: Ngày ký HĐ chính thức (YYYY-MM-DD)</li>
+                    <li>• <strong>contractType</strong>: <code className="bg-blue-100 px-1 rounded">intern</code>, <code className="bg-blue-100 px-1 rounded">probation</code>, <code className="bg-blue-100 px-1 rounded">part_time</code>, <code className="bg-blue-100 px-1 rounded">full_time</code></li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Department section - highlighted */}
+              <div className="mt-3 pt-3 border-t border-blue-300">
+                <h4 className="text-sm font-semibold text-blue-900 mb-1">🏢 Phòng ban (cột <strong>department</strong>):</h4>
+                <p className="text-sm text-blue-800 mb-2">Nhập <strong>tên phòng ban</strong> vào cột <code className="bg-blue-100 px-1 rounded">department</code>. Các giá trị hợp lệ:</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { code: 'HR_ADMIN', label: 'Hành chính Nhân sự' },
+                    { code: 'ACCOUNTING', label: 'Kế toán' },
+                    { code: 'EMAIL_SERVICE', label: 'Email Service' },
+                    { code: 'RND_CENTER', label: 'Trung tâm R&D' },
+                    { code: 'MARKETING', label: 'Marketing' },
+                    { code: 'SALES_SUPPORT', label: 'Sale Support' },
+                    { code: 'SALES_SOLUTION', label: 'Sale Solution' },
+                    { code: 'FULFILLMENT', label: 'Fulfillment' },
+                    { code: 'TECH_SUPPORT', label: 'Tech Support' },
+                    { code: 'TECH_DEV_CENTER', label: 'TTPTCN' },
+                    { code: 'EXECUTIVE_OFFICE', label: 'VP Chủ tịch' },
+                  ].map(dept => (
+                    <span key={dept.code} className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-xs text-blue-800">
+                      <strong>{dept.code}</strong>
+                      <span className="ml-1 text-blue-600">({dept.label})</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-blue-300">
+                <p className="text-sm text-blue-800">
+                  <strong>⚠️ Lưu ý:</strong> Tất cả user import sẽ có trạng thái <strong className="text-orange-700">pending</strong> và sẽ nhận email kích hoạt tài khoản.
+                  Giới hạn: tối đa <strong>10MB</strong>, <strong>1000 dòng</strong>.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -360,12 +403,12 @@ const ImportUsersPage = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee ID</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gender</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">DOB</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contract</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Errors</th>
                   </tr>
@@ -384,7 +427,6 @@ const ImportUsersPage = () => {
                       <td className="px-4 py-3 text-sm text-gray-900">{row.employeeId || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.email}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.username}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.phoneNumber || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           row.gender === 'male' ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800'
@@ -392,10 +434,17 @@ const ImportUsersPage = () => {
                           {row.gender ? row.gender.charAt(0).toUpperCase() + row.gender.slice(1) : '-'}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.phoneNumber || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.dateOfBirth || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.address || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.role || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {row.departmentName ? (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                            {row.departmentName}
+                          </span>
+                        ) : '-'}
+                      </td>
                       <td className="px-4 py-3 text-sm text-gray-900">{row.position || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.role || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         {row.contractType
                           ? row.contractType.charAt(0).toUpperCase() + row.contractType.slice(1).replace('_', ' ')

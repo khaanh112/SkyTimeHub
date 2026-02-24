@@ -14,8 +14,10 @@ export interface ImportUserRow {
   gender: string;
   /** User role */
   role?: string;
-  /** Department ID */
+  /** Department ID (resolved from name or direct input) */
   departmentId?: number;
+  /** Department name (from Excel input, e.g. "HR_ADMIN", "ACCOUNTING") */
+  departmentName?: string;
   /** Job position */
   position?: string;
   /** Join date */
