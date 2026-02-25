@@ -298,7 +298,6 @@ const ImportUsersPage = () => {
                 <div>
                   <h4 className="text-sm font-semibold text-blue-900 mb-1">🔴 Cột bắt buộc:</h4>
                   <ul className="text-sm text-blue-800 space-y-1">
-                    <li>• <strong>employeeId</strong>: Mã nhân viên (VD: EMP240001)</li>
                     <li>• <strong>email</strong>: Địa chỉ email hợp lệ</li>
                     <li>• <strong>username</strong>: Họ và tên đầy đủ</li>
                     <li>• <strong>gender</strong>: <code className="bg-blue-100 px-1 rounded">male</code> hoặc <code className="bg-blue-100 px-1 rounded">female</code> (hoặc: M, F, Nam, Nữ)</li>
@@ -309,6 +308,7 @@ const ImportUsersPage = () => {
                 <div>
                   <h4 className="text-sm font-semibold text-blue-900 mb-1">🔵 Cột tùy chọn:</h4>
                   <ul className="text-sm text-blue-800 space-y-1">
+                    <li>• <strong>employeeId</strong>: Mã nhân viên (VD: SG100) - tự động tạo nếu để trống</li>
                     <li>• <strong>phoneNumber</strong>: Số điện thoại</li>
                     <li>• <strong>dateOfBirth</strong>: Ngày sinh (YYYY-MM-DD)</li>
                     <li>• <strong>address</strong>: Địa chỉ</li>

@@ -106,7 +106,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
             className="w-full mt-3 flex items-center justify-center space-x-2 px-4 py-2.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
           >
             <LogOut className="w-4 h-4" />
-            <span>Đăng xuất</span>
+            <span>Log out</span>
           </button>
         </div>
       </aside>

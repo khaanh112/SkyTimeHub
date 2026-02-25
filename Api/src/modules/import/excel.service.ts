@@ -159,7 +159,7 @@ export class ExcelService {
       }
 
       // Validate required columns exist
-      const requiredColumns = ['email', 'username', 'employeeId', 'gender'];
+      const requiredColumns = ['email', 'username', 'gender'];
       const firstRow = data[0];
       const missingColumns = requiredColumns.filter((col) => !(col in firstRow));
       if (missingColumns.length > 0) {
@@ -214,14 +214,12 @@ export class ExcelService {
             errors.push('Username is too long (max 100 characters)');
           }
 
-          // Validate employeeId (REQUIRED)
+          // Validate employeeId (OPTIONAL - auto-generated if not provided)
           const employeeId =
             rowData.employeeId !== null && rowData.employeeId !== undefined
               ? String(rowData.employeeId).trim()
               : '';
-          if (!employeeId) {
-            errors.push('Employee ID is required');
-          } else if (employeeId.length > 20) {
+          if (employeeId && employeeId.length > 20) {
             errors.push('Employee ID must be max 20 characters');
           }
 
@@ -515,13 +513,13 @@ export class ExcelService {
 
       for (const row of validRows) {
         try {
-          // Validate row data - email, username, employeeId, and gender are required
-          if (!row.email || !row.username || !row.employeeId || !row.gender) {
-            throw new Error('Missing required fields: email, username, employeeId, or gender');
+          // Validate row data - email, username, and gender are required
+          if (!row.email || !row.username || !row.gender) {
+            throw new Error('Missing required fields: email, username, or gender');
           }
 
           const userData: CreateUserDto = {
-            employeeId: row.employeeId,
+            employeeId: row.employeeId || undefined,
             email: row.email,
             username: row.username,
             gender: row.gender as UserGender,

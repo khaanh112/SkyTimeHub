@@ -5,7 +5,7 @@ import { UsersService } from './users.service';
 import { User } from '@entities/users.entity';
 import { UserApprover } from '@entities/user_approver.entity';
 import { Department } from '@entities/departments.entity';
-import { ExcelService } from '@modules/import/excel.service';
+import { ExcelService } from '@/modules/import/excel.service';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
 
 @Module({

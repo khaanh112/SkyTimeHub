@@ -66,7 +66,12 @@ const ApprovalsPage = () => {
           }
         }
       } else {
-        toast.error(error.response?.data?.message || 'Failed to approve leave request');
+        const data = error.response?.data;
+        if (data?.details && Array.isArray(data.details) && data.details.length > 0) {
+          data.details.forEach((msg) => toast.error(msg));
+        } else {
+          toast.error(data?.message || 'Failed to approve leave request');
+        }
       }
     } finally {
       setProcessingId(null);
@@ -122,7 +127,12 @@ const ApprovalsPage = () => {
           setSelectedRequest(null);
         }
       } else {
-        toast.error(error.response?.data?.message || 'Failed to reject leave request');
+        const data = error.response?.data;
+        if (data?.details && Array.isArray(data.details) && data.details.length > 0) {
+          data.details.forEach((msg) => toast.error(msg));
+        } else {
+          toast.error(data?.message || 'Failed to reject leave request');
+        }
       }
     } finally {
       setSubmitting(false);
@@ -426,13 +436,17 @@ const ApprovalsPage = () => {
               <textarea
                 value={rejectedReason}
                 onChange={(e) => setRejectedReason(e.target.value)}
-                placeholder="Please provide a detailed reason for rejecting this leave request (minimum 10 characters)..."
+                placeholder="Please provide a detailed reason for rejecting this leave request..."
                 rows={4}
+                maxLength={500}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
               />
-              <p className="text-xs text-gray-500 mt-1">
-                {rejectedReason.length} / 10 characters minimum
-              </p>
+              <div className="flex justify-between mt-1">
+                <p className="text-xs text-gray-500">Minimum 10 characters required</p>
+                <p className={`text-xs ${rejectedReason.length > 450 ? 'text-amber-500' : rejectedReason.length < 10 ? 'text-red-400' : 'text-gray-400'}`}>
+                  {rejectedReason.length}/500
+                </p>
+              </div>
             </div>
 
             {/* Action Buttons */}

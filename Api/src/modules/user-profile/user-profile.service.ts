@@ -8,7 +8,7 @@ import { UserStatus } from '@common/enums/user-status.enum';
 import { AppException } from '@common/exceptions/app.exception';
 import { ErrorCode } from '@common/enums/errror-code.enum';
 import { NotificationsService } from '@modules/notifications/notifications.service';
-import { generateActivationToken } from '@modules/users/utils/user.utils';
+import { generateActivationToken, generateEmployeeId } from '@modules/users/utils/user.utils';
 import { CreateUserProfileDto } from './dto/create-user-profile.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 
@@ -50,21 +50,28 @@ export class UserProfileService {
         );
       }
 
-      const existingEmployeeId = await queryRunner.manager.findOne(User, {
-        where: { employeeId: userData.employeeId },
-      });
-      if (existingEmployeeId) {
-        throw new AppException(
-          ErrorCode.EMPLOYEE_ID_ALREADY_EXISTS,
-          'User with this employee ID already exists',
-          HttpStatus.CONFLICT,
-        );
+      // Auto-generate employeeId if not provided
+      let employeeId = userData.employeeId?.trim() || '';
+      if (!employeeId) {
+        employeeId = await generateEmployeeId(this.usersRepository);
+      } else {
+        const existingEmployeeId = await queryRunner.manager.findOne(User, {
+          where: { employeeId },
+        });
+        if (existingEmployeeId) {
+          throw new AppException(
+            ErrorCode.EMPLOYEE_ID_ALREADY_EXISTS,
+            'User with this employee ID already exists',
+            HttpStatus.CONFLICT,
+          );
+        }
       }
 
       // 2. Create user
       const activationToken = generateActivationToken();
       const newUser = queryRunner.manager.create(User, {
         ...userData,
+        employeeId,
         status: UserStatus.PENDING,
         activationToken,
       });

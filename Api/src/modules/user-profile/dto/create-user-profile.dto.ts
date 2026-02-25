@@ -15,11 +15,11 @@ import { UserGender } from '@common/enums/user-genders';
 import { ContractType } from '@common/enums/contract-type.enum';
 
 export class CreateUserProfileDto {
-  @ApiProperty({ example: 'EMP001', description: 'Employee ID', maxLength: 20 })
-  @IsNotEmpty({ message: 'Employee ID is required' })
+  @ApiPropertyOptional({ example: 'SG100', description: 'Employee ID (auto-generated if not provided)', maxLength: 20 })
+  @IsOptional()
   @IsString()
   @Length(1, 20)
-  employeeId: string;
+  employeeId?: string;
 
   @ApiProperty({ example: 'user@example.com', description: 'User email address' })
   @IsNotEmpty({ message: 'Email is required' })

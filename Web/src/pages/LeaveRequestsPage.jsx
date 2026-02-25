@@ -38,7 +38,12 @@ const LeaveRequestsPage = () => {
       fetchLeaveRequests();
     } catch (error) {
       console.error('Error cancelling leave request:', error);
-      toast.error(error.response?.data?.message || 'Failed to cancel leave request');
+      const data = error.response?.data;
+      if (data?.details && Array.isArray(data.details) && data.details.length > 0) {
+        data.details.forEach((msg) => toast.error(msg));
+      } else {
+        toast.error(data?.message || 'Failed to cancel leave request');
+      }
     }
   };
 

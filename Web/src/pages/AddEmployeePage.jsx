@@ -119,13 +119,16 @@ const AddEmployeePage = () => {
 
     try {
       const dataToSend = {
-        employeeId: formData.employeeId,
         email: formData.email,
         username: formData.username,
         gender: formData.gender,
         role: formData.role,
         isDepartmentLeader: isDepartmentLeader,
       };
+
+      if (formData.employeeId && formData.employeeId.trim() !== '') {
+        dataToSend.employeeId = formData.employeeId.trim();
+      }
 
       if (formData.departmentId) {
         dataToSend.departmentId = parseInt(formData.departmentId);
@@ -169,7 +172,12 @@ const AddEmployeePage = () => {
       navigate('/users');
     } catch (error) {
       console.error('Failed to create employee:', error);
-      toast.error(error.response?.data?.message || 'Failed to create employee');
+      const data = error.response?.data;
+      if (data?.details && Array.isArray(data.details) && data.details.length > 0) {
+        data.details.forEach((msg) => toast.error(msg));
+      } else {
+        toast.error(data?.message || 'Failed to create employee');
+      }
     } finally {
       setLoading(false);
     }
@@ -198,16 +206,15 @@ const AddEmployeePage = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Employee ID <span className="text-red-500">*</span>
+                  Employee ID <span className="text-gray-400 text-xs">(tự động tạo nếu để trống)</span>
                 </label>
                 <input
                   type="text"
                   name="employeeId"
                   value={formData.employeeId}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="ST100"
+                  placeholder="VD: SG100 (để trống để tự tạo)"
                 />
               </div>
               <div>
@@ -247,7 +254,7 @@ const AddEmployeePage = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <input
                   type="text"
-                  value="Inactive"
+                  value="Pending"
                   readOnly
                   disabled
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-gray-600 cursor-not-allowed"

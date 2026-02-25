@@ -9,7 +9,7 @@
 import { Repository } from 'typeorm';
 import { LeaveRequest } from '@entities/leave_request.entity';
 import { LeaveRequestStatus } from '@common/enums/request_status';
-import { LeaveType } from '@/common/enums/leave-type.enum';
+import { LeaveType } from '@/common/enums/leave_type.enum';
 import { BadRequestException } from '@nestjs/common';
 
 export interface LeaveDaysCalculation {
@@ -173,43 +173,6 @@ export async function checkLeaveOverlapSimple(
   };
 }
 
-/**
- * Classify leave type (paid/unpaid)
- * This is a placeholder for future implementation
- * You can expand this based on your business rules
- */
-export function classifyLeaveType(
-  startDate: string,
-  endDate: string,
-  reason?: string,
-  leaveType?: string,
-): LeaveTypeClassification {
-  // TODO: Implement your business logic here
-  // For example:
-  // - Check against employee's annual leave balance
-  // - Determine if it's sick leave (requires medical certificate)
-  // - Check if it's unpaid leave
-  // - Consider company holidays, etc.
-
-  // Placeholder logic
-  const totalDays = calculateTotalDays(startDate, endDate);
-
-  // Example: If more than 14 days, might be unpaid
-  if (totalDays > 14) {
-    return {
-      isPaid: false,
-      leaveType: LeaveType.UNPAID_LEAVE,
-      description: 'Extended leave (exceeds standard paid leave)',
-    };
-  }
-
-  // Default: assume paid annual leave
-  return {
-    isPaid: true,
-    leaveType: LeaveType.POLICY_LEAVE,
-    description: 'Annual paid leave',
-  };
-}
 
 /**
  * Validate leave request dates
@@ -234,18 +197,3 @@ export function validateLeaveDates(startDate: string, endDate: string): void {
   // }
 }
 
-/**
- * Calculate leave request summary
- */
-export function getLeaveRequestSummary(startDate: string, endDate: string, reason?: string) {
-  const days = calculateLeaveDays(startDate, endDate);
-  const classification = classifyLeaveType(startDate, endDate, reason);
-
-  return {
-    ...days,
-    ...classification,
-    startDate,
-    endDate,
-    reason,
-  };
-}

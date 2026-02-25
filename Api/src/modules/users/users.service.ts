@@ -56,14 +56,6 @@ export class UsersService {
       );
     }
 
-    if (!user.employeeId) {
-      throw new AppException(
-        ErrorCode.VALIDATION_ERROR,
-        'Employee ID is required',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
     if (!user.username) {
       throw new AppException(
         ErrorCode.VALIDATION_ERROR,
@@ -82,16 +74,22 @@ export class UsersService {
       );
     }
 
-    // Check if employeeId already exists
-    const existingEmployee = await this.usersRepository.findOne({
-      where: { employeeId: user.employeeId },
-    });
-    if (existingEmployee) {
-      throw new AppException(
-        ErrorCode.EMPLOYEE_ID_ALREADY_EXISTS,
-        'User with this employee ID already exists',
-        HttpStatus.CONFLICT,
-      );
+    // Auto-generate employeeId if not provided
+    let employeeId = user.employeeId?.trim() || '';
+    if (!employeeId) {
+      employeeId = await generateEmployeeId(this.usersRepository);
+    } else {
+      // Check if employeeId already exists (only when user provides one)
+      const existingEmployee = await this.usersRepository.findOne({
+        where: { employeeId },
+      });
+      if (existingEmployee) {
+        throw new AppException(
+          ErrorCode.EMPLOYEE_ID_ALREADY_EXISTS,
+          'User with this employee ID already exists',
+          HttpStatus.CONFLICT,
+        );
+      }
     }
 
     // Generate activation token for pending users
@@ -100,6 +98,7 @@ export class UsersService {
     // Set default status to PENDING
     const userData = {
       ...user,
+      employeeId,
       status: UserStatus.PENDING,
       activationToken,
     };

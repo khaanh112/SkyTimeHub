@@ -5,8 +5,6 @@
 The Excel template file `users-import-template.xlsx` contains the following columns:
 
 ### Required Fields (*)
-- **employeeId*** - Unique employee identifier (max 20 characters)
-  - Example: EMP240001, EMP001, etc.
 - **email*** - Valid email address (max 255 characters)
   - Example: user@example.com
 - **username*** - Full name (max 100 characters)
@@ -15,6 +13,9 @@ The Excel template file `users-import-template.xlsx` contains the following colu
   - Valid values: `male` or `female`
 
 ### Optional Fields
+- **employeeId** - Unique employee identifier (max 20 characters)
+  - Example: SG100, SG101, etc.
+  - Auto-generated in format SG{number} if not provided
 - **phoneNumber** - Phone number (max 20 characters)
   - Example: 0901234567
 - **dateOfBirth** - Date of birth

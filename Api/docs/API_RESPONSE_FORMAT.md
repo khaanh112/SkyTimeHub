@@ -23,7 +23,7 @@ Hệ thống API đã được đồng bộ với format response thống nhất
 ```typescript
 {
   "success": false,
-  "code": "string",        // Mã lỗi (ErrorCode enum)
+  "code": "string",        // Mã lỗi  enum
   "message": "string",     // Thông báo lỗi
   "details": <any>,        // (Optional) Chi tiết lỗi
   "timestamp": "string",   // ISO 8601 timestamp
