@@ -115,7 +115,7 @@ const EditLeaveRequestPage = () => {
   // Only allow editing pending requests
   if (request.status !== 'pending') {
     return (
-      <div className="max-w-5xl mx-auto">
+      <div className="w-full">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
           <div className="flex items-start gap-3">
             <AlertCircle className="w-6 h-6 text-yellow-600 shrink-0 mt-0.5" />
@@ -139,7 +139,7 @@ const EditLeaveRequestPage = () => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="w-full">
       {/* Header */}
       <div className="mb-6">
         <button

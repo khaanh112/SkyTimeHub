@@ -183,7 +183,7 @@ const LeaveRequestDetailPage = () => {
 
   if (error || !leaveRequest) {
     return (
-      <div className="max-w-5xl mx-auto">
+      <div className="w-full">
         <button
           onClick={() => navigate('/leave-requests')}
           className="inline-flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 mb-6"
@@ -214,7 +214,7 @@ const LeaveRequestDetailPage = () => {
 
   return (
     <>
-      <div className="max-w-5xl mx-auto">
+      <div className="w-full">
         {/* Page Header */}
         <div className="mb-6">
           <button
