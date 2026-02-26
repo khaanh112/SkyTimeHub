@@ -8,6 +8,8 @@ import {
   Request,
   Put,
   ParseIntPipe,
+  ForbiddenException,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,6 +20,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { LeaveRequestsService } from './leave-requests.service';
+import { LeaveBalanceService } from './leave-balance.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ApproveLeaveRequestDto } from './dto/approve-leave-request.dto';
 import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
@@ -27,7 +30,39 @@ import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
 @ApiBearerAuth()
 @Controller('leave-requests')
 export class LeaveRequestsController {
-  constructor(private readonly leaveRequestsService: LeaveRequestsService) {}
+  constructor(
+    private readonly leaveRequestsService: LeaveRequestsService,
+    private readonly leaveBalanceService: LeaveBalanceService,
+  ) {}
+
+  @Post('suggest-end-date')
+  @ApiOperation({
+    summary: 'Suggest end date for auto-calculate leave types',
+    description:
+      'For POLICY and SOCIAL leave types with auto_calculate_end_date policy, returns a suggested end date based on start date and max days. Used by the frontend to pre-fill the form. The user can still modify the suggested values.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['leaveTypeId', 'startDate', 'startSession'],
+      properties: {
+        leaveTypeId: { type: 'number', example: 5 },
+        startDate: { type: 'string', example: '2026-03-01' },
+        startSession: { type: 'string', enum: ['AM', 'PM'], example: 'AM' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Suggested end date returned (or null if not applicable).' })
+  async suggestEndDate(
+    @Body() body: { leaveTypeId: number; startDate: string; startSession: string },
+  ) {
+    const result = await this.leaveBalanceService.suggestEndDate(
+      body.leaveTypeId,
+      body.startDate,
+      body.startSession as any,
+    );
+    return result ?? { suggestedEndDate: null, suggestedEndSession: null };
+  }
 
   @Post()
   @ApiOperation({
@@ -84,6 +119,55 @@ export class LeaveRequestsController {
       console.error('[LeaveRequestsController] findAll error:', error);
       throw error;
     }
+  }
+
+  @Get('leave-types')
+  @ApiOperation({
+    summary: 'Get available leave types grouped by category',
+    description: 'Returns all active, non-system leave types with their category info. Used by create/edit forms.',
+  })
+  @ApiResponse({ status: 200, description: 'Leave types retrieved successfully.' })
+  async getLeaveTypes() {
+    return this.leaveRequestsService.getLeaveTypes();
+  }
+
+  @Get('balance-summary')
+  @ApiOperation({
+    summary: 'Get leave balance summary for current user',
+    description: 'Returns credit, debit and remaining balance for each leave type in the current year.',
+  })
+  @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
+  async getBalanceSummary(@Request() req) {
+    const year = new Date().getFullYear();
+    return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, year);
+  }
+
+  @Post('admin/initialize-balance')
+  @ApiOperation({
+    summary: 'Initialize yearly paid leave balance for all active employees (HR only)',
+    description: 'Creates ACCRUAL CREDIT transactions for all active employees who do not yet have one for the specified year. Default: 12 days/year.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        year: { type: 'number', example: 2026, description: 'Year to initialize' },
+        annualDays: { type: 'number', example: 12, description: 'Annual paid leave days (default: 12)' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Balance initialized.' })
+  @ApiResponse({ status: 403, description: 'Only HR can perform this action.' })
+  async initializeBalance(
+    @Request() req,
+    @Body() body: { year?: number; annualDays?: number },
+  ) {
+    if (req.user.role !== 'hr') {
+      throw new ForbiddenException('Only HR can initialize balances');
+    }
+    const year = body.year || new Date().getFullYear();
+    const annualDays = body.annualDays || 12;
+    return this.leaveBalanceService.initializeYearlyBalance(year, annualDays);
   }
 
   @Get('management')

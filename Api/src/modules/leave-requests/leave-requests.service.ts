@@ -10,6 +10,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { LeaveRequest } from '@entities/leave_request.entity';
 import { LeaveRequestNotificationRecipient } from '@entities/leave-request-notification-recipient.entity';
+import { LeaveRequestItem } from '@entities/leave-request-item.entity';
+import { LeaveType } from '@entities/leave-type.entity';
+import { LeaveCategory } from '@entities/leave-category.entity';
 import { UserApprover } from '@entities/user_approver.entity';
 import { User } from '@entities/users.entity';
 import { LeaveRequestStatus } from '@common/enums/request_status';
@@ -17,9 +20,9 @@ import { RecipientType } from '@common/enums/recipient-type.enum';
 import { UserRole } from '@common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { NotificationsService } from '@modules/notifications/notifications.service';
+import { LeaveBalanceService } from './leave-balance.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
-import { validateLeaveDates, checkLeaveOverlapSimple } from './utils/leave-calculation.utils';
 import { AppException, ErrorCode } from '@/common';
 
 @Injectable()
@@ -31,122 +34,146 @@ export class LeaveRequestsService {
     private leaveRequestRepository: Repository<LeaveRequest>,
     @InjectRepository(LeaveRequestNotificationRecipient)
     private notificationRecipientRepository: Repository<LeaveRequestNotificationRecipient>,
+    @InjectRepository(LeaveRequestItem)
+    private leaveRequestItemRepository: Repository<LeaveRequestItem>,
+    @InjectRepository(LeaveType)
+    private leaveTypeRepository: Repository<LeaveType>,
+    @InjectRepository(LeaveCategory)
+    private leaveCategoryRepository: Repository<LeaveCategory>,
     @InjectRepository(UserApprover)
     private userApproverRepository: Repository<UserApprover>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
+    private leaveBalanceService: LeaveBalanceService,
   ) {}
+
+  /**
+   * Compute half-day slot index from date + session.
+   * Matches the DB trigger: (date - '2000-01-01') * 2 + (PM ? 1 : 0)
+   */
+  private dateToSlot(date: string, session: string): number {
+    const epoch = new Date('2000-01-01T00:00:00');
+    const d = new Date(date + 'T00:00:00');
+    const daysDiff = Math.round((d.getTime() - epoch.getTime()) / (1000 * 60 * 60 * 24));
+    return daysDiff * 2 + (session === 'PM' ? 1 : 0);
+  }
+
+  /**
+   * Check for overlapping active (pending/approved) leave requests.
+   * Throws user-friendly error if overlap found.
+   * @param excludeRequestId - exclude this request ID (for update flow)
+   */
+  private async checkOverlap(
+    userId: number,
+    startDate: string,
+    startSession: string,
+    endDate: string,
+    endSession: string,
+    excludeRequestId?: number,
+  ): Promise<void> {
+    const newStart = this.dateToSlot(startDate, startSession);
+    const newEnd = this.dateToSlot(endDate, endSession);
+
+    // Find any active request whose slot range overlaps [newStart, newEnd]
+    let qb = this.leaveRequestRepository
+      .createQueryBuilder('lr')
+      .where('lr.user_id = :userId', { userId })
+      .andWhere('lr.status IN (:...statuses)', { statuses: ['pending', 'approved'] })
+      .andWhere('lr.start_slot <= :newEnd AND lr.end_slot >= :newStart', { newStart, newEnd });
+
+    if (excludeRequestId) {
+      qb = qb.andWhere('lr.id != :excludeId', { excludeId: excludeRequestId });
+    }
+
+    const conflict = await qb.getOne();
+
+    if (conflict) {
+      const fmt = (d: string) => {
+        const dt = new Date(d);
+        return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
+      };
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        `This leave request overlaps with an existing ${conflict.status} request (${fmt(conflict.startDate)} – ${fmt(conflict.endDate)}). Please choose different dates.`,
+        409,
+      );
+    }
+  }
 
   /**
    * Create a new leave request
    */
   async createLeaveRequest(userId: number, dto: CreateLeaveRequestDto): Promise<LeaveRequest> {
-    this.logger.log(`[createLeaveRequest] User ${userId} attempting to create leave request: ${JSON.stringify(dto)}`);
+    this.logger.log(`[createLeaveRequest] User ${userId} creating leave request: ${JSON.stringify(dto)}`);
 
-    // Validate dates
+    // ── Basic validation ─────────────────────────────────────
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
 
     if (endDate < startDate) {
-      this.logger.warn(
-        `[createLeaveRequest] Date validation failed for user ${userId}: endDate (${dto.endDate}) is before startDate (${dto.startDate})`,
-      );
       throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
 
-    // Find active approver for this user
+    if (!dto.reason) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'Reason for leave request is required', 400);
+    }
+
+    // ── Approver lookup ──────────────────────────────────────
     const userApprover = await this.userApproverRepository.findOne({
       where: { userId, active: true },
       relations: ['approver'],
     });
 
     if (!userApprover) {
-      this.logger.warn(
-        `[createLeaveRequest] No active approver found for user ${userId}`,
-      );
-      throw new AppException(
-        ErrorCode.INVALID_INPUT,
-        'No active approver assigned to this user',
-        400,
-      );
+      throw new AppException(ErrorCode.INVALID_INPUT, 'No active approver assigned to this user', 400);
     }
 
-    if (!dto.reason) {
-      this.logger.warn(
-        `[createLeaveRequest] Missing reason for user ${userId}`,
-      );
-      throw new AppException(ErrorCode.INVALID_INPUT, 'Reason for leave request is required', 400);
-    }
-
-    // Get requester info
     const requester = await this.userRepository.findOne({ where: { id: userId } });
 
-    if (dto.ccUserIds && dto.ccUserIds.includes(userId)) {
-      this.logger.warn(
-        `[createLeaveRequest] User ${userId} attempted to CC themselves`,
-      );
-      throw new AppException(
-        ErrorCode.INVALID_INPUT,
-        'You cannot CC yourself on your own leave request',
-        400,
-      );
+    // ── CC validation ────────────────────────────────────────
+    if (dto.ccUserIds?.includes(userId)) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'You cannot CC yourself on your own leave request', 400);
     }
-
-    // Validate ccUserIds: không được chứa approver
-    if (dto.ccUserIds && dto.ccUserIds.includes(userApprover.approverId)) {
-      this.logger.warn(
-        `[createLeaveRequest] User ${userId} included approver ${userApprover.approverId} in CC list`,
-      );
-      throw new AppException(
-        ErrorCode.INVALID_INPUT,
-        'Approver is automatically notified and should not be in CC list',
-        400,
-      );
+    if (dto.ccUserIds?.includes(userApprover.approverId)) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'Approver is automatically notified and should not be in CC list', 400);
     }
-
-    // Validate ccUserIds: không được chứa active HR users
-    if (dto.ccUserIds && dto.ccUserIds.length > 0) {
-      const hrUsers = await this.userRepository.find({
-        where: { role: UserRole.HR, status: UserStatus.ACTIVE },
-      });
+    if (dto.ccUserIds?.length > 0) {
+      const hrUsers = await this.userRepository.find({ where: { role: UserRole.HR, status: UserStatus.ACTIVE } });
       const hrUserIds = hrUsers.map((hr) => hr.id);
-      const hasHrInCC = dto.ccUserIds.some((id) => hrUserIds.includes(id));
-      if (hasHrInCC) {
-        this.logger.warn(
-          `[createLeaveRequest] User ${userId} included HR user(s) in CC list: ${dto.ccUserIds.filter((id) => hrUserIds.includes(id)).join(', ')}`,
-        );
-        throw new AppException(
-          ErrorCode.INVALID_INPUT,
-          'HR users are automatically notified and should not be in CC list',
-          400,
-        );
+      if (dto.ccUserIds.some((id) => hrUserIds.includes(id))) {
+        throw new AppException(ErrorCode.INVALID_INPUT, 'HR users are automatically notified and should not be in CC list', 400);
       }
     }
 
-    // Check for overlapping leave requests (excluding current request)
-    const overlapCheck = await checkLeaveOverlapSimple(
-      this.leaveRequestRepository,
+    // ── Overlap check ────────────────────────────────────────
+    await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession);
+
+    // ── Leave type validation & conversion ───────────────────
+    const validation = await this.leaveBalanceService.validateAndPrepare(
       userId,
+      dto.leaveTypeId,
       dto.startDate,
       dto.endDate,
+      dto.startSession,
+      dto.endSession,
     );
-    if (overlapCheck.hasOverlap) {
-      const overlappingDates = overlapCheck.overlappingRequests
-        .map((req) => `${req.startDate} to ${req.endDate}`)
-        .join(', ');
-      this.logger.warn(
-        `[createLeaveRequest] Overlap detected for user ${userId}: ${overlappingDates}`,
-      );
+
+    // If there are warnings and user hasn't confirmed
+    if (validation.warnings.length > 0 && !dto.confirmDespiteWarning) {
       throw new AppException(
         ErrorCode.INVALID_INPUT,
-        `Leave dates overlap with existing request(s): ${overlappingDates}`,
+        JSON.stringify({ requiresConfirmation: true, warnings: validation.warnings, durationDays: validation.durationDays, items: validation.items }),
         400,
       );
     }
 
-    // Use transaction to ensure consistency
+    // Always use user-provided endDate and endSession (no auto-override)
+    const finalEndDate = dto.endDate;
+    const finalEndSession = dto.endSession;
+
+    // ── Transaction ──────────────────────────────────────────
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -156,8 +183,12 @@ export class LeaveRequestsService {
       const leaveRequest = this.leaveRequestRepository.create({
         userId,
         approverId: userApprover.approverId,
+        requestedLeaveTypeId: dto.leaveTypeId,
         startDate: dto.startDate,
-        endDate: dto.endDate,
+        endDate: finalEndDate,
+        startSession: dto.startSession,
+        endSession: finalEndSession,
+        durationDays: validation.durationDays,
         reason: dto.reason,
         workSolution: dto.workSolution,
         status: LeaveRequestStatus.PENDING,
@@ -165,12 +196,23 @@ export class LeaveRequestsService {
 
       const savedRequest = await queryRunner.manager.save(leaveRequest);
 
+      // Save leave request items (conversion breakdown)
+      if (validation.items.length > 0) {
+        const items = validation.items.map((item) =>
+          this.leaveRequestItemRepository.create({
+            leaveRequestId: savedRequest.id,
+            leaveTypeId: item.leaveTypeId,
+            amountDays: item.amountDays,
+            note: item.note,
+          }),
+        );
+        await queryRunner.manager.save(items);
+      }
+
       // Add notification recipients
       const recipients: LeaveRequestNotificationRecipient[] = [];
 
-      // 1. Add active HR users (always, except if requester is HR themselves)
-      // HR receives notification when request is approved
-      // Only include ACTIVE HR users - pending/inactive HR should not receive notifications
+      // HR users (auto)
       if (requester.role !== UserRole.HR) {
         const hrUsers = await this.userRepository.find({
           where: { role: UserRole.HR, status: UserStatus.ACTIVE },
@@ -186,9 +228,8 @@ export class LeaveRequestsService {
         }
       }
 
-      // 2. Add CC recipients (optional from dto - additional users only)
-      // CC users also receive notification when request is approved
-      if (dto.ccUserIds && dto.ccUserIds.length > 0) {
+      // CC recipients (user-selected)
+      if (dto.ccUserIds?.length > 0) {
         for (const ccUserId of dto.ccUserIds) {
           recipients.push(
             this.notificationRecipientRepository.create({
@@ -200,26 +241,22 @@ export class LeaveRequestsService {
         }
       }
 
-      // Save recipients
       if (recipients.length > 0) {
         await queryRunner.manager.save(recipients);
       }
 
       await queryRunner.commitTransaction();
 
-      // Reload the saved request to ensure all generated fields (version, timestamps) are populated
+      // Reload with all generated fields
       const reloadedRequest = await this.leaveRequestRepository.findOne({
         where: { id: savedRequest.id },
+        relations: ['items', 'items.leaveType'],
       });
 
-      // Enqueue email notifications (async, outside transaction)
-      await this.enqueueLeaveRequestNotifications(
-        reloadedRequest,
-        requester,
-        userApprover.approver,
-      );
+      // Enqueue notifications (async, outside transaction)
+      await this.enqueueLeaveRequestNotifications(reloadedRequest, requester, userApprover.approver);
 
-      this.logger.log(`Leave request ${reloadedRequest.id} created by user ${userId}`);
+      this.logger.log(`Leave request ${reloadedRequest.id} created by user ${userId} — ${validation.durationDays} days, ${validation.items.length} item(s)`);
       return reloadedRequest;
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -240,42 +277,76 @@ export class LeaveRequestsService {
   ): Promise<LeaveRequest> {
     requestId = Number(requestId);
 
-    this.logger.log(
-      `[updateLeaveRequest] User ${userId} attempting to update leave request ${requestId}`,
-    );
+    this.logger.log(`[updateLeaveRequest] User ${userId} updating leave request ${requestId}`);
 
-    // Validate dates
-    try {
-      validateLeaveDates(dto.startDate, dto.endDate);
-    } catch (error) {
-      this.logger.warn(
-        `[updateLeaveRequest] Date validation failed for request ${requestId}: ${error.message}`,
-      );
-      throw error;
+    // ── Basic validation ─────────────────────────────────────
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    if (endDate < startDate) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
 
-    // Check overlap (giữ nguyên)
-    const overlapCheck = await checkLeaveOverlapSimple(
-      this.leaveRequestRepository,
+    if (!dto.reason) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'Reason for leave request is required', 400);
+    }
+
+    // ── Find & authorise ─────────────────────────────────────
+    const leaveRequest = await this.leaveRequestRepository.findOne({
+      where: { id: requestId, userId },
+      relations: ['user'],
+    });
+
+    if (!leaveRequest) {
+      throw new NotFoundException('Leave request not found or you do not have permission');
+    }
+    if (leaveRequest.status !== LeaveRequestStatus.PENDING) {
+      throw new BadRequestException(
+        `Cannot update leave request with status: ${leaveRequest.status}. Only pending requests can be updated.`,
+      );
+    }
+
+    // ── CC validation ────────────────────────────────────────
+    if (dto.ccUserIds?.includes(userId)) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'You cannot CC yourself on your own leave request', 400);
+    }
+    if (dto.ccUserIds?.includes(leaveRequest.approverId)) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'Approver is automatically notified and should not be in CC list', 400);
+    }
+    if (dto.ccUserIds?.length > 0) {
+      const hrUsers = await this.userRepository.find({ where: { role: UserRole.HR, status: UserStatus.ACTIVE } });
+      const hrUserIds = hrUsers.map((hr) => hr.id);
+      if (dto.ccUserIds.some((id) => hrUserIds.includes(id))) {
+        throw new AppException(ErrorCode.INVALID_INPUT, 'HR users are automatically notified and should not be in CC list', 400);
+      }
+    }
+
+    // ── Overlap check (exclude current request) ─────────────
+    await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession, requestId);
+
+    // ── Leave type validation & conversion ───────────────────
+    const validation = await this.leaveBalanceService.validateAndPrepare(
       userId,
+      dto.leaveTypeId,
       dto.startDate,
       dto.endDate,
-      requestId,
+      dto.startSession,
+      dto.endSession,
+      requestId, // exclude current request from pending balance calculations
     );
 
-    if (overlapCheck.hasOverlap) {
-      const overlappingDates = overlapCheck.overlappingRequests
-        .map((req) => `${req.startDate} to ${req.endDate}`)
-        .join(', ');
-      this.logger.warn(
-        `[updateLeaveRequest] Overlap detected for request ${requestId}: ${overlappingDates} (user: ${userId})`,
-      );
-      throw new BadRequestException(
-        `Leave dates overlap with existing request(s): ${overlappingDates}`,
+    if (validation.warnings.length > 0 && !dto.confirmDespiteWarning) {
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        JSON.stringify({ requiresConfirmation: true, warnings: validation.warnings, durationDays: validation.durationDays, items: validation.items }),
+        400,
       );
     }
 
-    // Transaction
+    // Always use user-provided endDate and endSession (no auto-override)
+    const finalEndDate = dto.endDate;
+    const finalEndSession = dto.endSession;
+
+    // ── Transaction ──────────────────────────────────────────
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -283,142 +354,70 @@ export class LeaveRequestsService {
     let updatedEntity: LeaveRequest;
 
     try {
-      // IMPORTANT: dùng repo từ queryRunner để tránh trộn context
       const leaveRequestRepo = queryRunner.manager.getRepository(LeaveRequest);
       const recipientRepo = queryRunner.manager.getRepository(LeaveRequestNotificationRecipient);
+      const itemRepo = queryRunner.manager.getRepository(LeaveRequestItem);
 
-      // Find leave request TRONG transaction (thay vì findOne ở ngoài)
-      const leaveRequest = await leaveRequestRepo.findOne({
-        where: { id: requestId, userId },
-        relations: ['user'],
-      });
-
-      if (!leaveRequest) {
-        this.logger.warn(
-          `[updateLeaveRequest] Leave request ${requestId} not found for user ${userId}`,
-        );
-        throw new NotFoundException('Leave request not found or you do not have permission');
-      }
-
-      // Check pending
-      if (leaveRequest.status !== LeaveRequestStatus.PENDING) {
-        this.logger.warn(
-          `[updateLeaveRequest] Cannot update request ${requestId} with status ${leaveRequest.status} (user: ${userId})`,
-        );
-        throw new BadRequestException(
-          `Cannot update leave request with status: ${leaveRequest.status}. Only pending requests can be updated.`,
-        );
-      }
-
-      if (!dto.reason) {
-        throw new AppException(
-          ErrorCode.INVALID_INPUT,
-          'Reason for leave request is required',
-          400,
-        );
-      }
-
-      // Validate ccUserIds: không được chứa chính user
-      if (dto.ccUserIds && dto.ccUserIds.includes(userId)) {
-        throw new AppException(
-          ErrorCode.INVALID_INPUT,
-          'You cannot CC yourself on your own leave request',
-          400,
-        );
-      }
-
-      // Validate ccUserIds: không được chứa approver
-      if (dto.ccUserIds && dto.ccUserIds.includes(leaveRequest.approverId)) {
-        throw new AppException(
-          ErrorCode.INVALID_INPUT,
-          'Approver is automatically notified and should not be in CC list',
-          400,
-        );
-      }
-
-      // Validate ccUserIds: không được chứa active HR users
-      if (dto.ccUserIds && dto.ccUserIds.length > 0) {
-        const hrUsers = await this.userRepository.find({
-          where: { role: UserRole.HR, status: UserStatus.ACTIVE },
-        });
-        const hrUserIds = hrUsers.map((hr) => hr.id);
-        const hasHrInCC = dto.ccUserIds.some((id) => hrUserIds.includes(id));
-        if (hasHrInCC) {
-          throw new AppException(
-            ErrorCode.INVALID_INPUT,
-            'HR users are automatically notified and should not be in CC list',
-            400,
-          );
-        }
-      }
+      const originalVersion = leaveRequest.version;
 
       // Update fields
-      const originalVersion = leaveRequest.version;
+      leaveRequest.requestedLeaveTypeId = dto.leaveTypeId;
       leaveRequest.startDate = dto.startDate;
-      leaveRequest.endDate = dto.endDate;
+      leaveRequest.endDate = finalEndDate;
+      leaveRequest.startSession = dto.startSession;
+      leaveRequest.endSession = finalEndSession;
+      leaveRequest.durationDays = validation.durationDays;
       leaveRequest.reason = dto.reason;
       leaveRequest.workSolution = dto.workSolution ?? leaveRequest.workSolution;
 
-      // Check if CC recipients are being updated
-      const isCCUpdated = dto.ccUserIds !== undefined;
-
-      // Save (version auto increment if fields changed)
       updatedEntity = await leaveRequestRepo.save(leaveRequest);
       const versionIncreasedFromFields = updatedEntity.version > originalVersion;
 
-      // Update CC recipients if provided
-      if (isCCUpdated) {
-        // Remove old CC recipients (only CC type, keep APPROVER and HR)
-        await recipientRepo.delete({
-          requestId,
-          type: RecipientType.CC,
-        });
+      // Replace items (delete old, insert new)
+      await itemRepo.delete({ leaveRequestId: requestId });
+      if (validation.items.length > 0) {
+        const items = validation.items.map((item) =>
+          itemRepo.create({
+            leaveRequestId: requestId,
+            leaveTypeId: item.leaveTypeId,
+            amountDays: item.amountDays,
+            note: item.note,
+          }),
+        );
+        await itemRepo.save(items);
+      }
 
-        // Add new CC recipients
+      // Update CC recipients if provided
+      const isCCUpdated = dto.ccUserIds !== undefined;
+      if (isCCUpdated) {
+        await recipientRepo.delete({ requestId, type: RecipientType.CC });
+
         if (dto.ccUserIds.length > 0) {
           const newRecipients = dto.ccUserIds.map((ccUserId) =>
-            recipientRepo.create({
-              requestId,
-              userId: ccUserId,
-              type: RecipientType.CC,
-            }),
+            recipientRepo.create({ requestId, userId: ccUserId, type: RecipientType.CC }),
           );
-
           await recipientRepo.save(newRecipients);
         }
 
-        // IMPORTANT: Force version increment if CC updated but version didn't increase from field changes
-        // This ensures approvers must refresh when CC list changes
         if (!versionIncreasedFromFields) {
           leaveRequest.version = updatedEntity.version + 1;
           updatedEntity = await leaveRequestRepo.save(leaveRequest);
-
-          this.logger.log(
-            `[updateLeaveRequest] CC recipients updated for request ${requestId}, version force incremented to ${updatedEntity.version}`,
-          );
-        } else {
-          this.logger.log(
-            `[updateLeaveRequest] CC recipients updated for request ${requestId}, version already incremented to ${updatedEntity.version}`,
-          );
         }
       }
 
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(
-        `[updateLeaveRequest] Transaction failed for request ${requestId} by user ${userId}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`[updateLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`, error.stack);
       throw error;
     } finally {
       await queryRunner.release();
     }
 
-    // Load lại đầy đủ SAU transaction để notify (quan trọng: include 'user')
+    // Reload with full relations
     const updatedRequest = await this.leaveRequestRepository.findOneOrFail({
       where: { id: requestId },
-      relations: ['user', 'notificationRecipients', 'notificationRecipients.user'],
+      relations: ['user', 'notificationRecipients', 'notificationRecipients.user', 'items', 'items.leaveType'],
     });
 
     await this.notificationsService.enqueueLeaveRequestUpdatedNotification(
@@ -433,11 +432,7 @@ export class LeaveRequestsService {
       },
     );
 
-    this.logger.log(
-      `[updateLeaveRequest] Successfully updated request ${requestId} by user ${userId} - New version: ${updatedEntity.version}`,
-    );
-
-    // Trả về object đầy đủ relations (tốt hơn return updatedEntity)
+    this.logger.log(`[updateLeaveRequest] Successfully updated request ${requestId} — version: ${updatedEntity.version}`);
     return updatedRequest;
   }
 
@@ -476,7 +471,7 @@ export class LeaveRequestsService {
   ): Promise<LeaveRequest> {
     const leaveRequest = await this.leaveRequestRepository.findOne({
       where: { id: requestId },
-      relations: ['user', 'approver'],
+      relations: ['user', 'approver', 'items'],
     });
 
     if (!leaveRequest) {
@@ -491,11 +486,8 @@ export class LeaveRequestsService {
       throw new BadRequestException(`Cannot approve request with status: ${leaveRequest.status}`);
     }
 
-    // Optimistic locking check - ensure approver is acting on the latest version
+    // Optimistic locking check
     if (leaveRequest.version !== version) {
-      this.logger.warn(
-        `[approveLeaveRequest] Version conflict for request ${requestId}: client version ${version}, current version ${leaveRequest.version} (approver: ${approverId})`,
-      );
       throw new ConflictException(
         `This leave request has been modified since you last viewed it (your version: ${version}, current version: ${leaveRequest.version}). Please refresh and review the changes before approving.`,
       );
@@ -506,15 +498,20 @@ export class LeaveRequestsService {
     leaveRequest.approvedAt = new Date();
     const updated = await this.leaveRequestRepository.save(leaveRequest);
 
+    // Debit balance for each item
+    const year = new Date(leaveRequest.startDate).getFullYear();
+    await this.leaveBalanceService.debitBalanceForApproval(
+      leaveRequest.userId,
+      leaveRequest.id,
+      leaveRequest.items || [],
+      year,
+    );
+
     const recipients = await this.notificationRecipientRepository.find({
       where: { requestId: leaveRequest.id },
       relations: ['user'],
     });
-    console.log(
-      'Recipients to notify on approval:',
-      recipients.map((r) => r.user.username),
-    );
-    // Enqueue notification to requester
+
     await this.notificationsService.enqueueLeaveRequestApprovedNotification(
       leaveRequest.id,
       leaveRequest.userId,
@@ -605,11 +602,13 @@ export class LeaveRequestsService {
 
   /**
    * Cancel leave request (by requester)
+   * Supports cancelling PENDING or APPROVED requests.
+   * If APPROVED, refunds the balance.
    */
   async cancelLeaveRequest(requestId: number, userId: number): Promise<LeaveRequest> {
     const leaveRequest = await this.leaveRequestRepository.findOne({
       where: { id: requestId },
-      relations: ['user'],
+      relations: ['user', 'items'],
     });
 
     if (!leaveRequest) {
@@ -620,11 +619,13 @@ export class LeaveRequestsService {
       throw new ForbiddenException('You can only cancel your own requests');
     }
 
-    if (leaveRequest.status !== LeaveRequestStatus.PENDING) {
+    if (![LeaveRequestStatus.PENDING, LeaveRequestStatus.APPROVED].includes(leaveRequest.status)) {
       throw new BadRequestException(`Cannot cancel request with status: ${leaveRequest.status}`);
     }
 
-    // Load recipients BEFORE transaction deletes them (needed for notification)
+    const wasApproved = leaveRequest.status === LeaveRequestStatus.APPROVED;
+
+    // Load recipients BEFORE transaction deletes them
     const cancelRecipients = await this.notificationRecipientRepository.find({
       where: { requestId: leaveRequest.id },
       relations: ['user'],
@@ -636,15 +637,24 @@ export class LeaveRequestsService {
     try {
       leaveRequest.status = LeaveRequestStatus.CANCELLED;
       leaveRequest.cancelledAt = new Date();
-      await this.leaveRequestRepository.save(leaveRequest);
+      await queryRunner.manager.save(leaveRequest);
       await this.notificationRecipientRepository.delete({ requestId: leaveRequest.id });
+
+      // Refund balance if the request was already approved
+      if (wasApproved) {
+        const year = new Date(leaveRequest.startDate).getFullYear();
+        await this.leaveBalanceService.refundBalanceForCancellation(
+          leaveRequest.userId,
+          leaveRequest.id,
+          leaveRequest.items || [],
+          year,
+        );
+      }
+
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(
-        `[cancelLeaveRequest] Transaction failed for request ${requestId} by user ${userId}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`[cancelLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`, error.stack);
       throw error;
     } finally {
       await queryRunner.release();
@@ -663,8 +673,58 @@ export class LeaveRequestsService {
       },
     );
 
-    this.logger.log(`Leave request ${requestId} cancelled by user ${userId}`);
+    this.logger.log(`Leave request ${requestId} cancelled by user ${userId}${wasApproved ? ' (balance refunded)' : ''}`);
     return leaveRequest;
+  }
+
+  /**
+   * Get all active, non-system leave types grouped by category.
+   * For categories with intra-category auto-conversion (e.g. ANNUAL: Paid→Unpaid),
+   * conversion-target types are hidden and `autoConvert` is set to true.
+   */
+  async getLeaveTypes() {
+    const categories = await this.leaveCategoryRepository.find({
+      where: { isActive: true },
+      relations: ['leaveTypes'],
+      order: { id: 'ASC' },
+    });
+
+    // Find leave-type ids that are intra-category EXCEED_BALANCE conversion targets
+    // These are auto-managed by the balance service and should not be user-selectable.
+    const autoTargetRows: { id: string }[] = await this.dataSource
+      .createQueryBuilder()
+      .select('DISTINCT ltc.to_leave_type_id', 'id')
+      .from('leave_type_conversions', 'ltc')
+      .innerJoin('leave_types', 'from_lt', 'ltc.from_leave_type_id = from_lt.id')
+      .innerJoin('leave_types', 'to_lt', 'ltc.to_leave_type_id = to_lt.id')
+      .where('ltc.is_active = true')
+      .andWhere('ltc.reason = :reason', { reason: 'EXCEED_BALANCE' })
+      .andWhere('from_lt.category_id = to_lt.category_id')
+      .getRawMany();
+
+    const autoTargetIds = new Set(autoTargetRows.map((r) => Number(r.id)));
+
+    return categories.map((cat) => {
+      const allTypes = (cat.leaveTypes || []).filter((lt) => lt.isActive && !lt.isSystem);
+      const hasAutoConvert = allTypes.some((lt) => autoTargetIds.has(Number(lt.id)));
+      const visibleTypes = hasAutoConvert
+        ? allTypes.filter((lt) => !autoTargetIds.has(Number(lt.id)))
+        : allTypes;
+
+      return {
+        id: cat.id,
+        code: cat.code,
+        name: cat.name,
+        autoConvert: hasAutoConvert,
+        leaveTypes: visibleTypes.map((lt) => ({
+          id: lt.id,
+          code: lt.code,
+          name: lt.name,
+          requiresDocument: lt.requiresDocument,
+          requiresCompWorkingDate: lt.requiresCompWorkingDate,
+        })),
+      };
+    });
   }
 
   /**
@@ -675,7 +735,7 @@ export class LeaveRequestsService {
     try {
       const results = await this.leaveRequestRepository.find({
         where: { userId },
-        relations: ['approver', 'notificationRecipients'],
+        relations: ['approver', 'notificationRecipients', 'items', 'items.leaveType', 'requestedLeaveType', 'requestedLeaveType.category'],
         order: { createdAt: 'DESC' },
       });
       this.logger.log(`[findUserLeaveRequests] Query completed, found ${results.length} results`);
@@ -702,7 +762,7 @@ export class LeaveRequestsService {
         // HR can see all requests regardless of status
         this.logger.log(`[findRequestsForManagement] User is HR, fetching all requests`);
         results = await this.leaveRequestRepository.find({
-          relations: ['user', 'approver'],
+          relations: ['user', 'approver', 'items', 'items.leaveType', 'requestedLeaveType', 'requestedLeaveType.category'],
           order: { createdAt: 'DESC' },
         });
       } else {
@@ -714,7 +774,7 @@ export class LeaveRequestsService {
           where: {
             approverId: user.id,
           },
-          relations: ['user', 'approver'],
+          relations: ['user', 'approver', 'items', 'items.leaveType', 'requestedLeaveType', 'requestedLeaveType.category'],
           order: { createdAt: 'DESC' },
         });
       }
@@ -735,7 +795,7 @@ export class LeaveRequestsService {
   async findOne(id: number): Promise<LeaveRequest> {
     const leaveRequest = await this.leaveRequestRepository.findOne({
       where: { id },
-      relations: ['user', 'approver', 'notificationRecipients', 'notificationRecipients.user'],
+      relations: ['user', 'approver', 'notificationRecipients', 'notificationRecipients.user', 'items', 'items.leaveType', 'requestedLeaveType', 'requestedLeaveType.category'],
     });
 
     if (!leaveRequest) {

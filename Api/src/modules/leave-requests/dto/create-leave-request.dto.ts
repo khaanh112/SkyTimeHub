@@ -1,7 +1,23 @@
-import { IsDateString, IsOptional, IsString, IsArray, IsInt, Length } from 'class-validator';
+import {
+  IsDateString,
+  IsOptional,
+  IsString,
+  IsArray,
+  IsInt,
+  IsEnum,
+  IsBoolean,
+  Length,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { LeaveSession } from '@/common/enums/leave-session.enum';
 
 export class CreateLeaveRequestDto {
+  @ApiProperty({ description: 'Leave type ID (from leave_types table)', example: 1 })
+  @Type(() => Number)
+  @IsInt()
+  leaveTypeId: number;
+
   @ApiProperty({
     description: 'Start date of leave (YYYY-MM-DD)',
     example: '2026-02-10',
@@ -15,6 +31,14 @@ export class CreateLeaveRequestDto {
   })
   @IsDateString()
   endDate: string;
+
+  @ApiProperty({ enum: LeaveSession, description: 'Start session (AM or PM)', example: 'AM' })
+  @IsEnum(LeaveSession)
+  startSession: LeaveSession;
+
+  @ApiProperty({ enum: LeaveSession, description: 'End session (AM or PM)', example: 'PM' })
+  @IsEnum(LeaveSession)
+  endSession: LeaveSession;
 
   @ApiProperty({
     description: 'Reason for leave request',
@@ -42,4 +66,12 @@ export class CreateLeaveRequestDto {
   @IsArray()
   @IsInt({ each: true })
   ccUserIds?: number[];
+
+  @ApiPropertyOptional({
+    description: 'Confirm proceeding despite balance warning',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  confirmDespiteWarning?: boolean;
 }

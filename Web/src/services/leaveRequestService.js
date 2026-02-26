@@ -19,6 +19,22 @@ const leaveRequestService = {
     return response.data;
   },
 
+  // Get available leave types grouped by category
+  getLeaveTypes: async () => {
+    const response = await api.get('/leave-requests/leave-types');
+    return response.data;
+  },
+
+  // Suggest end date for auto-calculate leave types (POLICY / SOCIAL)
+  suggestEndDate: async (leaveTypeId, startDate, startSession) => {
+    const response = await api.post('/leave-requests/suggest-end-date', {
+      leaveTypeId,
+      startDate,
+      startSession,
+    });
+    return response.data;
+  },
+
   // Get leave request by ID
   getLeaveRequest: async (id) => {
     const response = await api.get(`/leave-requests/${id}`);

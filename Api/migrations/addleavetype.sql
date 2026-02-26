@@ -258,3 +258,69 @@ CREATE TABLE IF NOT EXISTS public.leave_request_attachments (
 );
 
 COMMIT;
+BEGIN;
+
+-- 0) gỡ constraint exclude đang phụ thuộc start_slot/end_slot (nếu có)
+ALTER TABLE public.leave_requests
+  DROP CONSTRAINT IF EXISTS excl_leave_no_overlap_active;
+
+-- 1) đổi generated -> cột thường: phải DROP rồi ADD lại (Postgres không ALTER generated -> normal trực tiếp)
+ALTER TABLE public.leave_requests
+  DROP COLUMN IF EXISTS start_slot,
+  DROP COLUMN IF EXISTS end_slot;
+
+ALTER TABLE public.leave_requests
+  ADD COLUMN start_slot integer,
+  ADD COLUMN end_slot integer;
+
+-- 2) tạo trigger function set slot
+CREATE OR REPLACE FUNCTION public.set_leave_slots()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.start_slot :=
+    ((NEW.start_date - DATE '2000-01-01') * 2)
+    + CASE WHEN NEW.start_session = 'PM' THEN 1 ELSE 0 END;
+
+  NEW.end_slot :=
+    ((NEW.end_date - DATE '2000-01-01') * 2)
+    + CASE WHEN NEW.end_session = 'PM' THEN 1 ELSE 0 END;
+
+  RETURN NEW;
+END;
+$$;
+
+-- 3) drop trigger cũ nếu có, rồi tạo trigger mới
+DROP TRIGGER IF EXISTS trg_set_leave_slots ON public.leave_requests;
+
+CREATE TRIGGER trg_set_leave_slots
+BEFORE INSERT OR UPDATE OF start_date, end_date, start_session, end_session
+ON public.leave_requests
+FOR EACH ROW
+EXECUTE FUNCTION public.set_leave_slots();
+
+-- 4) backfill cho data hiện có
+UPDATE public.leave_requests
+SET start_slot =
+      ((start_date - DATE '2000-01-01') * 2)
+      + CASE WHEN start_session = 'PM' THEN 1 ELSE 0 END,
+    end_slot   =
+      ((end_date - DATE '2000-01-01') * 2)
+      + CASE WHEN end_session = 'PM' THEN 1 ELSE 0 END;
+
+-- 5) (tuỳ chọn) set NOT NULL nếu chắc chắn luôn có session/date
+ALTER TABLE public.leave_requests
+  ALTER COLUMN start_slot SET NOT NULL,
+  ALTER COLUMN end_slot   SET NOT NULL;
+
+-- 6) tạo lại exclude constraint chống overlap
+ALTER TABLE public.leave_requests
+  ADD CONSTRAINT excl_leave_no_overlap_active
+  EXCLUDE USING gist (
+    user_id WITH =,
+    int4range(start_slot, end_slot + 1, '[)') WITH &&
+  )
+  WHERE (status = ANY (ARRAY['pending'::public.leave_status, 'approved'::public.leave_status]));
+
+COMMIT;
