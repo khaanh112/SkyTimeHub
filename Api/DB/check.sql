@@ -240,8 +240,7 @@ ALTER TYPE public.user_status OWNER TO sky;
 CREATE TYPE public.users_contract_type_enum AS ENUM (
     'intern',
     'probation',
-    'part_time',
-    'full_time'
+    'official'
 );
 
 

@@ -38,7 +38,7 @@ The Excel template file `users-import-template.xlsx` contains the following colu
   - Example: 2024-03-01
   - Can differ from joinDate (e.g., after probation period)
 - **contractType** - Type of employment contract
-  - Valid values: `intern`, `probation`, `part_time`, `full_time`
+  - Valid values: `intern`, `probation`, `official`
 
 ## Import Rules
 

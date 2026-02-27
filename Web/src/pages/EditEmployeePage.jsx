@@ -7,7 +7,7 @@ import { userService, departmentService } from '../services';
 
 const ROLES = ['employee', 'hr', 'admin'];
 const GENDERS = ['male', 'female'];
-const CONTRACT_TYPES = ['intern', 'probation', 'part_time', 'full_time'];
+const CONTRACT_TYPES = ['intern', 'probation', 'official'];
 
 const EditEmployeePage = () => {
   const navigate = useNavigate();

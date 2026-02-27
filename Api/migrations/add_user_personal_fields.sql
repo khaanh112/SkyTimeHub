@@ -5,7 +5,7 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'users_contract_type_enum') THEN
-        CREATE TYPE users_contract_type_enum AS ENUM ('intern', 'probation', 'part_time', 'full_time');
+        CREATE TYPE users_contract_type_enum AS ENUM ('intern', 'probation', 'official');
     END IF;
 END
 $$;

@@ -316,7 +316,7 @@ const ImportUsersPage = () => {
                     <li>• <strong>position</strong>: Chức vụ (VD: Software Engineer)</li>
                     <li>• <strong>joinDate</strong>: Ngày vào làm (YYYY-MM-DD)</li>
                     <li>• <strong>officialContractDate</strong>: Ngày ký HĐ chính thức (YYYY-MM-DD)</li>
-                    <li>• <strong>contractType</strong>: <code className="bg-blue-100 px-1 rounded">intern</code>, <code className="bg-blue-100 px-1 rounded">probation</code>, <code className="bg-blue-100 px-1 rounded">part_time</code>, <code className="bg-blue-100 px-1 rounded">full_time</code></li>
+                    <li>• <strong>contractType</strong>: <code className="bg-blue-100 px-1 rounded">intern</code>, <code className="bg-blue-100 px-1 rounded">probation</code>, <code className="bg-blue-100 px-1 rounded">official</code></li>
                   </ul>
                 </div>
               </div>
