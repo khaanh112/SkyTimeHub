@@ -158,6 +158,11 @@ export class LeaveRequestsService {
       dto.endDate,
       dto.startSession,
       dto.endSession,
+      undefined,
+      {
+        numberOfChildren: dto.numberOfChildren,
+        childbirthMethod: dto.childbirthMethod,
+      },
     );
 
     // If there are warnings and user hasn't confirmed
@@ -191,6 +196,8 @@ export class LeaveRequestsService {
         durationDays: validation.durationDays,
         reason: dto.reason,
         workSolution: dto.workSolution,
+        numberOfChildren: dto.numberOfChildren ?? null,
+        childbirthMethod: dto.childbirthMethod ?? null,
         status: LeaveRequestStatus.PENDING,
       });
 
@@ -332,6 +339,10 @@ export class LeaveRequestsService {
       dto.startSession,
       dto.endSession,
       requestId, // exclude current request from pending balance calculations
+      {
+        numberOfChildren: dto.numberOfChildren,
+        childbirthMethod: dto.childbirthMethod,
+      },
     );
 
     if (validation.warnings.length > 0 && !dto.confirmDespiteWarning) {
@@ -369,6 +380,8 @@ export class LeaveRequestsService {
       leaveRequest.durationDays = validation.durationDays;
       leaveRequest.reason = dto.reason;
       leaveRequest.workSolution = dto.workSolution ?? leaveRequest.workSolution;
+      leaveRequest.numberOfChildren = dto.numberOfChildren ?? leaveRequest.numberOfChildren;
+      leaveRequest.childbirthMethod = dto.childbirthMethod ?? leaveRequest.childbirthMethod;
 
       updatedEntity = await leaveRequestRepo.save(leaveRequest);
       const versionIncreasedFromFields = updatedEntity.version > originalVersion;

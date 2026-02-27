@@ -193,6 +193,9 @@ const CreateLeaveRequestPage = () => {
     compensatoryPlans: [{ startDate: '', startTime: '08:30', endDate: '', endTime: '17:30' }],
     // Social Benefits-specific
     attachments: [],
+    // Parental Leave-specific
+    numberOfChildren: 1,
+    childbirthMethod: 'natural', // 'natural' | 'c_section'
   });
 
   useEffect(() => {
@@ -222,14 +225,24 @@ const CreateLeaveRequestPage = () => {
     const cat = leaveCategories.find((c) => c.code === formData.leaveCategory);
     if (!cat || (cat.code !== 'POLICY' && cat.code !== 'SOCIAL')) return;
 
+    // Determine if this is PARENTAL leave
+    const selectedType = cat.leaveTypes.find((lt) => lt.id === formData.leaveTypeId || String(lt.id) === String(formData.leaveTypeId));
+    const isParental = selectedType?.code === 'PARENTAL';
+
     let cancelled = false;
     (async () => {
       try {
-        const res = await leaveRequestService.suggestEndDate(
-          formData.leaveTypeId,
-          formData.startDate,
-          formData.startSession,
-        );
+        const params = {
+          leaveTypeId: formData.leaveTypeId,
+          startDate: formData.startDate,
+          startSession: formData.startSession,
+        };
+        // Pass parental options for PARENTAL leave
+        if (isParental) {
+          params.numberOfChildren = formData.numberOfChildren || 1;
+          params.childbirthMethod = formData.childbirthMethod || 'natural';
+        }
+        const res = await leaveRequestService.suggestEndDate(params);
         const data = res.data || res;
         if (!cancelled && data?.suggestedEndDate) {
           setFormData((prev) => ({
@@ -243,7 +256,7 @@ const CreateLeaveRequestPage = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [formData.leaveTypeId, formData.startDate, formData.startSession]);
+  }, [formData.leaveTypeId, formData.startDate, formData.startSession, formData.numberOfChildren, formData.childbirthMethod, formData.leaveCategory, leaveCategories]);
 
   const fetchLeaveTypes = async () => {
     try {
@@ -293,8 +306,10 @@ const CreateLeaveRequestPage = () => {
   };
 
   // Calculate duration in half-day slots (matching backend AM/PM session logic).
-  // All leave types skip weekends (Sat/Sun). Holidays are only handled server-side.
-  const calculateDuration = (startDate, startSession, endDate, endSession) => {
+  // All leave types skip weekends (Sat/Sun) EXCEPT parental leave for females
+  // which counts calendar days (no weekend exclusion).
+  // Holidays are only handled server-side.
+  const calculateDuration = (startDate, startSession, endDate, endSession, { calendarDays = false } = {}) => {
     if (!startDate || !endDate) return null;
     const s = new Date(startDate + 'T00:00:00');
     const e = new Date(endDate + 'T00:00:00');
@@ -314,7 +329,7 @@ const CreateLeaveRequestPage = () => {
       const day = current.getDay();
       const isWeekend = day === 0 || day === 6;
 
-      if (!isWeekend) {
+      if (calendarDays || !isWeekend) {
         const key = fmtLocal(current);
         let amCounts = true;
         let pmCounts = true;
@@ -349,7 +364,73 @@ const CreateLeaveRequestPage = () => {
     return `${dd}/${mm}/${yyyy} ${session === 'AM' ? '12:00' : '17:30'}`;
   };
 
-  const totalDuration = calculateDuration(formData.startDate, formData.startSession, formData.endDate, formData.endSession);
+  // Determine if the current selection is PARENTAL leave
+  const selectedCategory = leaveCategories.find((c) => c.code === formData.leaveCategory);
+  const selectedLeaveType = selectedCategory?.leaveTypes.find(
+    (lt) => lt.id === formData.leaveTypeId || String(lt.id) === String(formData.leaveTypeId)
+  );
+  const isParentalLeave = selectedLeaveType?.code === 'PARENTAL';
+  const isFemalUser = user?.gender === 'female';
+
+  // For female parental leave: total = maternity calendar days + excess working days
+  const totalDuration = (() => {
+    if (isParentalLeave && isFemalUser) {
+      const numChildren = formData.numberOfChildren || 1;
+      const entitlement = 180 + Math.max(0, numChildren - 1) * 30;
+      
+      // Total calendar days requested
+      const calendarTotal = calculateDuration(formData.startDate, formData.startSession, formData.endDate, formData.endSession, { calendarDays: true });
+      if (!calendarTotal) return null;
+      
+      if (calendarTotal <= entitlement) {
+        // All within maternity entitlement → calendar days
+        return calendarTotal;
+      } else {
+        // Find maternity end date, then calculate excess as working days
+        // Simple approximation: add entitlement calendar days from start
+        const startD = new Date(formData.startDate + 'T00:00:00');
+        let remainingSlots = entitlement * 2;
+        const cur = new Date(startD);
+        let lastDate = formData.startDate;
+        let lastSession = formData.startSession;
+        
+        while (remainingSlots > 0) {
+          const isFirst = cur.toISOString().slice(0, 10) === formData.startDate;
+          const amAvailable = !(isFirst && formData.startSession === 'PM');
+          
+          if (amAvailable && remainingSlots > 0) {
+            remainingSlots--;
+            lastDate = cur.toISOString().slice(0, 10);
+            lastSession = 'AM';
+          }
+          if (remainingSlots > 0) {
+            remainingSlots--;
+            lastDate = cur.toISOString().slice(0, 10);
+            lastSession = 'PM';
+          }
+          if (remainingSlots > 0) {
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+        
+        // Calculate excess working days (after maternity end)
+        let excessStart, excessStartSession;
+        if (lastSession === 'PM') {
+          const nextDay = new Date(lastDate + 'T00:00:00');
+          nextDay.setDate(nextDay.getDate() + 1);
+          excessStart = nextDay.toISOString().slice(0, 10);
+          excessStartSession = 'AM';
+        } else {
+          excessStart = lastDate;
+          excessStartSession = 'PM';
+        }
+        
+        const excessDays = calculateDuration(excessStart, excessStartSession, formData.endDate, formData.endSession) || 0;
+        return entitlement + excessDays;
+      }
+    }
+    return calculateDuration(formData.startDate, formData.startSession, formData.endDate, formData.endSession);
+  })();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -399,6 +480,11 @@ const CreateLeaveRequestPage = () => {
         workSolution: formData.workSolution || undefined,
         ccUserIds: formData.ccUserIds,
         confirmDespiteWarning,
+        // Parental leave fields
+        ...(isParentalLeave && {
+          numberOfChildren: formData.numberOfChildren || 1,
+          childbirthMethod: formData.childbirthMethod || 'natural',
+        }),
       };
       await leaveRequestService.createLeaveRequest(payload);
       toast.success('Leave request submitted successfully!');
@@ -473,7 +559,6 @@ const CreateLeaveRequestPage = () => {
   };
 
   // ── Derived state ──
-  const selectedCategory = leaveCategories.find((c) => c.code === formData.leaveCategory);
   const hasSubTypes = selectedCategory && !selectedCategory.autoConvert && selectedCategory.leaveTypes.length > 1;
   const isCompensatory = formData.leaveCategory === 'COMPENSATORY';
   const isSocialBenefits = formData.leaveCategory === 'SOCIAL';
@@ -534,10 +619,12 @@ const CreateLeaveRequestPage = () => {
               {/* Sub-type (conditional — when category has multiple user-selectable leave types) */}
               {hasSubTypes && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">&nbsp;</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Sub-type <span className="text-red-500">*</span>
+                  </label>
                   <CustomDropdown
                     value={formData.leaveTypeId ? String(formData.leaveTypeId) : ''}
-                    options={selectedCategory.leaveTypes.map((lt) => ({ value: String(lt.id), label: lt.name }))}
+                    options={selectedCategory.leaveTypes.map((lt) => ({ value: String(lt.id), label: lt.name, description: lt.description }))}
                     onChange={(val) => setFormData({ ...formData, leaveTypeId: Number(val) })}
                     placeholder="Select sub-type"
                   />
@@ -564,6 +651,61 @@ const CreateLeaveRequestPage = () => {
                 </div>
               </div>
             </div>
+
+            {/* Parental Leave extra fields */}
+            {isParentalLeave && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Number of children */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Number of children <span className="text-red-500">*</span>
+                  </label>
+                  <CustomDropdown
+                    value={String(formData.numberOfChildren || 1)}
+                    options={[
+                      { value: '1', label: '1' },
+                      { value: '2', label: '2' },
+                      { value: '3', label: '3' },
+                      { value: '4', label: '4' },
+                      { value: '5', label: '5' },
+                    ]}
+                    onChange={(val) => setFormData({ ...formData, numberOfChildren: Number(val) })}
+                    placeholder="Select"
+                  />
+                </div>
+
+                {/* Childbirth method */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Childbirth methods <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-6 px-3 py-2.5">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="childbirthMethod"
+                        value="natural"
+                        checked={formData.childbirthMethod === 'natural'}
+                        onChange={() => setFormData({ ...formData, childbirthMethod: 'natural' })}
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Natural birth</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="childbirthMethod"
+                        value="c_section"
+                        checked={formData.childbirthMethod === 'c_section'}
+                        onChange={() => setFormData({ ...formData, childbirthMethod: 'c_section' })}
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">C-section</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
             {selectedCategory?.autoConvert && (
               <div className="mt-3 flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                 <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />

@@ -46,6 +46,10 @@ export class LeaveTypePolicy {
   @Column({ name: 'max_negative_limit_days', type: 'numeric', precision: 5, scale: 2, nullable: true })
   maxNegativeLimitDays: number | null;
 
+  @ApiPropertyOptional({ example: 5.0, description: 'Monthly limit (e.g. 1 days/month)' })
+  @Column({ name: 'monthly_limit_days', type: 'numeric', precision: 5, scale: 2, nullable: true })
+  monthlyLimitDays: number | null;
+
   @ApiPropertyOptional({ example: 30.0, description: 'Annual limit (e.g. unpaid 30 days/year)' })
   @Column({ name: 'annual_limit_days', type: 'numeric', precision: 7, scale: 2, nullable: true })
   annualLimitDays: number | null;

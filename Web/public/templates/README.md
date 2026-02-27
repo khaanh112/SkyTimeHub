@@ -62,7 +62,7 @@ The Excel template file `users-import-template.xlsx` contains the following colu
 ```
 | employeeId | email              | username    | phoneNumber  | gender | dateOfBirth | address             | role     | departmentId | position           | joinDate   | officialContractDate | contractType |
 |------------|--------------------|-------------|--------------|--------|-------------|---------------------|----------|--------------|--------------------|-----------:|---------------------:|:-------------|
-| EMP240001  | john@example.com   | John Doe    | 0901234567   | male   | 1995-06-15  | 123 Main St, Hanoi  | employee | 1            | Software Engineer  | 2024-01-15 | 2024-03-15           | full_time    |
+| EMP240001  | john@example.com   | John Doe    | 0901234567   | male   | 1995-06-15  | 123 Main St, Hanoi  | employee | 1            | Software Engineer  | 2024-01-15 | 2024-03-15           | official     |
 | EMP240002  | jane@example.com   | Jane Smith  | 0912345678   | female | 1998-03-20  | 456 Le Loi, HCM     | hr       | 2            | HR Manager         | 2024-02-01 | 2024-02-01           | probation    |
 ```
 

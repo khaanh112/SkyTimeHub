@@ -17,8 +17,10 @@ import { LeaveRequest } from '@entities/leave_request.entity';
 import { CalendarOverride } from '@entities/calendar-override.entity';
 import { User } from '@entities/users.entity';
 import { UserStatus } from '@/common/enums/user-status.enum';
-import { calculateLeaveDuration, autoCalculateEndDate } from './utils/duration-calculator';
+import { calculateLeaveDuration, autoCalculateEndDate, calculateCalendarDuration, calculateCalendarEndDate } from './utils/duration-calculator';
 import { LeaveSession } from '@/common/enums/leave-session.enum';
+import { ChildbirthMethod } from '@/common/enums/childbirth-method.enum';
+import { UserGender } from '@/common/enums/user-genders';
 
 export interface BalanceInfo {
   leaveTypeId: number;
@@ -192,6 +194,10 @@ export class LeaveBalanceService {
     startSession: LeaveSession,
     endSession: LeaveSession,
     excludeRequestId?: number,
+    parentalOptions?: {
+      numberOfChildren?: number;
+      childbirthMethod?: ChildbirthMethod;
+    },
   ): Promise<LeaveValidationResult> {
     const leaveType = await this.getLeaveTypeById(leaveTypeId);
     if (!leaveType) {
@@ -208,21 +214,119 @@ export class LeaveBalanceService {
     const finalEndSession = endSession;
 
     // ── Step 1: Calculate duration from user-provided dates ──
-    // All leave types count working days only (skip weekends + holidays).
-    const duration = await calculateLeaveDuration(
-      this.calendarRepo,
-      startDate,
-      finalEndDate,
-      startSession,
-      finalEndSession,
-    );
+    // Special handling for PARENTAL leave (maternity):
+    //   - Female: maternity entitlement in CALENDAR days (weekends/holidays included)
+    //   - Male: working days as usual
+    //   - Excess beyond entitlement: working days (skip weekends/holidays), then conversion
+    const isParentalLeave = leaveType.code === 'PARENTAL';
+    let durationDays: number;
+    let parentalEntitlementDays = 0; // calendar days for female maternity
+    let excessWorkingDays = 0;
 
-    if (duration.durationDays <= 0) {
-      throw new Error('Leave duration must be at least 0.5 days');
+    if (isParentalLeave) {
+      const user = await this.userRepo.findOne({ where: { id: employeeId } });
+      const isFemale = user?.gender === UserGender.FEMALE;
+
+      if (isFemale) {
+        // Female maternity: 180 calendar days + (N-1)*30 for twins+
+        const numChildren = parentalOptions?.numberOfChildren ?? 1;
+        parentalEntitlementDays = 180 + Math.max(0, numChildren - 1) * 30;
+
+        // Calculate total calendar days user requested
+        const calendarDuration = calculateCalendarDuration(
+          startDate, finalEndDate, startSession, finalEndSession,
+        );
+
+        if (calendarDuration.durationDays <= 0) {
+          throw new Error('Leave duration must be at least 0.5 days');
+        }
+
+        if (calendarDuration.durationDays <= parentalEntitlementDays) {
+          // Entire request within maternity entitlement → all calendar days
+          durationDays = calendarDuration.durationDays;
+        } else {
+          // Request extends beyond maternity entitlement
+          // Find the calendar end date of the maternity entitlement
+          const maternityEnd = calculateCalendarEndDate(
+            startDate, startSession, parentalEntitlementDays,
+          );
+
+          // Calculate working days for the excess period (day after maternity end → user's endDate)
+          const excessStartDate = new Date(maternityEnd.endDate + 'T00:00:00');
+          let excessStartSession: LeaveSession;
+          if (maternityEnd.endSession === LeaveSession.PM) {
+            // Maternity ended at PM, excess starts next day AM
+            excessStartDate.setDate(excessStartDate.getDate() + 1);
+            excessStartSession = LeaveSession.AM;
+          } else {
+            // Maternity ended at AM, excess starts same day PM
+            excessStartSession = LeaveSession.PM;
+          }
+
+          const fmtDate = (d: Date) => {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+          };
+
+          const excessStartStr = fmtDate(excessStartDate);
+          const excessDuration = await calculateLeaveDuration(
+            leaveTypeId,
+            this.calendarRepo,
+            excessStartStr,
+            finalEndDate,
+            excessStartSession,
+            finalEndSession,
+          );
+
+          excessWorkingDays = excessDuration.durationDays;
+          durationDays = parentalEntitlementDays + excessWorkingDays;
+        }
+      } else {
+        // Male paternity: 5 working days (natural) or 7 working days (c-section)
+        const entitlement =
+          parentalOptions?.childbirthMethod === ChildbirthMethod.C_SECTION ? 7 : 5;
+        parentalEntitlementDays = entitlement; // for male this is in working days
+
+        const duration = await calculateLeaveDuration(
+          leaveTypeId,
+          this.calendarRepo,
+          startDate,
+          finalEndDate,
+          startSession,
+          finalEndSession,
+        );
+
+        if (duration.durationDays <= 0) {
+          throw new Error('Leave duration must be at least 0.5 days');
+        }
+
+        durationDays = duration.durationDays;
+        if (durationDays > entitlement) {
+          excessWorkingDays = durationDays - entitlement;
+        }
+      }
+    } else {
+      // Non-parental leave: standard working day calculation
+      const duration = await calculateLeaveDuration(
+        leaveTypeId,
+        this.calendarRepo,
+        startDate,
+        finalEndDate,
+        startSession,
+        finalEndSession,
+      );
+
+      if (duration.durationDays <= 0) {
+        throw new Error('Leave duration must be at least 0.5 days');
+      }
+
+      durationDays = duration.durationDays;
     }
 
     // Check min duration
-    if (policy?.minDurationDays && duration.durationDays < Number(policy.minDurationDays)) {
+    if (policy?.minDurationDays && durationDays < Number(policy.minDurationDays)) {
       throw new Error(
         `Minimum leave duration for ${leaveType.name} is ${policy.minDurationDays} days`,
       );
@@ -230,10 +334,80 @@ export class LeaveBalanceService {
 
     // ── Step 2: Build items with conversion logic ───────────
     const items: ConversionItem[] = [];
-    let remainingDays = duration.durationDays;
+    let remainingDays = durationDays;
 
-    // 2a. POLICY / SOCIAL categories
-    if (categoryCode === 'POLICY' || categoryCode === 'SOCIAL') {
+    // 2a. PARENTAL leave — special handling
+    if (isParentalLeave) {
+      const coveredDays = durationDays - excessWorkingDays; // maternity entitlement portion
+      items.push({
+        leaveTypeId: leaveType.id,
+        leaveTypeCode: leaveType.code,
+        amountDays: coveredDays,
+        note: `${leaveType.name} (maternity/paternity entitlement)`,
+      });
+      remainingDays = excessWorkingDays;
+
+      // Excess → auto-convert via conversion chain
+      if (remainingDays > 0) {
+        const conversions = await this.getConversions(leaveType.id);
+        for (const conv of conversions) {
+          if (conv.reason !== 'EXCEED_MAX_PER_REQUEST' || remainingDays <= 0) continue;
+
+          const paidType = conv.toLeaveType;
+          const paidBalance = await this.getBalance(employeeId, paidType.id, year, excludeRequestId);
+          const fromPaid = Math.min(remainingDays, Math.max(paidBalance, 0));
+
+          if (fromPaid > 0) {
+            items.push({
+              leaveTypeId: paidType.id,
+              leaveTypeCode: paidType.code,
+              amountDays: fromPaid,
+              note: `Excess from ${leaveType.name} → ${paidType.name}`,
+            });
+            remainingDays -= fromPaid;
+          }
+
+          if (remainingDays > 0) {
+            warnings.push(
+              `Your paid leave balance (${paidBalance} days) is insufficient to cover the excess. ${remainingDays} days will be deducted as unpaid leave.`,
+            );
+          }
+
+          // PAID → UNPAID chain
+          if (remainingDays > 0) {
+            const paidConversions = await this.getConversions(paidType.id);
+            for (const paidConv of paidConversions) {
+              if (paidConv.reason !== 'EXCEED_BALANCE' || remainingDays <= 0) continue;
+              const unpaidType = paidConv.toLeaveType;
+              const unpaidPolicy = await this.getActivePolicy(unpaidType.id, startDate);
+              const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId);
+              const unpaidLimit = unpaidPolicy?.annualLimitDays ? Number(unpaidPolicy.annualLimitDays) : Infinity;
+              const unpaidAvailable = Math.max(unpaidLimit - unpaidUsed, 0);
+              const fromUnpaid = Math.min(remainingDays, unpaidAvailable);
+
+              if (fromUnpaid > 0) {
+                items.push({
+                  leaveTypeId: unpaidType.id,
+                  leaveTypeCode: unpaidType.code,
+                  amountDays: fromUnpaid,
+                  note: `Excess from ${leaveType.name} → ${unpaidType.name}`,
+                });
+                remainingDays -= fromUnpaid;
+              }
+
+              if (remainingDays > 0) {
+                warnings.push(
+                  `Unpaid leave limit (${unpaidLimit} days/year) may be exceeded. ${unpaidUsed} days already used this year.`,
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 2b. POLICY / SOCIAL categories (non-parental)
+    else if (categoryCode === 'POLICY' || categoryCode === 'SOCIAL') {
       if (policy?.maxPerRequestDays) {
         // Allocate up to maxPerRequestDays as the original leave type
         const maxDays = Number(policy.maxPerRequestDays);
@@ -319,7 +493,7 @@ export class LeaveBalanceService {
       }
     }
 
-    // 2b. ANNUAL category (Paid / Unpaid)
+    // 2c. ANNUAL category (Paid / Unpaid)
     else if (categoryCode === 'ANNUAL') {
       if (leaveType.code === 'PAID') {
         const paidBalance = await this.getBalance(employeeId, leaveType.id, year, excludeRequestId);
@@ -337,9 +511,9 @@ export class LeaveBalanceService {
 
         // Overflow paid → unpaid
         if (remainingDays > 0) {
-          if (paidBalance < duration.durationDays) {
+          if (paidBalance < durationDays) {
             warnings.push(
-              `Your paid leave balance (${paidBalance} days) is less than the requested ${duration.durationDays} days. ${remainingDays} days will be deducted as unpaid leave.`,
+              `Your paid leave balance (${paidBalance} days) is less than the requested ${durationDays} days. ${remainingDays} days will be deducted as unpaid leave.`,
             );
           }
 
@@ -396,7 +570,7 @@ export class LeaveBalanceService {
       }
     }
 
-    // 2c. All other categories (COMPENSATORY, etc.) → allocate all days directly
+    // 2d. All other categories (COMPENSATORY, etc.) → allocate all days directly
     else {
       items.push({
         leaveTypeId: leaveType.id,
@@ -432,12 +606,12 @@ export class LeaveBalanceService {
     if (items.length > 1) {
       const breakdown = items.map((i) => `${i.note}: ${i.amountDays} day(s)`).join('; ');
       warnings.unshift(
-        `Your ${duration.durationDays}-day leave request will be split across leave types: ${breakdown}.`,
+        `Your ${durationDays}-day leave request will be split across leave types: ${breakdown}.`,
       );
     }
 
     return {
-      durationDays: duration.durationDays,
+      durationDays,
       items,
       warnings,
       canProceed: true,
@@ -449,13 +623,18 @@ export class LeaveBalanceService {
    * Used by the frontend to pre-fill the form (POLICY / SOCIAL leave types).
    * The user can still modify the suggested values.
    *
-   * All leave types (including maternity) are counted in working days
-   * (weekends and holidays are excluded).
+   * PARENTAL leave for females uses calendar days (weekends/holidays included).
+   * All other leave types count working days (weekends/holidays excluded).
    */
   async suggestEndDate(
     leaveTypeId: number,
     startDate: string,
     startSession: LeaveSession,
+    parentalOptions?: {
+      employeeId?: number;
+      numberOfChildren?: number;
+      childbirthMethod?: ChildbirthMethod;
+    },
   ): Promise<{ suggestedEndDate: string; suggestedEndSession: LeaveSession } | null> {
     const leaveType = await this.getLeaveTypeById(leaveTypeId);
     if (!leaveType) return null;
@@ -463,10 +642,40 @@ export class LeaveBalanceService {
     const policy = await this.getActivePolicy(leaveTypeId, startDate);
     if (!policy?.autoCalculateEndDate || !policy.maxPerRequestDays) return null;
 
+    // Special handling for PARENTAL leave
+    if (leaveType.code === 'PARENTAL' && parentalOptions?.employeeId) {
+      const user = await this.userRepo.findOne({ where: { id: parentalOptions.employeeId } });
+      const isFemale = user?.gender === UserGender.FEMALE;
+
+      if (isFemale) {
+        // Female: calendar days (weekends/holidays included)
+        const numChildren = parentalOptions.numberOfChildren ?? 1;
+        const entitlementDays = 180 + Math.max(0, numChildren - 1) * 30;
+        const result = calculateCalendarEndDate(startDate, startSession, entitlementDays);
+        return {
+          suggestedEndDate: result.endDate,
+          suggestedEndSession: result.endSession,
+        };
+      } else {
+        // Male: working days (5 natural, 7 c-section)
+        const entitlement =
+          parentalOptions.childbirthMethod === ChildbirthMethod.C_SECTION ? 7 : 5;
+        const auto = await autoCalculateEndDate(
+          this.calendarRepo,
+          startDate,
+          startSession,
+          entitlement,
+        );
+        return {
+          suggestedEndDate: auto.endDate,
+          suggestedEndSession: auto.endSession,
+        };
+      }
+    }
+
     const maxDays = Number(policy.maxPerRequestDays);
 
-    // All leave types count working days (skip weekends + holidays).
-    // E.g. nghỉ thai sản 180 ngày = 180 working days (không tính T7/CN/lễ).
+    // Standard: working days (skip weekends + holidays)
     const auto = await autoCalculateEndDate(
       this.calendarRepo,
       startDate,
@@ -702,6 +911,7 @@ export class LeaveBalanceService {
    */
   async getEmployeeBalanceSummary(
     employeeId: number,
+    month: number,
     year: number,
   ): Promise<
     {
@@ -714,6 +924,7 @@ export class LeaveBalanceService {
       totalDebit: number;
       pendingDays: number;
       balance: number;
+      monthlyLimit: number | null;
       annualLimit: number | null;
     }[]
   > {
@@ -733,6 +944,7 @@ export class LeaveBalanceService {
         .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
         .where('tx.employee_id = :employeeId', { employeeId })
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
+        .andWhere('tx.period_month IS NULL OR tx.period_month = :month', { month })
         .andWhere('tx.period_year = :year', { year })
         .andWhere("tx.direction = 'CREDIT'")
         .getRawOne();
@@ -743,6 +955,7 @@ export class LeaveBalanceService {
         .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
         .where('tx.employee_id = :employeeId', { employeeId })
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
+        .andWhere('tx.period_month IS NULL OR tx.period_month = :month', { month })
         .andWhere('tx.period_year = :year', { year })
         .andWhere("tx.direction = 'DEBIT'")
         .getRawOne();
@@ -766,6 +979,7 @@ export class LeaveBalanceService {
         totalDebit: totalDebit + pendingDays,
         pendingDays,
         balance: totalCredit - totalDebit - pendingDays,
+        monthlyLimit: policy?.monthlyLimitDays ? Number(policy.monthlyLimitDays) : null,
         annualLimit: policy?.annualLimitDays ? Number(policy.annualLimitDays) : null,
       });
     }

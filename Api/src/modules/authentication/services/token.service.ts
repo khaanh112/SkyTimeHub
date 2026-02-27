@@ -17,6 +17,7 @@ export class TokenService {
       email: user.email,
       username: user.username,
       role: user.role,
+      gender: user.gender,
     };
 
     const [accessToken, refreshToken] = await Promise.all([

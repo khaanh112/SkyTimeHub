@@ -578,7 +578,7 @@ export class ExcelService {
 
   /**
    * Normalize contract type input to match enum values.
-   * Supports: "Full Time" -> "full_time", "FullTime" -> "full_time", etc.
+   * Supports: "Official" -> "official", "Intern" -> "intern", "Probation" -> "probation", etc.
    */
   private normalizeContractType(value: string): string | null {
     if (!value) return null;

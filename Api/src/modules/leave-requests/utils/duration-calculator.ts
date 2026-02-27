@@ -34,6 +34,89 @@ export interface DurationResult {
 }
 
 /**
+ * Calculate calendar days (every day counts, including weekends/holidays).
+ * Uses same AM/PM session logic as working-day calculator.
+ */
+export function calculateCalendarDuration(
+  startDate: string,
+  endDate: string,
+  startSession: LeaveSession,
+  endSession: LeaveSession,
+): DurationResult {
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+
+  let totalSlots = 0;
+  const current = new Date(start);
+
+  while (current <= end) {
+    const isSameAsStart = fmt(current) === startDate;
+    const isSameAsEnd = fmt(current) === endDate;
+
+    let amCounts = true;
+    let pmCounts = true;
+
+    if (isSameAsStart && startSession === LeaveSession.PM) amCounts = false;
+    if (isSameAsEnd && endSession === LeaveSession.AM) pmCounts = false;
+
+    if (amCounts) totalSlots++;
+    if (pmCounts) totalSlots++;
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return {
+    durationDays: totalSlots * 0.5,
+    slots: totalSlots,
+  };
+}
+
+/**
+ * Auto-calculate end date from start date + N calendar days (including weekends/holidays).
+ * Used for parental leave (maternity) where calendar days are counted.
+ */
+export function calculateCalendarEndDate(
+  startDate: string,
+  startSession: LeaveSession,
+  calendarDays: number,
+): { endDate: string; endSession: LeaveSession } {
+  let remainingSlots = calendarDays * 2;
+  const current = new Date(startDate + 'T00:00:00');
+  let lastDate = current;
+  let lastSlot: LeaveSession = startSession;
+
+  while (remainingSlots > 0) {
+    const isFirst = fmt(current) === startDate;
+
+    // AM slot
+    const amAvailable = !(isFirst && startSession === LeaveSession.PM);
+    if (amAvailable && remainingSlots > 0) {
+      remainingSlots--;
+      lastDate = new Date(current);
+      lastSlot = LeaveSession.AM;
+    }
+
+    // PM slot
+    if (remainingSlots > 0) {
+      remainingSlots--;
+      lastDate = new Date(current);
+      lastSlot = LeaveSession.PM;
+    }
+
+    if (remainingSlots > 0) {
+      current.setDate(current.getDate() + 1);
+    } else {
+      break;
+    }
+  }
+
+  return {
+    endDate: fmt(lastDate),
+    endSession: lastSlot,
+  };
+}
+
+/**
  * Calculate leave duration in days (half-day granularity).
  *
  * Each working day has 2 slots: AM and PM.
@@ -44,12 +127,15 @@ export interface DurationResult {
  * Non-working days (weekends + holidays, except working overrides) are skipped.
  */
 export async function calculateLeaveDuration(
+  leaveTypeId: number,
   calendarRepo: Repository<CalendarOverride>,
   startDate: string,
   endDate: string,
   startSession: LeaveSession,
   endSession: LeaveSession,
 ): Promise<DurationResult> {
+
+  
   // Load calendar overrides for the date range
   const overrides = await calendarRepo
     .createQueryBuilder('co')

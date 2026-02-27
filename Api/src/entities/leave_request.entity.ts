@@ -15,6 +15,7 @@ import { Exclude } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LeaveRequestStatus } from '@/common/enums/request_status';
 import { LeaveSession } from '@/common/enums/leave-session.enum';
+import { ChildbirthMethod } from '@/common/enums/childbirth-method.enum';
 import { User } from '@/entities/users.entity';
 import { LeaveRequestNotificationRecipient } from './leave-request-notification-recipient.entity';
 import { LeaveType } from './leave-type.entity';
@@ -104,6 +105,15 @@ export class LeaveRequest {
   @ApiPropertyOptional({ example: 0, description: 'Compensatory minutes used (30-min steps)' })
   @Column({ name: 'comp_used_minutes', type: 'int', default: 0 })
   compUsedMinutes: number;
+
+  // ── Parental Leave fields ─────────────────────────────────
+  @ApiPropertyOptional({ example: 1, description: 'Number of children (for parental leave)' })
+  @Column({ name: 'number_of_children', type: 'int', nullable: true })
+  numberOfChildren: number | null;
+
+  @ApiPropertyOptional({ enum: ChildbirthMethod, description: 'Childbirth method (for parental leave)' })
+  @Column({ name: 'childbirth_method', type: 'enum', enum: ChildbirthMethod, nullable: true })
+  childbirthMethod: ChildbirthMethod | null;
 
   // ── Content ───────────────────────────────────────────────
   @ApiProperty({ example: 'Family vacation', description: 'Reason for leave' })

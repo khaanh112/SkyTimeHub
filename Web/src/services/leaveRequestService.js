@@ -26,12 +26,8 @@ const leaveRequestService = {
   },
 
   // Suggest end date for auto-calculate leave types (POLICY / SOCIAL)
-  suggestEndDate: async (leaveTypeId, startDate, startSession) => {
-    const response = await api.post('/leave-requests/suggest-end-date', {
-      leaveTypeId,
-      startDate,
-      startSession,
-    });
+  suggestEndDate: async (params) => {
+    const response = await api.post('/leave-requests/suggest-end-date', params);
     return response.data;
   },
 

@@ -161,11 +161,11 @@ const EditLeaveRequestPage = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await leaveRequestService.suggestEndDate(
-          formData.leaveTypeId,
-          formData.startDate,
-          formData.startSession,
-        );
+        const res = await leaveRequestService.suggestEndDate({
+          leaveTypeId: formData.leaveTypeId,
+          startDate: formData.startDate,
+          startSession: formData.startSession,
+        });
         const data = res.data || res;
         if (!cancelled && data?.suggestedEndDate) {
           setFormData((prev) => ({

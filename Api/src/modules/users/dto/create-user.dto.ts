@@ -105,7 +105,7 @@ export class CreateUserDto {
   @Length(1, 255)
   address?: string;
 
-  @ApiPropertyOptional({ enum: ContractType, example: ContractType.FULL_TIME, description: 'Contract type' })
+  @ApiPropertyOptional({ enum: ContractType, example: ContractType.OFFICIAL, description: 'Contract type' })
   @IsOptional()
   @IsEnum(ContractType)
   contractType?: ContractType;

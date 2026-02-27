@@ -49,17 +49,25 @@ export class LeaveRequestsController {
         leaveTypeId: { type: 'number', example: 5 },
         startDate: { type: 'string', example: '2026-03-01' },
         startSession: { type: 'string', enum: ['AM', 'PM'], example: 'AM' },
+        numberOfChildren: { type: 'number', example: 1, description: 'For parental leave' },
+        childbirthMethod: { type: 'string', enum: ['natural', 'c_section'], description: 'For parental leave' },
       },
     },
   })
   @ApiResponse({ status: 200, description: 'Suggested end date returned (or null if not applicable).' })
   async suggestEndDate(
-    @Body() body: { leaveTypeId: number; startDate: string; startSession: string },
+    @Request() req,
+    @Body() body: { leaveTypeId: number; startDate: string; startSession: string; numberOfChildren?: number; childbirthMethod?: string },
   ) {
     const result = await this.leaveBalanceService.suggestEndDate(
       body.leaveTypeId,
       body.startDate,
       body.startSession as any,
+      {
+        employeeId: req.user.id,
+        numberOfChildren: body.numberOfChildren,
+        childbirthMethod: body.childbirthMethod as any,
+      },
     );
     return result ?? { suggestedEndDate: null, suggestedEndSession: null };
   }
@@ -138,8 +146,9 @@ export class LeaveRequestsController {
   })
   @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
   async getBalanceSummary(@Request() req) {
+    const month = new Date().getMonth() + 1; // 1-12
     const year = new Date().getFullYear();
-    return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, year);
+    return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, month, year);
   }
 
   @Post('admin/initialize-balance')

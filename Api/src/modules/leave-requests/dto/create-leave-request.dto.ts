@@ -11,6 +11,7 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { LeaveSession } from '@/common/enums/leave-session.enum';
+import { ChildbirthMethod } from '@/common/enums/childbirth-method.enum';
 
 export class CreateLeaveRequestDto {
   @ApiProperty({ description: 'Leave type ID (from leave_types table)', example: 1 })
@@ -66,6 +67,24 @@ export class CreateLeaveRequestDto {
   @IsArray()
   @IsInt({ each: true })
   ccUserIds?: number[];
+
+  @ApiPropertyOptional({
+    description: 'Number of children (for parental leave)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  numberOfChildren?: number;
+
+  @ApiPropertyOptional({
+    description: 'Childbirth method: natural or c_section (for parental leave)',
+    enum: ChildbirthMethod,
+    example: ChildbirthMethod.NATURAL,
+  })
+  @IsOptional()
+  @IsEnum(ChildbirthMethod)
+  childbirthMethod?: ChildbirthMethod;
 
   @ApiPropertyOptional({
     description: 'Confirm proceeding despite balance warning',

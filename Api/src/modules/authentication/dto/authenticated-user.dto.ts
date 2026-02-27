@@ -1,4 +1,5 @@
 import { UserRole } from '@common/enums/roles.enum';
+import { UserGender } from '@common/enums/user-genders';
 
 /**
  * Authenticated user data available in request after JWT verification
@@ -13,4 +14,6 @@ export interface AuthenticatedUser {
   username: string;
   /** User role */
   role: UserRole;
+  /** User gender */
+  gender?: UserGender;
 }
