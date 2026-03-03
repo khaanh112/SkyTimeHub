@@ -25,6 +25,7 @@ import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ApproveLeaveRequestDto } from './dto/approve-leave-request.dto';
 import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
+import { Roles } from '../authorization';
 
 @ApiTags('Leave Requests')
 @ApiBearerAuth()
@@ -139,6 +140,7 @@ export class LeaveRequestsController {
     return this.leaveRequestsService.getLeaveTypes();
   }
 
+  //sai logic
   @Get('balance-summary')
   @ApiOperation({
     summary: 'Get leave balance summary for current user',
@@ -151,6 +153,32 @@ export class LeaveRequestsController {
     return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, month, year);
   }
 
+  //sai logic
+  @Get('balance-summary/:userId')
+  @ApiOperation({
+    summary: 'Get leave balance summary for a specific user (HR/Approver only)',
+    description: 'Returns credit, debit and remaining balance for each leave type for a specific employee. Used in management view.',
+  })
+  @ApiParam({ name: 'userId', description: 'Target user ID', type: 'number' })
+  @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
+  @ApiResponse({ status: 403, description: 'Not authorized to view this user balance.' })
+  async getUserBalanceSummary(
+    @Request() req,
+    @Param('userId', ParseIntPipe) userId: number,
+  ) {
+    // Only HR or the user's approver can view balance
+    if (req.user.role !== 'hr' && req.user.role !== 'admin') {
+      // Check if current user is an approver - allow any approver/manager to view
+      if (req.user.role !== 'manager') {
+        throw new ForbiddenException('Not authorized to view this user balance');
+      }
+    }
+    const month = new Date().getMonth() + 1;
+    const year = new Date().getFullYear();
+    return this.leaveBalanceService.getEmployeeBalanceSummary(userId, month, year);
+  }
+
+  // thủ công chưa cronjob
   @Post('admin/initialize-balance')
   @ApiOperation({
     summary: 'Initialize yearly paid leave balance for all active employees (HR only)',
@@ -178,6 +206,44 @@ export class LeaveRequestsController {
     const annualDays = body.annualDays || 12;
     return this.leaveBalanceService.initializeYearlyBalance(year, annualDays);
   }
+
+  @Get('monthly-report')
+  @ApiOperation({
+    summary: 'Get per-month paid leave balance report for current user',
+    description:
+      'Returns monthly accrual, usage, refunds and cumulative balance for the PAID leave type. ' +
+      'Used for auditing and month-by-month leave tracking.',
+  })
+  @ApiResponse({ status: 200, description: 'Monthly report retrieved successfully.' })
+  async getMonthlyReport(
+    @Request() req,
+    @Query('year') yearParam?: string,
+  ) {
+    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+    return this.leaveBalanceService.getMonthlyBalanceReport(req.user.id, year);
+  }
+
+  @Get('monthly-report/:userId')
+  @ApiOperation({
+    summary: 'Get per-month paid leave balance report for a specific user (HR/Manager)',
+    description:
+      'Returns monthly accrual, usage, refunds and cumulative balance for the PAID leave type for the given employee.',
+  })
+  @ApiParam({ name: 'userId', description: 'Target user ID', type: 'number' })
+  @ApiResponse({ status: 200, description: 'Monthly report retrieved successfully.' })
+  @ApiResponse({ status: 403, description: 'Not authorized.' })
+  async getUserMonthlyReport(
+    @Request() req,
+    @Param('userId', ParseIntPipe) userId: number,
+    @Query('year') yearParam?: string,
+  ) {
+    if (req.user.role !== 'hr' && req.user.role !== 'admin' && req.user.role !== 'manager') {
+      throw new ForbiddenException('Not authorized to view this report');
+    }
+    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+    return this.leaveBalanceService.getMonthlyBalanceReport(userId, year);
+  }
+
 
   @Get('management')
   @ApiOperation({

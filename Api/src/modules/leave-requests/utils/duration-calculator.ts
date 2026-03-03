@@ -33,6 +33,13 @@ export interface DurationResult {
   slots: number;
 }
 
+export interface MonthlyDuration {
+  year: number;
+  month: number; // 1-12
+  durationDays: number;
+  slots: number;
+}
+
 /**
  * Calculate calendar days (every day counts, including weekends/holidays).
  * Uses same AM/PM session logic as working-day calculator.
@@ -281,4 +288,92 @@ export async function autoCalculateEndDate(
     endDate: fmt(lastWorkingDate),
     endSession: lastSlot,
   };
+}
+
+/**
+ * Split leave duration into per-(year, month) buckets.
+ *
+ * For each working day in [startDate, endDate], counts the half-day slots
+ * that belong to each calendar month and returns an ordered array of
+ * MonthlyDuration objects.
+ *
+ * This is essential for:
+ *  - checking per-month balance when accrual is monthly (+1/month cumulative)
+ *  - recording debit/credit transactions tagged with periodMonth
+ *  - generating monthly reports
+ */
+export async function splitLeaveDaysByMonth(
+  leaveTypeId: number,
+  calendarRepo: Repository<CalendarOverride>,
+  startDate: string,
+  endDate: string,
+  startSession: LeaveSession,
+  endSession: LeaveSession,
+): Promise<MonthlyDuration[]> {
+  // Load calendar overrides for the date range
+  const overrides = await calendarRepo
+    .createQueryBuilder('co')
+    .where('co.date >= :start AND co.date <= :end', { start: startDate, end: endDate })
+    .getMany();
+
+  const holidaySet = new Set<string>();
+  const workingOverrideSet = new Set<string>();
+
+  for (const o of overrides) {
+    const d = typeof o.date === 'string' ? o.date : fmt(new Date(o.date));
+    if (o.type === 'HOLIDAY') holidaySet.add(d);
+    if (o.type === 'WORKING_OVERRIDE') workingOverrideSet.add(d);
+  }
+
+  function isWorkingDay(date: Date): boolean {
+    const key = fmt(date);
+    if (holidaySet.has(key)) return false;
+    if (workingOverrideSet.has(key)) return true;
+    if (isWeekend(date)) return false;
+    return true;
+  }
+
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+
+  // Map key = "YYYY-MM" → slots count
+  const monthMap = new Map<string, { year: number; month: number; slots: number }>();
+
+  const current = new Date(start);
+
+  while (current <= end) {
+    if (isWorkingDay(current)) {
+      const year = current.getFullYear();
+      const month = current.getMonth() + 1; // 1-12
+      const key = `${year}-${String(month).padStart(2, '0')}`;
+
+      if (!monthMap.has(key)) {
+        monthMap.set(key, { year, month, slots: 0 });
+      }
+
+      const isSameAsStart = fmt(current) === startDate;
+      const isSameAsEnd = fmt(current) === endDate;
+
+      let amCounts = true;
+      let pmCounts = true;
+
+      if (isSameAsStart && startSession === LeaveSession.PM) amCounts = false;
+      if (isSameAsEnd && endSession === LeaveSession.AM) pmCounts = false;
+
+      const entry = monthMap.get(key)!;
+      if (amCounts) entry.slots++;
+      if (pmCounts) entry.slots++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  // Return sorted chronologically
+  return Array.from(monthMap.values())
+    .sort((a, b) => a.year - b.year || a.month - b.month)
+    .map((e) => ({
+      year: e.year,
+      month: e.month,
+      durationDays: e.slots * 0.5,
+      slots: e.slots,
+    }));
 }

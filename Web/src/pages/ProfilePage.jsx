@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Briefcase, Phone, Calendar, Shield, CheckCircle, XCircle, Building2, MapPin, FileText } from 'lucide-react';
+import { User, Mail, Briefcase, Phone, Calendar, Shield, CheckCircle, XCircle, Building2, MapPin, FileText, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { userService } from '../services';
+import { userService, leaveRequestService } from '../services';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-toastify';
+
+const LEAVE_TYPE_ICONS = {
+  PAID: { icon: Calendar, bgColor: 'bg-green-50', iconColor: 'text-green-500', borderColor: 'border-green-100' },
+  UNPAID: { icon: FileText, bgColor: 'bg-orange-50', iconColor: 'text-orange-500', borderColor: 'border-orange-100' },
+  COMP: { icon: Clock, bgColor: 'bg-blue-50', iconColor: 'text-blue-500', borderColor: 'border-blue-100' },
+};
+
+const getLeaveTypeStyle = (code) => {
+  return LEAVE_TYPE_ICONS[code] || { icon: Calendar, bgColor: 'bg-gray-50', iconColor: 'text-gray-500', borderColor: 'border-gray-100' };
+};
 
 const ProfilePage = () => {
   const { user: authUser } = useAuth();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [balanceSummary, setBalanceSummary] = useState([]);
+  const [balanceLoading, setBalanceLoading] = useState(true);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -23,7 +35,20 @@ const ProfilePage = () => {
       }
     };
 
+    const fetchBalances = async () => {
+      try {
+        setBalanceLoading(true);
+        const data = await leaveRequestService.getBalanceSummary();
+        setBalanceSummary(data.data || data || []);
+      } catch (error) {
+        console.error('Failed to fetch balances:', error);
+      } finally {
+        setBalanceLoading(false);
+      }
+    };
+
     fetchProfile();
+    fetchBalances();
   }, []);
 
   if (loading) {
@@ -55,214 +80,161 @@ const ProfilePage = () => {
     return roleConfig[role] || roleConfig.employee;
   };
 
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      active: { label: 'Hoạt động', color: 'bg-green-100 text-green-700', icon: CheckCircle },
-      inactive: { label: 'Chưa kích hoạt', color: 'bg-yellow-100 text-yellow-700', icon: XCircle },
-    };
-    return statusConfig[status] || statusConfig.inactive;
-  };
-
   const roleBadge = getRoleBadge(user.role);
-  const statusBadge = getStatusBadge(user.status);
-  const StatusIcon = statusBadge.icon;
 
   return (
     <div className="w-full space-y-6">
-      {/* Header Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="h-32 bg-linear-to-r from-blue-500 to-blue-600"></div>
-        <div className="px-8 pb-8">
-          <div className="flex flex-col sm:flex-row items-start sm:items-end -mt-16 mb-6">
-            <div className="w-32 h-32 bg-linear-to-br from-blue-400 to-blue-500 rounded-2xl flex items-center justify-center shadow-lg border-4 border-white">
-              <span className="text-4xl text-white font-bold">
-                {user.username?.charAt(0).toUpperCase() || 'U'}
-              </span>
-            </div>
-            <div className="mt-4 sm:mt-0 sm:ml-6 flex-1">
-              <h1 className="text-3xl font-bold text-gray-900">{user.username}</h1>
-              <p className="text-gray-500 mt-1">{user.email}</p>
-              <div className="flex flex-wrap gap-2 mt-3">
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${roleBadge.color}`}>
-                  <Shield className="w-4 h-4 mr-1.5" />
+      {/* Page Title */}
+      <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
+
+      {/* Profile Info Card */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
+        <div className="flex items-start gap-6">
+          {/* Avatar */}
+          <div className="w-20 h-20 bg-linear-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shrink-0">
+            <span className="text-3xl text-white font-bold">
+              {user.username?.charAt(0).toUpperCase() || 'U'}
+            </span>
+          </div>
+
+          {/* Info Grid */}
+          <div className="flex-1 min-w-0">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">{user.username}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3">
+              {user.employeeId && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Employee ID</span>
+                  <span className="text-sm font-semibold text-gray-900">{user.employeeId}</span>
+                </div>
+              )}
+              {user.department && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Department</span>
+                  <span className="text-sm font-semibold text-gray-900">{user.department?.name || user.department}</span>
+                </div>
+              )}
+              {user.position && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Position</span>
+                  <span className="text-sm font-semibold text-gray-900">{user.position}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Email</span>
+                <span className="text-sm font-semibold text-gray-900 truncate ml-4">{user.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Role</span>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadge.color}`}>
                   {roleBadge.label}
                 </span>
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${statusBadge.color}`}>
-                  <StatusIcon className="w-4 h-4 mr-1.5" />
-                  {statusBadge.label}
-                </span>
               </div>
+              {user.contractType && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Contract type</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {user.contractType.charAt(0).toUpperCase() + user.contractType.slice(1).replace('_', ' ')}
+                  </span>
+                </div>
+              )}
+              {user.officialContractDate && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Official Contract Date</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {new Date(user.officialContractDate).toLocaleDateString('en-GB')}
+                  </span>
+                </div>
+              )}
+              {user.joinDate && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Date of Joining</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {new Date(user.joinDate).toLocaleDateString('en-GB')}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Information Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-        <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-          <User className="w-5 h-5 mr-2 text-blue-500" />
-          Thông tin cá nhân
-        </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Employee ID */}
-          {user.employeeId && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
-                <Briefcase className="w-5 h-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Mã nhân viên</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">{user.employeeId}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Email */}
-          <div className="flex items-start space-x-3">
-            <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center shrink-0">
-              <Mail className="w-5 h-5 text-purple-500" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Email</p>
-              <p className="text-base font-semibold text-gray-900 mt-1 break-all">{user.email}</p>
-            </div>
+      {/* My Leave Balances */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 mb-4">My Leave Balances</h2>
+        {balanceLoading ? (
+          <div className="flex justify-center py-8">
+            <LoadingSpinner size="md" />
           </div>
+        ) : balanceSummary.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {balanceSummary.map((balance) => {
+              const style = getLeaveTypeStyle(balance.leaveTypeCode);
+              const Icon = style.icon;
+              const unit = (balance.unit === 'hours' || balance.leaveTypeCode === 'COMP') ? 'Hours' : 'Days';
+              const remaining = balance.balance;
+              const accruedToDate = balance.accruedToDate ?? balance.totalCredit;
+              const used = balance.totalDebit;
+              const annualLimit = balance.annualLimit;
+              const monthlyAccrual = balance.monthlyAccrual;
+              const isHardLimit = balance.isHardLimit;
 
-          {/* Phone Number */}
-          {user.phoneNumber && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
-                <Phone className="w-5 h-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Số điện thoại</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">{user.phoneNumber}</p>
-              </div>
-            </div>
-          )}
+              return (
+                <div
+                  key={balance.leaveTypeId}
+                  className={`bg-white rounded-xl border ${style.borderColor} shadow-sm p-5`}
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-10 h-10 ${style.bgColor} rounded-lg flex items-center justify-center`}>
+                      <Icon className={`w-5 h-5 ${style.iconColor}`} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900">{balance.leaveTypeName}</h3>
+                      {monthlyAccrual && (
+                        <span className="text-xs text-gray-400">+{monthlyAccrual} {unit.toLowerCase()}/month</span>
+                      )}
+                    </div>
+                  </div>
 
-          {/* Date of Birth */}
-          {user.dateOfBirth && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-pink-50 rounded-lg flex items-center justify-center shrink-0">
-                <Calendar className="w-5 h-5 text-pink-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Ngày sinh</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">
-                  {new Date(user.dateOfBirth).toLocaleDateString('vi-VN')}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Address */}
-          {user.address && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center shrink-0">
-                <MapPin className="w-5 h-5 text-teal-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Địa chỉ</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">{user.address}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Contract Type */}
-          {user.contractType && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Loại hợp đồng</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">
-                  {user.contractType.charAt(0).toUpperCase() + user.contractType.slice(1).replace('_', ' ')}
-                </p>
-              </div>
-            </div>
-          )}
-
-         
-
-      
-          
-          {/* Position */}
-          {user.position && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center shrink-0">
-                <Briefcase className="w-5 h-5 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Vị trí</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">{user.position}</p>
-              </div>
-            </div>
-          )}
-
-         
-
-          {/* Join Date */}
-          {user.joinDate && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
-                <Calendar className="w-5 h-5 text-indigo-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Ngày tham gia</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">
-                  {new Date(user.joinDate).toLocaleDateString('vi-VN')}
-                </p>
-              </div>
-            </div>
-          )}
-          {/* officialContractDate */}
-          {user.officialContractDate && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
-                <Calendar className="w-5 h-5 text-indigo-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Ngày tham gia chính thức</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">
-                  {new Date(user.officialContractDate).toLocaleDateString('vi-VN')}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Activated At */}
-          {user.activatedAt && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Kích hoạt lúc</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">
-                  {new Date(user.activatedAt).toLocaleString('vi-VN')}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Created At */}
-          {user.createdAt && (
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center shrink-0">
-                <Calendar className="w-5 h-5 text-gray-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Tạo lúc</p>
-                <p className="text-base font-semibold text-gray-900 mt-1">
-                  {new Date(user.createdAt).toLocaleString('vi-VN')}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+                  <div className="space-y-2">
+                    {/* Accrued / Entitlement */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-500">
+                        {monthlyAccrual ? 'Accrued:' : isHardLimit === false ? 'Limit:' : 'Total:'}
+                      </span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {monthlyAccrual
+                          ? `${accruedToDate}/${annualLimit ?? accruedToDate} ${unit}`
+                          : `${accruedToDate} ${unit}${!isHardLimit && balance.leaveTypeCode === 'UNPAID' ? '/year' : ''}`
+                        }
+                      </span>
+                    </div>
+                    {/* Used */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-500">Used:</span>
+                      <span className="text-sm font-medium text-gray-900">{used} {unit}</span>
+                    </div>
+                    {/* Remaining */}
+                    <div className="flex justify-between items-center pt-1 border-t border-gray-100">
+                      <span className="text-sm text-gray-500">Remaining:</span>
+                      <span className={`text-base font-bold italic ${remaining <= 0 ? 'text-red-600' : remaining <= 3 ? 'text-red-500' : 'text-blue-600'}`}>
+                        {remaining} {unit}
+                      </span>
+                    </div>
+                    {/* Soft limit note */}
+                    {isHardLimit === false && balance.leaveTypeCode === 'UNPAID' && (
+                      <p className="text-xs text-amber-600 mt-1">* Soft limit — exceeding allowed with warning</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 text-center">
+            <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm text-gray-500">No leave balance data available</p>
+          </div>
+        )}
       </div>
     </div>
   );

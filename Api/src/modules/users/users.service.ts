@@ -20,9 +20,11 @@ export class UsersService {
     private notificationsService: NotificationsService,
   ) {}
 
+
   async getUsers(): Promise<User[]> {
     return await this.usersRepository.find({});
   }
+
 
   async getUser(id: number): Promise<User> {
     const user = await this.usersRepository.findOne({
@@ -34,11 +36,13 @@ export class UsersService {
     return user;
   }
 
+
   async getUserByEmail(email: string): Promise<User | null> {
     return await this.usersRepository.findOne({
       where: { email },
     });
   }
+
 
   async findByEmployeeId(employeeId: string): Promise<User | null> {
     return await this.usersRepository.findOne({
@@ -46,24 +50,8 @@ export class UsersService {
     });
   }
 
+
   async createUser(user: CreateUserDto): Promise<User> {
-    // Validate required fields
-    if (!user.email) {
-      throw new AppException(
-        ErrorCode.VALIDATION_ERROR,
-        'Email is required',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    if (!user.username) {
-      throw new AppException(
-        ErrorCode.VALIDATION_ERROR,
-        'Username is required',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
     // Check if email already exists
     const existingUser = await this.usersRepository.findOne({ where: { email: user.email } });
     if (existingUser) {
@@ -91,10 +79,8 @@ export class UsersService {
         );
       }
     }
-
     // Generate activation token for pending users
     const activationToken = generateActivationToken();
-
     // Set default status to PENDING
     const userData = {
       ...user,
@@ -106,7 +92,6 @@ export class UsersService {
     try {
       const newUser = this.usersRepository.create(userData);
       const savedUser = await this.usersRepository.save(newUser);
-
       // Enqueue activation email with correct format
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       const activationLink = `${frontendUrl}/auth/activate?token=${activationToken}`;
@@ -131,13 +116,13 @@ export class UsersService {
     }
   }
 
-  // implement
+
+  // Update user details (except email and employeeId)
   async updateUser(id: number, user: UpdateUserDto): Promise<User> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
     if (!existingUser) {
       throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
-
     // Email cannot be changed
     if ('email' in user && (user as any).email !== undefined) {
       throw new AppException(
@@ -146,7 +131,6 @@ export class UsersService {
         HttpStatus.BAD_REQUEST,
       );
     }
-
     // Employee ID cannot be changed
     if ('employeeId' in user && user.employeeId !== undefined) {
       throw new AppException(
@@ -160,6 +144,7 @@ export class UsersService {
     return await this.usersRepository.save(updatedUser);
   }
 
+
   async deleteUser(id: number): Promise<void> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
     if (!existingUser) {
@@ -168,9 +153,8 @@ export class UsersService {
     await this.usersRepository.delete(id);
   }
 
-  /**
-   * Activate user account with token
-   */
+
+  // Activate account using activation token
   async activateAccount(token: string): Promise<User> {
     this.logger.log('========== ACTIVATE ACCOUNT START ==========');
     this.logger.log(`Activation token received: ${token}`);
@@ -210,6 +194,7 @@ export class UsersService {
     return savedUser;
   }
 
+
   async deactivateAccount(userId: number): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
@@ -227,6 +212,7 @@ export class UsersService {
     return await this.usersRepository.save(user);
   }
 
+
   async reactivateAccount(userId: number): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
@@ -242,9 +228,8 @@ export class UsersService {
     user.status = UserStatus.ACTIVE;
     return await this.usersRepository.save(user);
   }
-  /**
-   * Resend activation email by email address (self-service)
-   * Rate limited: 5 minutes between requests
+  /** Resend activation email by email address (self-service)
+      Rate limited: 5 minutes between requests
    */
   async resendActivationEmailByEmail(email: string): Promise<{ message: string }> {
     this.logger.log(`Resend activation email requested for: ${email}`);
@@ -294,11 +279,5 @@ export class UsersService {
     return { message: 'Email kích hoạt đã được gửi. Vui lòng kiểm tra hộp thư.' };
   }
 
-  // =====================================================
-  // IMPORT USERS FROM EXCEL
-  // =====================================================
-
-  /**
-   * Parse Excel file and validate data
-   */
+  
 }

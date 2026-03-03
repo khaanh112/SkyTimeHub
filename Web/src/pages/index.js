@@ -13,3 +13,4 @@ export { default as CreateLeaveRequestPage } from './CreateLeaveRequestPage';
 export { default as EditLeaveRequestPage } from './EditLeaveRequestPage';
 export { default as ApprovalsPage } from './ApprovalsPage';
 export { default as ImportUsersPage } from './ImportUsersPage';
+export { default as SettingsPage } from './SettingsPage';

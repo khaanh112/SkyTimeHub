@@ -108,7 +108,7 @@ export class LeaveRequestsService {
   async createLeaveRequest(userId: number, dto: CreateLeaveRequestDto): Promise<LeaveRequest> {
     this.logger.log(`[createLeaveRequest] User ${userId} creating leave request: ${JSON.stringify(dto)}`);
 
-    // ── Basic validation ─────────────────────────────────────
+    //  Basic validation 
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
 
@@ -120,7 +120,8 @@ export class LeaveRequestsService {
       throw new AppException(ErrorCode.INVALID_INPUT, 'Reason for leave request is required', 400);
     }
 
-    // ── Approver lookup ──────────────────────────────────────
+
+    //  Approver lookup 
     const userApprover = await this.userApproverRepository.findOne({
       where: { userId, active: true },
       relations: ['approver'],
@@ -132,7 +133,7 @@ export class LeaveRequestsService {
 
     const requester = await this.userRepository.findOne({ where: { id: userId } });
 
-    // ── CC validation ────────────────────────────────────────
+    // CC validation 
     if (dto.ccUserIds?.includes(userId)) {
       throw new AppException(ErrorCode.INVALID_INPUT, 'You cannot CC yourself on your own leave request', 400);
     }
@@ -147,11 +148,14 @@ export class LeaveRequestsService {
       }
     }
 
-    // ── Overlap check ────────────────────────────────────────
+    // ── Overlap check 
     await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession);
 
-    // ── Leave type validation & conversion ───────────────────
-    const validation = await this.leaveBalanceService.validateAndPrepare(
+    // Logic complex, too big function, double call validateandprepare, n+1 problem, race condition?, missmatch leave items and balance: không lưu unpaid leave balance
+
+  // Preview warning and real saved data can be different, need checking version before submit
+    // ── Pre-flight validation (outside transaction, for warnings) ─
+    const preValidation = await this.leaveBalanceService.validateAndPrepare(
       userId,
       dto.leaveTypeId,
       dto.startDate,
@@ -166,25 +170,27 @@ export class LeaveRequestsService {
     );
 
     // If there are warnings and user hasn't confirmed
-    if (validation.warnings.length > 0 && !dto.confirmDespiteWarning) {
+    if (preValidation.warnings.length > 0 && !dto.confirmDespiteWarning) {
       throw new AppException(
         ErrorCode.INVALID_INPUT,
-        JSON.stringify({ requiresConfirmation: true, warnings: validation.warnings, durationDays: validation.durationDays, items: validation.items }),
+        JSON.stringify({ requiresConfirmation: true, warnings: preValidation.warnings, durationDays: preValidation.durationDays, items: preValidation.items }),
         400,
       );
     }
 
+
+    // Sai logic ở chỗ này, dù có warning hay không thì endDate và endSession vẫn là user input, không bị override bởi hệ thống. Nếu có override thì sẽ gây ra sự nhầm lẫn cho người dùng vì họ đã chọn ngày này rồi mà hệ thống lại đổi thành ngày khác, dù có warning hay không thì cũng phải giữ nguyên ngày người dùng chọn, warning chỉ là cảnh báo về việc có thể bị trừ nhiều ngày phép hơn dự kiến thôi chứ không phải là cảnh báo về việc hệ thống sẽ đổi ngày của họ. Cần sửa lại phần này để luôn sử dụng endDate và endSession do người dùng cung cấp, không bị override bởi hệ thống dù có warning hay không.
     // Always use user-provided endDate and endSession (no auto-override)
     const finalEndDate = dto.endDate;
     const finalEndSession = dto.endSession;
 
-    // ── Transaction ──────────────────────────────────────────
+    // ── Transaction (advisory lock + reserve) ────────────────
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // Create leave request
+      // Create leave request first to get ID for source_id in transactions
       const leaveRequest = this.leaveRequestRepository.create({
         userId,
         approverId: userApprover.approverId,
@@ -193,7 +199,7 @@ export class LeaveRequestsService {
         endDate: finalEndDate,
         startSession: dto.startSession,
         endSession: finalEndSession,
-        durationDays: validation.durationDays,
+        durationDays: preValidation.durationDays,
         reason: dto.reason,
         workSolution: dto.workSolution,
         numberOfChildren: dto.numberOfChildren ?? null,
@@ -203,18 +209,56 @@ export class LeaveRequestsService {
 
       const savedRequest = await queryRunner.manager.save(leaveRequest);
 
-      // Save leave request items (conversion breakdown)
-      if (validation.items.length > 0) {
+      // Reserve balance under advisory lock (re-validates inside tx)
+      const validation = await this.leaveBalanceService.reserveBalanceForSubmit(
+        queryRunner.manager,
+        userId,
+        savedRequest.id,
+        dto.leaveTypeId,
+        dto.startDate,
+        dto.endDate,
+        dto.startSession,
+        dto.endSession,
+        undefined,
+        {
+          numberOfChildren: dto.numberOfChildren,
+          childbirthMethod: dto.childbirthMethod,
+        },
+      );
+
+      // Save leave request items with per-month allocation
+      if (validation.monthlyAllocations.length > 0) {
+        const items = validation.monthlyAllocations.map((alloc) =>
+          this.leaveRequestItemRepository.create({
+            leaveRequestId: savedRequest.id,
+            leaveTypeId: alloc.leaveTypeId,
+            amountDays: alloc.amountDays,
+            periodYear: alloc.year,
+            periodMonth: alloc.month,
+            note: alloc.note,
+          }),
+        );
+        await queryRunner.manager.save(items);
+      } else if (validation.items.length > 0) {
+        // Fallback: non-monthly types (policy/social) — use request year/month
+        const requestYear = new Date(dto.startDate).getFullYear();
+        const requestMonth = new Date(dto.startDate).getMonth() + 1;
         const items = validation.items.map((item) =>
           this.leaveRequestItemRepository.create({
             leaveRequestId: savedRequest.id,
             leaveTypeId: item.leaveTypeId,
             amountDays: item.amountDays,
+            periodYear: requestYear,
+            periodMonth: requestMonth,
             note: item.note,
           }),
         );
         await queryRunner.manager.save(items);
       }
+
+      //end problem
+
+
 
       // Add notification recipients
       const recipients: LeaveRequestNotificationRecipient[] = [];
@@ -330,25 +374,25 @@ export class LeaveRequestsService {
     // ── Overlap check (exclude current request) ─────────────
     await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession, requestId);
 
-    // ── Leave type validation & conversion ───────────────────
-    const validation = await this.leaveBalanceService.validateAndPrepare(
+    // ── Pre-flight validation (outside transaction, for warnings) ─
+    const preValidation = await this.leaveBalanceService.validateAndPrepare(
       userId,
       dto.leaveTypeId,
       dto.startDate,
       dto.endDate,
       dto.startSession,
       dto.endSession,
-      requestId, // exclude current request from pending balance calculations
+      requestId, // exclude current request from balance calculations
       {
         numberOfChildren: dto.numberOfChildren,
         childbirthMethod: dto.childbirthMethod,
       },
     );
 
-    if (validation.warnings.length > 0 && !dto.confirmDespiteWarning) {
+    if (preValidation.warnings.length > 0 && !dto.confirmDespiteWarning) {
       throw new AppException(
         ErrorCode.INVALID_INPUT,
-        JSON.stringify({ requiresConfirmation: true, warnings: validation.warnings, durationDays: validation.durationDays, items: validation.items }),
+        JSON.stringify({ requiresConfirmation: true, warnings: preValidation.warnings, durationDays: preValidation.durationDays, items: preValidation.items }),
         400,
       );
     }
@@ -357,7 +401,7 @@ export class LeaveRequestsService {
     const finalEndDate = dto.endDate;
     const finalEndSession = dto.endSession;
 
-    // ── Transaction ──────────────────────────────────────────
+    // ── Transaction (release old reserves → re-reserve) ──────
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -369,6 +413,13 @@ export class LeaveRequestsService {
       const recipientRepo = queryRunner.manager.getRepository(LeaveRequestNotificationRecipient);
       const itemRepo = queryRunner.manager.getRepository(LeaveRequestItem);
 
+      // Release old RESERVE transactions first
+      await this.leaveBalanceService.releaseReserveForRejection(
+        userId,
+        requestId,
+        queryRunner.manager,
+      );
+
       const originalVersion = leaveRequest.version;
 
       // Update fields
@@ -377,7 +428,7 @@ export class LeaveRequestsService {
       leaveRequest.endDate = finalEndDate;
       leaveRequest.startSession = dto.startSession;
       leaveRequest.endSession = finalEndSession;
-      leaveRequest.durationDays = validation.durationDays;
+      leaveRequest.durationDays = preValidation.durationDays;
       leaveRequest.reason = dto.reason;
       leaveRequest.workSolution = dto.workSolution ?? leaveRequest.workSolution;
       leaveRequest.numberOfChildren = dto.numberOfChildren ?? leaveRequest.numberOfChildren;
@@ -386,14 +437,49 @@ export class LeaveRequestsService {
       updatedEntity = await leaveRequestRepo.save(leaveRequest);
       const versionIncreasedFromFields = updatedEntity.version > originalVersion;
 
-      // Replace items (delete old, insert new)
+      // Delete old items
       await itemRepo.delete({ leaveRequestId: requestId });
-      if (validation.items.length > 0) {
+
+      // Re-reserve under advisory lock (re-validates inside tx)
+      const validation = await this.leaveBalanceService.reserveBalanceForSubmit(
+        queryRunner.manager,
+        userId,
+        requestId,
+        dto.leaveTypeId,
+        dto.startDate,
+        dto.endDate,
+        dto.startSession,
+        dto.endSession,
+        requestId, // exclude this request from balance (since RELEASE was already inserted)
+        {
+          numberOfChildren: dto.numberOfChildren,
+          childbirthMethod: dto.childbirthMethod,
+        },
+      );
+
+      // Insert new items with per-month allocation
+      if (validation.monthlyAllocations.length > 0) {
+        const items = validation.monthlyAllocations.map((alloc) =>
+          itemRepo.create({
+            leaveRequestId: requestId,
+            leaveTypeId: alloc.leaveTypeId,
+            amountDays: alloc.amountDays,
+            periodYear: alloc.year,
+            periodMonth: alloc.month,
+            note: alloc.note,
+          }),
+        );
+        await itemRepo.save(items);
+      } else if (validation.items.length > 0) {
+        const requestYear = new Date(dto.startDate).getFullYear();
+        const requestMonth = new Date(dto.startDate).getMonth() + 1;
         const items = validation.items.map((item) =>
           itemRepo.create({
             leaveRequestId: requestId,
             leaveTypeId: item.leaveTypeId,
             amountDays: item.amountDays,
+            periodYear: requestYear,
+            periodMonth: requestMonth,
             note: item.note,
           }),
         );
@@ -506,19 +592,33 @@ export class LeaveRequestsService {
       );
     }
 
-    // Update status
-    leaveRequest.status = LeaveRequestStatus.APPROVED;
-    leaveRequest.approvedAt = new Date();
-    const updated = await this.leaveRequestRepository.save(leaveRequest);
+    // ── Transaction: approve + convert RESERVE → APPROVAL ──
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // Debit balance for each item
-    const year = new Date(leaveRequest.startDate).getFullYear();
-    await this.leaveBalanceService.debitBalanceForApproval(
-      leaveRequest.userId,
-      leaveRequest.id,
-      leaveRequest.items || [],
-      year,
-    );
+    let updated: LeaveRequest;
+    try {
+      // Update status
+      leaveRequest.status = LeaveRequestStatus.APPROVED;
+      leaveRequest.approvedAt = new Date();
+      updated = await queryRunner.manager.save(leaveRequest);
+
+      // Convert RESERVE debits to APPROVAL debits (in-place update)
+      await this.leaveBalanceService.convertReserveToApproval(
+        leaveRequest.userId,
+        leaveRequest.id,
+        queryRunner.manager,
+      );
+
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(`[approveLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`, error.stack);
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
 
     const recipients = await this.notificationRecipientRepository.find({
       where: { requestId: leaveRequest.id },
@@ -583,16 +683,39 @@ export class LeaveRequestsService {
       );
     }
 
-    // Update status
-    leaveRequest.status = LeaveRequestStatus.REJECTED;
-    leaveRequest.rejectedAt = new Date();
-    leaveRequest.rejectedReason = rejectedReason;
-    const updated = await this.leaveRequestRepository.save(leaveRequest);
-
+    // Load recipients BEFORE transaction
     const rejectRecipients = await this.notificationRecipientRepository.find({
       where: { requestId: leaveRequest.id },
       relations: ['user'],
     });
+
+    // ── Transaction: reject + release reserves ───────────────
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let updated: LeaveRequest;
+    try {
+      leaveRequest.status = LeaveRequestStatus.REJECTED;
+      leaveRequest.rejectedAt = new Date();
+      leaveRequest.rejectedReason = rejectedReason;
+      updated = await queryRunner.manager.save(leaveRequest);
+
+      // Release the RESERVE debits → CREDIT RELEASE
+      await this.leaveBalanceService.releaseReserveForRejection(
+        leaveRequest.userId,
+        leaveRequest.id,
+        queryRunner.manager,
+      );
+
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(`[rejectLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`, error.stack);
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
 
     await this.notificationsService.enqueueLeaveRequestRejectedNotification(
       leaveRequest.id,
@@ -609,7 +732,7 @@ export class LeaveRequestsService {
       },
     );
 
-    this.logger.log(`Leave request ${requestId} rejected by user ${approverId}`);
+    this.logger.log(`Leave request ${requestId} rejected by user ${approverId} (reserves released)`);
     return updated;
   }
 
@@ -651,16 +774,24 @@ export class LeaveRequestsService {
       leaveRequest.status = LeaveRequestStatus.CANCELLED;
       leaveRequest.cancelledAt = new Date();
       await queryRunner.manager.save(leaveRequest);
-      await this.notificationRecipientRepository.delete({ requestId: leaveRequest.id });
+      await queryRunner.manager.delete(LeaveRequestNotificationRecipient, { requestId: leaveRequest.id });
 
-      // Refund balance if the request was already approved
       if (wasApproved) {
+        // After approve → CREDIT REFUND (reverses APPROVAL debits)
         const year = new Date(leaveRequest.startDate).getFullYear();
         await this.leaveBalanceService.refundBalanceForCancellation(
           leaveRequest.userId,
           leaveRequest.id,
           leaveRequest.items || [],
           year,
+          queryRunner.manager,
+        );
+      } else {
+        // Before approve (PENDING) → CREDIT RELEASE (reverses RESERVE debits)
+        await this.leaveBalanceService.releaseReserveForRejection(
+          leaveRequest.userId,
+          leaveRequest.id,
+          queryRunner.manager,
         );
       }
 
@@ -686,7 +817,7 @@ export class LeaveRequestsService {
       },
     );
 
-    this.logger.log(`Leave request ${requestId} cancelled by user ${userId}${wasApproved ? ' (balance refunded)' : ''}`);
+    this.logger.log(`Leave request ${requestId} cancelled by user ${userId}${wasApproved ? ' (balance refunded)' : ' (reserves released)'}`);
     return leaveRequest;
   }
 

@@ -8,9 +8,8 @@ import {
   LogOut,
   User,
   Shield,
-  ChevronDown,
   Calendar,
-  CheckCircle,
+  Settings,
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, setIsOpen }) => {
@@ -20,11 +19,15 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
 
   const menuItems = [
     { path: '/', icon: User, label: 'Account Management' },
-    { path: '/leave-requests', icon: Calendar, label: 'Leave Requests Management' },
+    { path: '/leave-requests', icon: Calendar, label: 'Leave Management' },
     { path: '/employees', icon: Users, label: 'Employee Management' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
   ];
 
-  const isActive = (path) => location.pathname === path;
+  const isActive = (path) => {
+    if (path === '/') return location.pathname === '/';
+    return location.pathname.startsWith(path);
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -114,32 +117,22 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
   );
 };
 
-const Header = ({ setIsOpen }) => {
-  const { user } = useAuth();
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-
-  return (
-    <header className="sticky top-0 z-30 h-16 bg-white border-b border-gray-200">
-      <div className="flex items-center justify-between h-full px-4 lg:px-8">
-        <button
-          onClick={() => setIsOpen(true)}
-          className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
-        >
-          <Menu className="w-6 h-6 text-gray-600" />
-        </button>
-      </div>
-    </header>
-  );
-};
-
 const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+
+      {/* Mobile menu toggle button */}
+      <button
+        onClick={() => setSidebarOpen(true)}
+        className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-white rounded-lg shadow-md hover:bg-gray-100"
+      >
+        <Menu className="w-6 h-6 text-gray-600" />
+      </button>
+
       <div className="lg:ml-64">
-        <Header setIsOpen={setSidebarOpen} />
         <main className="p-4 lg:p-8">{children}</main>
       </div>
     </div>

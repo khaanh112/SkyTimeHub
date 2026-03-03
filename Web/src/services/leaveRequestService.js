@@ -71,6 +71,18 @@ const leaveRequestService = {
     const response = await api.patch(`/leave-requests/${id}/cancel`);
     return response.data;
   },
+
+  // Get leave balance summary for current user
+  getBalanceSummary: async () => {
+    const response = await api.get('/leave-requests/balance-summary');
+    return response.data;
+  },
+
+  // Get leave balance summary for a specific user (management view)
+  getUserBalanceSummary: async (userId) => {
+    const response = await api.get(`/leave-requests/balance-summary/${userId}`);
+    return response.data;
+  },
 };
 
 export default leaveRequestService;

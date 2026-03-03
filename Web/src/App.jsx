@@ -16,6 +16,7 @@ import {
   LeaveRequestDetailPage,
   CreateLeaveRequestPage,
   EditLeaveRequestPage,
+  SettingsPage,
 } from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
 
@@ -158,6 +159,15 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LeaveRequestDetailPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <SettingsPage />
           </ProtectedRoute>
         }
       />

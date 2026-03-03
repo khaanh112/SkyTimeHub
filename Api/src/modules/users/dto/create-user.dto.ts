@@ -6,6 +6,7 @@ import {
   IsDateString,
   IsNotEmpty,
   Length,
+  IsDefined,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@common/enums/roles.enum';
@@ -14,21 +15,26 @@ import { UserGender } from '@common/enums/user-genders';
 import { ContractType } from '@common/enums/contract-type.enum';
 
 export class CreateUserDto {
+
   @ApiPropertyOptional({ example: 'SG100', description: 'Employee ID (auto-generated if not provided)', maxLength: 20 })
   @IsOptional()
   @IsString()
   @Length(1, 20)
   employeeId?: string;
 
+
   @ApiProperty({ example: 'user@example.com', description: 'User email address', required: true })
-  @IsNotEmpty({ message: 'Email is required' })
   @IsEmail()
+  @IsDefined({ message: 'Email is required' })
   email: string;
 
+
   @ApiProperty({ example: 'johndoe', description: 'Username', required: true })
+  @IsDefined({ message: 'Username is required' })
   @IsNotEmpty({ message: 'Username is required' })
   @IsString()
   username: string;
+
 
   @ApiProperty({
     enum: UserGender,
@@ -36,9 +42,10 @@ export class CreateUserDto {
     description: 'Gender',
     required: true,
   })
-  @IsNotEmpty({ message: 'Gender is required' })
+  @IsDefined({ message: 'Gender is required' })
   @IsEnum(UserGender)
   gender: UserGender;
+
 
   @ApiPropertyOptional({ enum: UserRole, example: UserRole.EMPLOYEE, description: 'User role' })
   @IsOptional()
@@ -83,10 +90,10 @@ export class CreateUserDto {
   @IsDateString()
   officialContractDate?: Date;
 
-  @ApiPropertyOptional({ example: '0901234567', description: 'Phone number', maxLength: 20 })
+  @ApiPropertyOptional({ example: '0901234567', description: 'Phone number', maxLength: 11 })
   @IsOptional()
   @IsString()
-  @Length(1, 20)
+  @Length(9, 11)
   phoneNumber?: string;
 
   @ApiPropertyOptional({

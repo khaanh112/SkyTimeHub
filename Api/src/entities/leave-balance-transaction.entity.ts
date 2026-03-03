@@ -34,9 +34,9 @@ export class LeaveBalanceTransaction {
   @Column({ name: 'period_year', type: 'int' })
   periodYear: number;
 
-  @ApiPropertyOptional({ example: 3, description: 'Period month (null for annual adjustments)' })
-  @Column({ name: 'period_month', type: 'int', nullable: true })
-  periodMonth: number | null;
+  @ApiProperty({ example: 3, description: 'Period month (1-12)' })
+  @Column({ name: 'period_month', type: 'int' })
+  periodMonth: number;
 
   @ApiProperty({ example: 'CREDIT', description: 'CREDIT or DEBIT' })
   @Column({ type: 'varchar', length: 10 })

@@ -1,26 +1,22 @@
-/**
- * Leave Balance Service
- *
- * Provides balance queries and balance-related operations for leave requests.
- * Uses the ledger pattern via leave_balance_transactions.
- */
 
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { LeaveBalanceTransaction } from '@entities/leave-balance-transaction.entity';
 import { LeaveType } from '@entities/leave-type.entity';
 import { LeaveTypePolicy } from '@entities/leave-type-policy.entity';
 import { LeaveTypeConversion } from '@entities/leave-type-conversion.entity';
 import { LeaveRequestItem } from '@entities/leave-request-item.entity';
-import { LeaveRequest } from '@entities/leave_request.entity';
+import { LeaveTypes } from '@/common/enums/leave_type.enum';
 import { CalendarOverride } from '@entities/calendar-override.entity';
 import { User } from '@entities/users.entity';
 import { UserStatus } from '@/common/enums/user-status.enum';
-import { calculateLeaveDuration, autoCalculateEndDate, calculateCalendarDuration, calculateCalendarEndDate } from './utils/duration-calculator';
+import { calculateLeaveDuration, autoCalculateEndDate, calculateCalendarDuration, calculateCalendarEndDate, splitLeaveDaysByMonth, MonthlyDuration } from './utils/duration-calculator';
 import { LeaveSession } from '@/common/enums/leave-session.enum';
 import { ChildbirthMethod } from '@/common/enums/childbirth-method.enum';
 import { UserGender } from '@/common/enums/user-genders';
+import { BalanceTxDirection } from '@/common/enums/balance-tx-direction.enum';
+import { BalanceTxSource } from '@/common/enums/balance-tx-source.enum';
 
 export interface BalanceInfo {
   leaveTypeId: number;
@@ -35,11 +31,26 @@ export interface ConversionItem {
   note: string;
 }
 
+/**
+ * Per-month allocation detail used for transaction recording.
+ * Each entry represents days of a specific leave type consumed in a specific month.
+ */
+export interface MonthlyAllocation {
+  year: number;
+  month: number; // 1-12
+  leaveTypeId: number;
+  leaveTypeCode: string;
+  amountDays: number;
+  note: string;
+}
+
 export interface LeaveValidationResult {
   /** Total duration in days */
   durationDays: number;
-  /** Breakdown of leave type items (after conversion) */
+  /** Breakdown of leave type items (after conversion) — aggregated summary */
   items: ConversionItem[];
+  /** Per-month allocation detail — used by reserve/debit/refund */
+  monthlyAllocations: MonthlyAllocation[];
   /** Warnings to display to user */
   warnings: string[];
   /** Whether the request can proceed */
@@ -65,67 +76,114 @@ export class LeaveBalanceService {
     private userRepo: Repository<User>,
     @InjectRepository(LeaveRequestItem)
     private leaveRequestItemRepo: Repository<LeaveRequestItem>,
+    private dataSource: DataSource,
   ) {}
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Advisory Lock
+  // ═══════════════════════════════════════════════════════════════════
+
   /**
-   * Sum of amount_days from pending leave request items for a given leave type.
-   * Used to "reserve" balance for requests that haven't been approved yet.
+   * Acquire a PostgreSQL advisory transaction lock for a specific
+   * (employee, leaveType, year) combination.
+   *
+   * The lock is automatically released when the transaction commits/rolls back.
+   * Two concurrent submits for the same employee+type+year will serialise here.
    */
-  private async getPendingItemDays(
+  private async acquireBalanceLock(
+    manager: EntityManager,
     employeeId: number,
     leaveTypeId: number,
-    year: number,
-    excludeRequestId?: number,
-  ): Promise<number> {
-    let qb = this.leaveRequestItemRepo
-      .createQueryBuilder('item')
-      .innerJoin('item.leaveRequest', 'lr')
-      .select('COALESCE(SUM(item.amount_days), 0)', 'total')
-      .where('lr.user_id = :employeeId', { employeeId })
-      .andWhere('lr.status = :status', { status: 'pending' })
-      .andWhere('item.leave_type_id = :leaveTypeId', { leaveTypeId })
-      .andWhere('EXTRACT(YEAR FROM lr.start_date) = :year', { year });
-
-    if (excludeRequestId) {
-      qb = qb.andWhere('lr.id != :excludeId', { excludeId: excludeRequestId });
-    }
-
-    const result = await qb.getRawOne();
-    return parseFloat(result?.total ?? '0');
+    periodYear: number,
+  ): Promise<void> {
+    // key1 = employeeId, key2 = leaveTypeId * 10000 + periodYear
+    const key1 = employeeId;
+    const key2 = Number(leaveTypeId) * 10000 + periodYear;
+    await manager.query('SELECT pg_advisory_xact_lock($1, $2)', [key1, key2]);
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Balance Query — Pure Ledger (no pending item scanning)
+  // ═══════════════════════════════════════════════════════════════════
+
   /**
-   * Get current available balance for a specific leave type + employee + year.
-   * Includes pending request items as reserved (subtracted from balance).
+   * Get available balance for (employee, leaveType, year) up to a given month.
+   *
+   * Balance = cumulative CREDIT − cumulative DEBIT (includes RESERVE rows)
+   *   where period_month ≤ atMonth.
+   *
+   * When `atMonth` is provided AND the leave type has monthly accrual,
+   * the balance is capped by (atMonth × monthlyRate) so employees
+   * cannot spend future accrual.
+   *
+   * @param manager   Optional EntityManager to run inside an existing transaction
+   *                  (required when called under advisory lock).
+   * @param excludeRequestId  Exclude RESERVE/APPROVAL debits for this request
+   *                          (used during update to "un-count" the old request).
    */
   async getBalance(
     employeeId: number,
     leaveTypeId: number,
     year: number,
     excludeRequestId?: number,
+    atMonth?: number,
+    manager?: EntityManager,
   ): Promise<number> {
-    const result = await this.balanceTxRepo
+    const repo = manager
+      ? manager.getRepository(LeaveBalanceTransaction)
+      : this.balanceTxRepo;
+
+    // --- credit total up to atMonth ---
+    let creditQb = repo
       .createQueryBuilder('tx')
-      .select(
-        `SUM(CASE WHEN tx.direction = 'CREDIT' THEN tx.amount_days ELSE -tx.amount_days END)`,
-        'balance',
-      )
+      .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .getRawOne();
+      .andWhere("tx.direction = 'CREDIT'");
 
-    const txBalance = parseFloat(result?.balance ?? '0');
+    if (atMonth) {
+      creditQb = creditQb.andWhere('tx.period_month <= :atMonth', { atMonth });
+    }
 
-    // Subtract days from pending requests (not yet approved = not yet debited)
-    const pendingDays = await this.getPendingItemDays(
-      employeeId,
-      leaveTypeId,
-      year,
-      excludeRequestId,
-    );
+    const creditResult = await creditQb.getRawOne();
+    const totalCredit = parseFloat(creditResult?.total ?? '0');
 
-    return txBalance - pendingDays;
+    // --- debit total up to atMonth ---
+    let debitQb = repo
+      .createQueryBuilder('tx')
+      .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+      .where('tx.employee_id = :employeeId', { employeeId })
+      .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
+      .andWhere('tx.period_year = :year', { year })
+      .andWhere("tx.direction = 'DEBIT'");
+
+    if (atMonth) {
+      debitQb = debitQb.andWhere('tx.period_month <= :atMonth', { atMonth });
+    }
+
+    if (excludeRequestId) {
+      debitQb = debitQb.andWhere(
+        '(tx.source_id IS NULL OR tx.source_id != :excludeRequestId)',
+        { excludeRequestId },
+      );
+    }
+
+    const debitResult = await debitQb.getRawOne();
+    const totalDebit = parseFloat(debitResult?.total ?? '0');
+
+    const ledgerBalance = totalCredit - totalDebit;
+
+    // --- monthly accrual cap ---
+    if (atMonth) {
+      const policy = await this.getActivePolicy(leaveTypeId, `${year}-01-01`);
+      if (policy?.monthlyLimitDays) {
+        const accruedToDate = atMonth * Number(policy.monthlyLimitDays);
+        return Math.min(ledgerBalance, accruedToDate);
+      }
+    }
+
+    return ledgerBalance;
   }
 
   /**
@@ -172,19 +230,22 @@ export class LeaveBalanceService {
     });
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Validate & Prepare (core allocation logic)
+  // ═══════════════════════════════════════════════════════════════════
+
   /**
    * Main validation + conversion logic for a leave request submission.
    *
    * Flow:
    * 1. Lookup leave type + active policy
-   * 2. Calculate duration from user-provided dates (endDate is always user input)
-   * 3. If policy has max_per_request_days → split excess via conversion chain
-   * 4. For ANNUAL category: check paid balance → overflow to unpaid
-   * 5. Return items breakdown + warnings
+   * 2. Calculate duration from user-provided dates
+   * 3. Split request by calendar months → needByPeriod[(year, month)]
+   * 4. If non-ANNUAL + has M (comp) conversion → allocate M first per period
+   * 5. For ANNUAL: check paid balance per month (no borrow) → overflow to UNPAID
+   * 6. Return items + monthlyAllocations
    *
-   * Note: auto_calculate_end_date is only used as a frontend suggestion
-   * (via suggestEndDate method). The final endDate/duration always comes
-   * from what the user actually submits.
+   * @param manager  Optional entity manager (for running inside tx with lock)
    */
   async validateAndPrepare(
     employeeId: number,
@@ -198,6 +259,7 @@ export class LeaveBalanceService {
       numberOfChildren?: number;
       childbirthMethod?: ChildbirthMethod;
     },
+    manager?: EntityManager,
   ): Promise<LeaveValidationResult> {
     const leaveType = await this.getLeaveTypeById(leaveTypeId);
     if (!leaveType) {
@@ -209,18 +271,13 @@ export class LeaveBalanceService {
     const categoryCode = leaveType.category?.code ?? '';
 
     const warnings: string[] = [];
-    // Always use user-provided endDate and endSession
     const finalEndDate = endDate;
     const finalEndSession = endSession;
 
-    // ── Step 1: Calculate duration from user-provided dates ──
-    // Special handling for PARENTAL leave (maternity):
-    //   - Female: maternity entitlement in CALENDAR days (weekends/holidays included)
-    //   - Male: working days as usual
-    //   - Excess beyond entitlement: working days (skip weekends/holidays), then conversion
-    const isParentalLeave = leaveType.code === 'PARENTAL';
+    // ── Step 1: Calculate duration ──────────────────────────
+    const isParentalLeave = leaveType.code === LeaveTypes.PARENTAL_LEAVE;
     let durationDays: number;
-    let parentalEntitlementDays = 0; // calendar days for female maternity
+    let parentalEntitlementDays = 0;
     let excessWorkingDays = 0;
 
     if (isParentalLeave) {
@@ -228,11 +285,9 @@ export class LeaveBalanceService {
       const isFemale = user?.gender === UserGender.FEMALE;
 
       if (isFemale) {
-        // Female maternity: 180 calendar days + (N-1)*30 for twins+
         const numChildren = parentalOptions?.numberOfChildren ?? 1;
         parentalEntitlementDays = 180 + Math.max(0, numChildren - 1) * 30;
 
-        // Calculate total calendar days user requested
         const calendarDuration = calculateCalendarDuration(
           startDate, finalEndDate, startSession, finalEndSession,
         );
@@ -242,24 +297,18 @@ export class LeaveBalanceService {
         }
 
         if (calendarDuration.durationDays <= parentalEntitlementDays) {
-          // Entire request within maternity entitlement → all calendar days
           durationDays = calendarDuration.durationDays;
         } else {
-          // Request extends beyond maternity entitlement
-          // Find the calendar end date of the maternity entitlement
           const maternityEnd = calculateCalendarEndDate(
             startDate, startSession, parentalEntitlementDays,
           );
 
-          // Calculate working days for the excess period (day after maternity end → user's endDate)
           const excessStartDate = new Date(maternityEnd.endDate + 'T00:00:00');
           let excessStartSession: LeaveSession;
           if (maternityEnd.endSession === LeaveSession.PM) {
-            // Maternity ended at PM, excess starts next day AM
             excessStartDate.setDate(excessStartDate.getDate() + 1);
             excessStartSession = LeaveSession.AM;
           } else {
-            // Maternity ended at AM, excess starts same day PM
             excessStartSession = LeaveSession.PM;
           }
 
@@ -284,10 +333,9 @@ export class LeaveBalanceService {
           durationDays = parentalEntitlementDays + excessWorkingDays;
         }
       } else {
-        // Male paternity: 5 working days (natural) or 7 working days (c-section)
         const entitlement =
           parentalOptions?.childbirthMethod === ChildbirthMethod.C_SECTION ? 7 : 5;
-        parentalEntitlementDays = entitlement; // for male this is in working days
+        parentalEntitlementDays = entitlement;
 
         const duration = await calculateLeaveDuration(
           leaveTypeId,
@@ -308,7 +356,6 @@ export class LeaveBalanceService {
         }
       }
     } else {
-      // Non-parental leave: standard working day calculation
       const duration = await calculateLeaveDuration(
         leaveTypeId,
         this.calendarRepo,
@@ -334,11 +381,28 @@ export class LeaveBalanceService {
 
     // ── Step 2: Build items with conversion logic ───────────
     const items: ConversionItem[] = [];
+    const monthlyAllocations: MonthlyAllocation[] = [];
     let remainingDays = durationDays;
 
-    // 2a. PARENTAL leave — special handling
+    const endDateObj = new Date(endDate + 'T00:00:00');
+    const endYear = endDateObj.getFullYear();
+    const endMonth = endDateObj.getMonth() + 1;
+
+    // Pre-compute monthly duration split
+    const monthlyBuckets: MonthlyDuration[] = isParentalLeave
+      ? []
+      : await splitLeaveDaysByMonth(
+          leaveTypeId,
+          this.calendarRepo,
+          startDate,
+          endDate,
+          startSession,
+          endSession,
+        );
+
+    // 2a. PARENTAL leave
     if (isParentalLeave) {
-      const coveredDays = durationDays - excessWorkingDays; // maternity entitlement portion
+      const coveredDays = durationDays - excessWorkingDays;
       items.push({
         leaveTypeId: leaveType.id,
         leaveTypeCode: leaveType.code,
@@ -347,14 +411,15 @@ export class LeaveBalanceService {
       });
       remainingDays = excessWorkingDays;
 
-      // Excess → auto-convert via conversion chain
       if (remainingDays > 0) {
         const conversions = await this.getConversions(leaveType.id);
         for (const conv of conversions) {
           if (conv.reason !== 'EXCEED_MAX_PER_REQUEST' || remainingDays <= 0) continue;
 
           const paidType = conv.toLeaveType;
-          const paidBalance = await this.getBalance(employeeId, paidType.id, year, excludeRequestId);
+          const paidBalance = await this.getBalance(
+            employeeId, paidType.id, endYear, excludeRequestId, endMonth, manager,
+          );
           const fromPaid = Math.min(remainingDays, Math.max(paidBalance, 0));
 
           if (fromPaid > 0) {
@@ -380,7 +445,7 @@ export class LeaveBalanceService {
               if (paidConv.reason !== 'EXCEED_BALANCE' || remainingDays <= 0) continue;
               const unpaidType = paidConv.toLeaveType;
               const unpaidPolicy = await this.getActivePolicy(unpaidType.id, startDate);
-              const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId);
+              const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId, manager);
               const unpaidLimit = unpaidPolicy?.annualLimitDays ? Number(unpaidPolicy.annualLimitDays) : Infinity;
               const unpaidAvailable = Math.max(unpaidLimit - unpaidUsed, 0);
               const fromUnpaid = Math.min(remainingDays, unpaidAvailable);
@@ -409,7 +474,6 @@ export class LeaveBalanceService {
     // 2b. POLICY / SOCIAL categories (non-parental)
     else if (categoryCode === 'POLICY' || categoryCode === 'SOCIAL') {
       if (policy?.maxPerRequestDays) {
-        // Allocate up to maxPerRequestDays as the original leave type
         const maxDays = Number(policy.maxPerRequestDays);
         const coveredDays = Math.min(remainingDays, maxDays);
         items.push({
@@ -420,7 +484,6 @@ export class LeaveBalanceService {
         });
         remainingDays -= coveredDays;
       } else {
-        // No max per request → all days go to this leave type
         items.push({
           leaveTypeId: leaveType.id,
           leaveTypeCode: leaveType.code,
@@ -437,7 +500,9 @@ export class LeaveBalanceService {
           if (conv.reason !== 'EXCEED_MAX_PER_REQUEST' || remainingDays <= 0) continue;
 
           const paidType = conv.toLeaveType;
-          const paidBalance = await this.getBalance(employeeId, paidType.id, year, excludeRequestId);
+          const paidBalance = await this.getBalance(
+            employeeId, paidType.id, endYear, excludeRequestId, endMonth, manager,
+          );
           const fromPaid = Math.min(remainingDays, Math.max(paidBalance, 0));
 
           if (fromPaid > 0) {
@@ -450,14 +515,13 @@ export class LeaveBalanceService {
             remainingDays -= fromPaid;
           }
 
-          // Warn if paid balance is insufficient
           if (remainingDays > 0) {
             warnings.push(
               `Your paid leave balance (${paidBalance} days) is insufficient to cover the excess. ${remainingDays} days will be deducted as unpaid leave.`,
             );
           }
 
-          // PAID → UNPAID chain for any remaining excess
+          // PAID → UNPAID chain
           if (remainingDays > 0) {
             const paidConversions = await this.getConversions(paidType.id);
             for (const paidConv of paidConversions) {
@@ -465,7 +529,7 @@ export class LeaveBalanceService {
               const unpaidType = paidConv.toLeaveType;
 
               const unpaidPolicy = await this.getActivePolicy(unpaidType.id, startDate);
-              const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId);
+              const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId, manager);
               const unpaidLimit = unpaidPolicy?.annualLimitDays
                 ? Number(unpaidPolicy.annualLimitDays)
                 : Infinity;
@@ -493,84 +557,114 @@ export class LeaveBalanceService {
       }
     }
 
-    // 2c. ANNUAL category (Paid / Unpaid)
+    // 2c. ANNUAL category — per-month balance check (no borrow across months)
+    //
+    // For each (year, month) bucket:
+    //   earnedTo = cumulative accrual at that month
+    //   usedTo   = RESERVE + APPROVAL debits minus RELEASE/REFUND
+    //   available = getBalance(…, atMonth)
+    //   paidUsed = min(need, available)
+    //   remaining → UNPAID
     else if (categoryCode === 'ANNUAL') {
-      if (leaveType.code === 'PAID') {
-        const paidBalance = await this.getBalance(employeeId, leaveType.id, year, excludeRequestId);
-        const fromPaid = Math.min(remainingDays, Math.max(paidBalance, 0));
+      const conversions = await this.getConversions(leaveType.id);
+      const unpaidConv = conversions.find((c) => c.reason === 'EXCEED_BALANCE');
+      const unpaidType = unpaidConv?.toLeaveType ?? (await this.getLeaveTypeByCode('UNPAID'));
+      const unpaidPolicy = unpaidType
+        ? await this.getActivePolicy(unpaidType.id, startDate)
+        : null;
 
-        if (fromPaid > 0) {
-          items.push({
+      let totalPaid = 0;
+      let totalUnpaid = 0;
+      let runningPaidUsedByThisRequest = 0;
+
+      for (const bucket of monthlyBuckets) {
+        let monthRemaining = bucket.durationDays;
+
+        // Available paid balance at this month
+        const paidAvailableAtMonth = await this.getBalance(
+          employeeId,
+          leaveType.id,
+          bucket.year,
+          excludeRequestId,
+          bucket.month,
+          manager,
+        );
+        const effectiveAvailable = paidAvailableAtMonth - runningPaidUsedByThisRequest;
+        const paidFromMonth = Math.min(monthRemaining, Math.max(effectiveAvailable, 0));
+
+        if (paidFromMonth > 0) {
+          monthlyAllocations.push({
+            year: bucket.year,
+            month: bucket.month,
             leaveTypeId: leaveType.id,
             leaveTypeCode: leaveType.code,
-            amountDays: fromPaid,
-            note: 'Paid leave',
+            amountDays: paidFromMonth,
+            note: `Paid leave (${bucket.year}/${String(bucket.month).padStart(2, '0')})`,
           });
-          remainingDays -= fromPaid;
+          totalPaid += paidFromMonth;
+          runningPaidUsedByThisRequest += paidFromMonth;
+          monthRemaining -= paidFromMonth;
         }
 
-        // Overflow paid → unpaid
-        if (remainingDays > 0) {
-          if (paidBalance < durationDays) {
-            warnings.push(
-              `Your paid leave balance (${paidBalance} days) is less than the requested ${durationDays} days. ${remainingDays} days will be deducted as unpaid leave.`,
-            );
-          }
-
-          const conversions = await this.getConversions(leaveType.id);
-          for (const conv of conversions) {
-            if (conv.reason !== 'EXCEED_BALANCE' || remainingDays <= 0) continue;
-            const unpaidType = conv.toLeaveType;
-            const unpaidPolicy = await this.getActivePolicy(unpaidType.id, startDate);
-            const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId);
-            const unpaidLimit = unpaidPolicy?.annualLimitDays
-              ? Number(unpaidPolicy.annualLimitDays)
-              : Infinity;
-            const unpaidAvailable = Math.max(unpaidLimit - unpaidUsed, 0);
-
-            if (unpaidAvailable <= 0) {
-              warnings.push(
-                `Unpaid leave annual limit (${unpaidLimit} days) has been reached for this year.`,
-              );
-            }
-
-            const fromUnpaid = Math.min(remainingDays, unpaidAvailable);
-            if (fromUnpaid > 0) {
-              items.push({
-                leaveTypeId: unpaidType.id,
-                leaveTypeCode: unpaidType.code,
-                amountDays: fromUnpaid,
-                note: 'Unpaid leave (paid balance exceeded)',
-              });
-              remainingDays -= fromUnpaid;
-            }
-          }
+        // Remaining → UNPAID for this month
+        if (monthRemaining > 0 && unpaidType) {
+          monthlyAllocations.push({
+            year: bucket.year,
+            month: bucket.month,
+            leaveTypeId: unpaidType.id,
+            leaveTypeCode: unpaidType.code,
+            amountDays: monthRemaining,
+            note: `Unpaid leave (${bucket.year}/${String(bucket.month).padStart(2, '0')})`,
+          });
+          totalUnpaid += monthRemaining;
         }
-      } else if (leaveType.code === 'UNPAID') {
-        // Direct unpaid leave request
-        const unpaidPolicy = await this.getActivePolicy(leaveType.id, startDate);
-        const unpaidUsed = await this.getUsedDays(employeeId, leaveType.id, year, excludeRequestId);
-        const unpaidLimit = unpaidPolicy?.annualLimitDays
-          ? Number(unpaidPolicy.annualLimitDays)
-          : Infinity;
+      }
 
-        if (unpaidUsed + remainingDays > unpaidLimit) {
-          warnings.push(
-            `This request will exceed the unpaid leave annual limit (${unpaidLimit} days). Currently used: ${unpaidUsed} days.`,
-          );
-        }
-
+      // Build aggregated items
+      if (totalPaid > 0) {
         items.push({
           leaveTypeId: leaveType.id,
           leaveTypeCode: leaveType.code,
-          amountDays: remainingDays,
-          note: 'Unpaid leave',
+          amountDays: totalPaid,
+          note: 'Paid leave',
         });
-        remainingDays = 0;
+        remainingDays -= totalPaid;
+      }
+
+      if (totalUnpaid > 0 && unpaidType) {
+        items.push({
+          leaveTypeId: unpaidType.id,
+          leaveTypeCode: unpaidType.code,
+          amountDays: totalUnpaid,
+          note: 'Unpaid leave (paid balance exceeded)',
+        });
+        remainingDays -= totalUnpaid;
+
+        warnings.push(
+          `Your paid leave balance is less than the requested ${durationDays} days. ` +
+          `${totalUnpaid} day(s) will be deducted as unpaid leave.`,
+        );
+
+        const existingUnpaidUsed = await this.getUsedDays(
+          employeeId,
+          unpaidType.id,
+          year,
+          excludeRequestId,
+          manager,
+        );
+        const unpaidLimit = unpaidPolicy?.annualLimitDays
+          ? Number(unpaidPolicy.annualLimitDays)
+          : Infinity;
+        if (existingUnpaidUsed + totalUnpaid > unpaidLimit) {
+          warnings.push(
+            `Unpaid leave annual limit (${unpaidLimit} days/year) may be exceeded. ` +
+            `${existingUnpaidUsed} days already used this year.`,
+          );
+        }
       }
     }
 
-    // 2d. All other categories (COMPENSATORY, etc.) → allocate all days directly
+    // 2d. All other categories (COMPENSATORY, etc.)
     else {
       items.push({
         leaveTypeId: leaveType.id,
@@ -581,7 +675,7 @@ export class LeaveBalanceService {
       remainingDays = 0;
     }
 
-    // Safety net: if conversion chain couldn't fully allocate, add remaining as unpaid
+    // Safety net
     if (remainingDays > 0) {
       const unpaidType = await this.getLeaveTypeByCode('UNPAID');
       if (unpaidType) {
@@ -592,7 +686,6 @@ export class LeaveBalanceService {
           note: `Unpaid leave (remaining excess from ${leaveType.name})`,
         });
       } else {
-        // Fallback: add as original type
         items.push({
           leaveTypeId: leaveType.id,
           leaveTypeCode: leaveType.code,
@@ -602,7 +695,7 @@ export class LeaveBalanceService {
       }
     }
 
-    // ── Conversion notification: inform user when request is split ──
+    // Conversion notification
     if (items.length > 1) {
       const breakdown = items.map((i) => `${i.note}: ${i.amountDays} day(s)`).join('; ');
       warnings.unshift(
@@ -610,22 +703,350 @@ export class LeaveBalanceService {
       );
     }
 
+    // ── Build monthlyAllocations for non-ANNUAL categories ──
+    //
+    // Uses sequential "waterfall" filling: each item's days are assigned
+    // to months in chronological order, consuming up to each month's
+    // working-day capacity before spilling into the next month.
+    //
+    // This prevents small entitlements (e.g. a 1-day Policy leave) from
+    // being artificially split across months (0.5 + 0.5).
+    // Items are processed in order — policy entitlement first, then the
+    // PAID overflow, then UNPAID overflow — so the policy item naturally
+    // fills the earliest days and stays whole.
+    if (categoryCode !== 'ANNUAL' && monthlyAllocations.length === 0) {
+      const buckets =
+        monthlyBuckets.length > 0
+          ? monthlyBuckets
+          : [
+              {
+                year: new Date(startDate).getFullYear(),
+                month: new Date(startDate).getMonth() + 1,
+                durationDays: durationDays,
+                slots: durationDays * 2,
+              },
+            ];
+
+      // Track remaining working-day capacity in each month bucket
+      const capacities = buckets.map((b) => b.durationDays);
+
+      for (const item of items) {
+        let remaining = item.amountDays;
+
+        for (let i = 0; i < buckets.length && remaining > 0; i++) {
+          const canTake = Math.round(Math.min(remaining, capacities[i]) * 2) / 2;
+          if (canTake > 0) {
+            monthlyAllocations.push({
+              year: buckets[i].year,
+              month: buckets[i].month,
+              leaveTypeId: item.leaveTypeId,
+              leaveTypeCode: item.leaveTypeCode,
+              amountDays: canTake,
+              note: item.note,
+            });
+            capacities[i] -= canTake;
+            remaining -= canTake;
+          }
+        }
+
+        // Safety: if there are leftover days (rounding edge-case), add to last bucket
+        if (remaining > 0) {
+          const lastIdx = buckets.length - 1;
+          const lastAlloc = monthlyAllocations[monthlyAllocations.length - 1];
+          if (
+            lastAlloc &&
+            lastAlloc.year === buckets[lastIdx].year &&
+            lastAlloc.month === buckets[lastIdx].month &&
+            lastAlloc.leaveTypeId === item.leaveTypeId
+          ) {
+            lastAlloc.amountDays = Math.round((lastAlloc.amountDays + remaining) * 2) / 2;
+          } else {
+            monthlyAllocations.push({
+              year: buckets[lastIdx].year,
+              month: buckets[lastIdx].month,
+              leaveTypeId: item.leaveTypeId,
+              leaveTypeCode: item.leaveTypeCode,
+              amountDays: Math.round(remaining * 2) / 2,
+              note: item.note,
+            });
+          }
+        }
+      }
+    }
+
     return {
       durationDays,
       items,
+      monthlyAllocations,
       warnings,
       canProceed: true,
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Step 1 — SUBMIT: Reserve Balance
+  // ═══════════════════════════════════════════════════════════════════
+
   /**
-   * Suggest an end date for leave types that have auto_calculate_end_date policy.
-   * Used by the frontend to pre-fill the form (POLICY / SOCIAL leave types).
-   * The user can still modify the suggested values.
+   * Validate, allocate, and create DEBIT RESERVE transactions in a single
+   * serialised DB transaction (advisory lock per employee+type+year).
    *
-   * PARENTAL leave for females uses calendar days (weekends/holidays included).
-   * All other leave types count working days (weekends/holidays excluded).
+   * Returns the validation result so the caller can persist the
+   * leave_request & items inside the same queryRunner.
+   *
+   * @param manager  EntityManager from the caller's queryRunner (REQUIRED).
    */
+  async reserveBalanceForSubmit(
+    manager: EntityManager,
+    employeeId: number,
+    leaveRequestId: number,
+    leaveTypeId: number,
+    startDate: string,
+    endDate: string,
+    startSession: LeaveSession,
+    endSession: LeaveSession,
+    excludeRequestId?: number,
+    parentalOptions?: {
+      numberOfChildren?: number;
+      childbirthMethod?: ChildbirthMethod;
+    },
+  ): Promise<LeaveValidationResult> {
+    const startYear = new Date(startDate).getFullYear();
+    const endYear = new Date(endDate + 'T00:00:00').getFullYear();
+
+    // Lock the primary leave type for each year in range
+    for (let y = startYear; y <= endYear; y++) {
+      await this.acquireBalanceLock(manager, employeeId, leaveTypeId, y);
+    }
+
+    // Run allocation under the lock
+    const validation = await this.validateAndPrepare(
+      employeeId,
+      leaveTypeId,
+      startDate,
+      endDate,
+      startSession,
+      endSession,
+      excludeRequestId,
+      parentalOptions,
+      manager,
+    );
+
+    // Lock any additional leave types from conversion (e.g. UNPAID)
+    const additionalTypeIds = new Set(
+      validation.monthlyAllocations
+        .map((a) => a.leaveTypeId)
+        .filter((id) => id !== leaveTypeId),
+    );
+    for (const typeId of additionalTypeIds) {
+      for (let y = startYear; y <= endYear; y++) {
+        await this.acquireBalanceLock(manager, employeeId, typeId, y);
+      }
+    }
+
+    // Re-validate if additional types appeared (balance might have changed)
+    let finalValidation = validation;
+    if (additionalTypeIds.size > 0) {
+      finalValidation = await this.validateAndPrepare(
+        employeeId,
+        leaveTypeId,
+        startDate,
+        endDate,
+        startSession,
+        endSession,
+        excludeRequestId,
+        parentalOptions,
+        manager,
+      );
+    }
+
+    // Create DEBIT RESERVE transactions for each monthly allocation
+    // Skip UNPAID — no quota to hold
+    const unpaidType = await this.getLeaveTypeByCode('UNPAID');
+    const unpaidTypeId = unpaidType?.id;
+
+    const reserveTxs: Partial<LeaveBalanceTransaction>[] = [];
+    for (const alloc of finalValidation.monthlyAllocations) {
+      if (unpaidTypeId && alloc.leaveTypeId === unpaidTypeId) continue;
+
+      reserveTxs.push({
+        employeeId,
+        leaveTypeId: alloc.leaveTypeId,
+        periodYear: alloc.year,
+        periodMonth: alloc.month,
+        direction: BalanceTxDirection.DEBIT,
+        amountDays: alloc.amountDays,
+        sourceType: BalanceTxSource.RESERVE,
+        sourceId: leaveRequestId,
+        note: `Leave #${leaveRequestId} reserve – ${alloc.year}/${String(alloc.month).padStart(2, '0')} (${alloc.leaveTypeCode})`,
+      });
+    }
+
+    if (reserveTxs.length > 0) {
+      await manager.getRepository(LeaveBalanceTransaction).save(reserveTxs);
+      this.logger.log(
+        `[reserveBalanceForSubmit] Leave #${leaveRequestId}: ${reserveTxs.length} RESERVE transaction(s)`,
+      );
+    }
+
+    return finalValidation;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Step 2 — APPROVE: Convert RESERVE → APPROVAL
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Update all RESERVE debit transactions for a request to APPROVAL.
+   * The debit stays but source_type changes from RESERVE to APPROVAL.
+   */
+  async convertReserveToApproval(
+    employeeId: number,
+    leaveRequestId: number,
+    manager?: EntityManager,
+  ): Promise<number> {
+    const repo = manager
+      ? manager.getRepository(LeaveBalanceTransaction)
+      : this.balanceTxRepo;
+
+    const result = await repo
+      .createQueryBuilder()
+      .update(LeaveBalanceTransaction)
+      .set({ sourceType: BalanceTxSource.APPROVAL })
+      .where('employee_id = :employeeId', { employeeId })
+      .andWhere('source_id = :leaveRequestId', { leaveRequestId })
+      .andWhere('source_type = :reserve', { reserve: BalanceTxSource.RESERVE })
+      .andWhere('direction = :debit', { debit: BalanceTxDirection.DEBIT })
+      .execute();
+
+    const affected = result.affected ?? 0;
+    this.logger.log(
+      `[convertReserveToApproval] Leave #${leaveRequestId}: ${affected} row(s) RESERVE → APPROVAL`,
+    );
+    return affected;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Step 3 — REJECT / CANCEL before approve: Release Reserve
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Create CREDIT RELEASE transactions to reverse all RESERVE debits
+   * for a given leave request.
+   */
+  async releaseReserveForRejection(
+    employeeId: number,
+    leaveRequestId: number,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager
+      ? manager.getRepository(LeaveBalanceTransaction)
+      : this.balanceTxRepo;
+
+    const reserveDebits = await repo.find({
+      where: {
+        employeeId,
+        sourceId: leaveRequestId,
+        sourceType: BalanceTxSource.RESERVE,
+        direction: BalanceTxDirection.DEBIT,
+      },
+    });
+
+    if (reserveDebits.length === 0) {
+      this.logger.warn(
+        `[releaseReserveForRejection] No RESERVE debits found for leave #${leaveRequestId}`,
+      );
+      return;
+    }
+
+    const releaseTxs: Partial<LeaveBalanceTransaction>[] = reserveDebits.map((debit) => ({
+      employeeId,
+      leaveTypeId: debit.leaveTypeId,
+      periodYear: debit.periodYear,
+      periodMonth: debit.periodMonth,
+      direction: BalanceTxDirection.CREDIT,
+      amountDays: Number(debit.amountDays),
+      sourceType: BalanceTxSource.RELEASE,
+      sourceId: leaveRequestId,
+      note: `Leave #${leaveRequestId} rejected/cancelled – release ${debit.periodYear}/${String(debit.periodMonth).padStart(2, '0')}`,
+    }));
+
+    await repo.save(releaseTxs);
+    this.logger.log(
+      `[releaseReserveForRejection] Leave #${leaveRequestId}: ${releaseTxs.length} RELEASE credit(s)`,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Step 4 — CANCEL after approve: Refund
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Create CREDIT REFUND transactions to reverse all APPROVAL debits.
+   */
+  async refundBalanceForCancellation(
+    employeeId: number,
+    leaveRequestId: number,
+    items: LeaveRequestItem[],
+    year: number,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager
+      ? manager.getRepository(LeaveBalanceTransaction)
+      : this.balanceTxRepo;
+
+    const approvalDebits = await repo.find({
+      where: {
+        employeeId,
+        sourceId: leaveRequestId,
+        sourceType: BalanceTxSource.APPROVAL,
+        direction: BalanceTxDirection.DEBIT,
+      },
+    });
+
+    const transactions: Partial<LeaveBalanceTransaction>[] = [];
+
+    if (approvalDebits.length > 0) {
+      for (const debit of approvalDebits) {
+        transactions.push({
+          employeeId,
+          leaveTypeId: debit.leaveTypeId,
+          periodYear: debit.periodYear,
+          periodMonth: debit.periodMonth,
+          direction: BalanceTxDirection.CREDIT,
+          amountDays: Number(debit.amountDays),
+          sourceType: BalanceTxSource.REFUND,
+          sourceId: leaveRequestId,
+          note: `Leave #${leaveRequestId} cancelled – refund ${debit.periodYear}/${String(debit.periodMonth).padStart(2, '0')}`,
+        });
+      }
+    } else {
+      // Legacy fallback
+      for (const item of items) {
+        transactions.push({
+          employeeId,
+          leaveTypeId: item.leaveTypeId,
+          periodYear: item.periodYear ?? year,
+          periodMonth: item.periodMonth ?? 1,
+          direction: BalanceTxDirection.CREDIT,
+          amountDays: Number(item.amountDays),
+          sourceType: BalanceTxSource.REFUND,
+          sourceId: leaveRequestId,
+          note: `Leave request #${leaveRequestId} cancelled – refund`,
+        });
+      }
+    }
+
+    await repo.save(transactions);
+    this.logger.log(
+      `[refundBalanceForCancellation] Leave #${leaveRequestId}: ${transactions.length} REFUND credit(s)`,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Suggest End Date
+  // ═══════════════════════════════════════════════════════════════════
+
   async suggestEndDate(
     leaveTypeId: number,
     startDate: string,
@@ -642,13 +1063,11 @@ export class LeaveBalanceService {
     const policy = await this.getActivePolicy(leaveTypeId, startDate);
     if (!policy?.autoCalculateEndDate || !policy.maxPerRequestDays) return null;
 
-    // Special handling for PARENTAL leave
     if (leaveType.code === 'PARENTAL' && parentalOptions?.employeeId) {
       const user = await this.userRepo.findOne({ where: { id: parentalOptions.employeeId } });
       const isFemale = user?.gender === UserGender.FEMALE;
 
       if (isFemale) {
-        // Female: calendar days (weekends/holidays included)
         const numChildren = parentalOptions.numberOfChildren ?? 1;
         const entitlementDays = 180 + Math.max(0, numChildren - 1) * 30;
         const result = calculateCalendarEndDate(startDate, startSession, entitlementDays);
@@ -657,7 +1076,6 @@ export class LeaveBalanceService {
           suggestedEndSession: result.endSession,
         };
       } else {
-        // Male: working days (5 natural, 7 c-section)
         const entitlement =
           parentalOptions.childbirthMethod === ChildbirthMethod.C_SECTION ? 7 : 5;
         const auto = await autoCalculateEndDate(
@@ -674,8 +1092,6 @@ export class LeaveBalanceService {
     }
 
     const maxDays = Number(policy.maxPerRequestDays);
-
-    // Standard: working days (skip weekends + holidays)
     const auto = await autoCalculateEndDate(
       this.calendarRepo,
       startDate,
@@ -689,109 +1105,77 @@ export class LeaveBalanceService {
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Used Days (from ledger)
+  // ═══════════════════════════════════════════════════════════════════
+
   /**
-   * Get total used (debited) days for a leave type in a year.
-   * Includes pending request items as "committed" usage.
+   * Net used days = DEBIT(RESERVE+APPROVAL) – CREDIT(RELEASE+REFUND)
    */
   async getUsedDays(
     employeeId: number,
     leaveTypeId: number,
     year: number,
     excludeRequestId?: number,
+    manager?: EntityManager,
   ): Promise<number> {
-    const result = await this.balanceTxRepo
+    const repo = manager
+      ? manager.getRepository(LeaveBalanceTransaction)
+      : this.balanceTxRepo;
+
+    let debitQb = repo
       .createQueryBuilder('tx')
       .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
       .andWhere("tx.direction = 'DEBIT'")
-      .getRawOne();
+      .andWhere("tx.source_type IN ('RESERVE', 'APPROVAL')");
 
-    const debitTotal = parseFloat(result?.total ?? '0');
+    if (excludeRequestId) {
+      debitQb = debitQb.andWhere(
+        '(tx.source_id IS NULL OR tx.source_id != :excludeRequestId)',
+        { excludeRequestId },
+      );
+    }
 
-    // Add days from pending requests (committed but not yet debited)
-    const pendingDays = await this.getPendingItemDays(
-      employeeId,
-      leaveTypeId,
-      year,
-      excludeRequestId,
-    );
+    const debitResult = await debitQb.getRawOne();
+    const totalDebit = parseFloat(debitResult?.total ?? '0');
 
-    return debitTotal + pendingDays;
-  }
+    let creditQb = repo
+      .createQueryBuilder('tx')
+      .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+      .where('tx.employee_id = :employeeId', { employeeId })
+      .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
+      .andWhere('tx.period_year = :year', { year })
+      .andWhere("tx.direction = 'CREDIT'")
+      .andWhere("tx.source_type IN ('RELEASE', 'REFUND')");
 
-  /**
-   * Create balance debit transactions when a leave request is approved.
-   * Called from the approval flow.
-   */
-  async debitBalanceForApproval(
-    employeeId: number,
-    leaveRequestId: number,
-    items: LeaveRequestItem[],
-    year: number,
-  ): Promise<void> {
-    const transactions: Partial<LeaveBalanceTransaction>[] = items.map((item) => ({
-      employeeId,
-      leaveTypeId: item.leaveTypeId,
-      periodYear: year,
-      direction: 'DEBIT',
-      amountDays: Number(item.amountDays),
-      sourceType: 'APPROVAL',
-      sourceId: leaveRequestId,
-      note: `Leave request #${leaveRequestId} approved`,
-    }));
+    if (excludeRequestId) {
+      creditQb = creditQb.andWhere(
+        '(tx.source_id IS NULL OR tx.source_id != :excludeRequestId)',
+        { excludeRequestId },
+      );
+    }
 
-    await this.balanceTxRepo.save(transactions);
-    this.logger.log(
-      `Debited balance for leave request #${leaveRequestId}: ${items.length} item(s)`,
-    );
-  }
+    const creditResult = await creditQb.getRawOne();
+    const totalReleaseRefund = parseFloat(creditResult?.total ?? '0');
 
-  /**
-   * Refund balance when a leave request is cancelled (after approval).
-   */
-  async refundBalanceForCancellation(
-    employeeId: number,
-    leaveRequestId: number,
-    items: LeaveRequestItem[],
-    year: number,
-  ): Promise<void> {
-    const transactions: Partial<LeaveBalanceTransaction>[] = items.map((item) => ({
-      employeeId,
-      leaveTypeId: item.leaveTypeId,
-      periodYear: year,
-      direction: 'CREDIT',
-      amountDays: Number(item.amountDays),
-      sourceType: 'REFUND',
-      sourceId: leaveRequestId,
-      note: `Leave request #${leaveRequestId} cancelled – refund`,
-    }));
-
-    await this.balanceTxRepo.save(transactions);
-    this.logger.log(
-      `Refunded balance for leave request #${leaveRequestId}: ${items.length} item(s)`,
-    );
+    return Math.max(totalDebit - totalReleaseRefund, 0);
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // Balance Initialization & Summary
+  // Balance Initialization & Accrual
   // ═══════════════════════════════════════════════════════════════════
 
   /**
    * Initialize yearly paid leave balance for all active employees.
-   * Creates a CREDIT ACCRUAL transaction of `annualDays` for the PAID leave type.
-   * Skips employees who already have an ACCRUAL record for that year+type.
-   *
-   * @param year        The year to initialize (e.g. 2026)
-   * @param annualDays  Total annual paid days (default: 12)
-   * @returns           Summary of how many employees were credited
+   * Creates per-month CREDIT MONTHLY_ACCRUAL transactions.
    */
   async initializeYearlyBalance(
     year: number,
     annualDays = 12,
   ): Promise<{ credited: number; skipped: number; total: number }> {
-    // Find the PAID leave type
     const paidType = await this.leaveTypeRepo.findOne({
       where: { code: 'PAID', isActive: true },
     });
@@ -799,7 +1183,11 @@ export class LeaveBalanceService {
       throw new Error('PAID leave type not found');
     }
 
-    // Get all active users
+    const policy = await this.getActivePolicy(paidType.id, `${year}-01-01`);
+    const monthlyRate = policy?.monthlyLimitDays
+      ? Number(policy.monthlyLimitDays)
+      : annualDays / 12;
+
     const activeUsers = await this.userRepo.find({
       where: { status: UserStatus.ACTIVE },
       select: ['id'],
@@ -809,39 +1197,42 @@ export class LeaveBalanceService {
       return { credited: 0, skipped: 0, total: 0 };
     }
 
-    // Find which employees already have an ACCRUAL for this year+type
     const existing = await this.balanceTxRepo
       .createQueryBuilder('tx')
       .select('tx.employee_id', 'employeeId')
       .where('tx.leave_type_id = :leaveTypeId', { leaveTypeId: paidType.id })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.source_type = 'ACCRUAL'")
+      .andWhere('tx.source_type = :sourceType', { sourceType: BalanceTxSource.MONTHLY_ACCRUAL })
       .groupBy('tx.employee_id')
       .getRawMany();
 
     const existingIds = new Set(existing.map((r) => Number(r.employeeId)));
-
-    // Create CREDIT transactions for employees without an accrual
     const toCredit = activeUsers.filter((u) => !existingIds.has(u.id));
 
     if (toCredit.length > 0) {
-      const transactions: Partial<LeaveBalanceTransaction>[] = toCredit.map((user) => ({
-        employeeId: user.id,
-        leaveTypeId: paidType.id,
-        periodYear: year,
-        periodMonth: null,
-        direction: 'CREDIT',
-        amountDays: annualDays,
-        sourceType: 'ACCRUAL',
-        sourceId: null,
-        note: `Annual paid leave allocation for ${year} (${annualDays} days)`,
-      }));
-
+      const transactions: Partial<LeaveBalanceTransaction>[] = [];
+      for (const user of toCredit) {
+        for (let m = 1; m <= 12; m++) {
+          transactions.push({
+            employeeId: user.id,
+            leaveTypeId: paidType.id,
+            periodYear: year,
+            periodMonth: m,
+            direction: BalanceTxDirection.CREDIT,
+            amountDays: monthlyRate,
+            sourceType: BalanceTxSource.MONTHLY_ACCRUAL,
+            sourceId: null,
+            note: `Paid leave accrual ${year}/${String(m).padStart(2, '0')} (${monthlyRate} day)`,
+          });
+        }
+      }
       await this.balanceTxRepo.save(transactions);
     }
 
     this.logger.log(
-      `[initializeYearlyBalance] Year ${year}: credited ${toCredit.length}, skipped ${existingIds.size} (already had accrual), total active ${activeUsers.length}`,
+      `[initializeYearlyBalance] Year ${year}: credited ${toCredit.length} employees ` +
+      `(${toCredit.length * 12} monthly transactions), skipped ${existingIds.size}, ` +
+      `total active ${activeUsers.length}`,
     );
 
     return {
@@ -852,14 +1243,73 @@ export class LeaveBalanceService {
   }
 
   /**
+   * Run monthly accrual for a specific month (called by cron on 1st of each month).
+   *
+   * Creates CREDIT MONTHLY_ACCRUAL for each active employee that doesn't
+   * already have one for (year, month, PAID). Partial unique index guarantees
+   * idempotency at DB level.
+   */
+  async runMonthlyAccrual(
+    year: number,
+    month: number,
+  ): Promise<{ credited: number; skipped: number }> {
+    const paidType = await this.leaveTypeRepo.findOne({
+      where: { code: 'PAID', isActive: true },
+    });
+    if (!paidType) throw new Error('PAID leave type not found');
+
+    const policy = await this.getActivePolicy(paidType.id, `${year}-01-01`);
+    const monthlyRate = policy?.monthlyLimitDays
+      ? Number(policy.monthlyLimitDays)
+      : 1;
+
+    const activeUsers = await this.userRepo.find({
+      where: { status: UserStatus.ACTIVE },
+      select: ['id'],
+    });
+
+    const existing = await this.balanceTxRepo
+      .createQueryBuilder('tx')
+      .select('tx.employee_id', 'employeeId')
+      .where('tx.leave_type_id = :leaveTypeId', { leaveTypeId: paidType.id })
+      .andWhere('tx.period_year = :year', { year })
+      .andWhere('tx.period_month = :month', { month })
+      .andWhere('tx.source_type = :sourceType', { sourceType: BalanceTxSource.MONTHLY_ACCRUAL })
+      .getRawMany();
+
+    const existingIds = new Set(existing.map((r) => Number(r.employeeId)));
+    const toCredit = activeUsers.filter((u) => !existingIds.has(u.id));
+
+    if (toCredit.length > 0) {
+      const transactions: Partial<LeaveBalanceTransaction>[] = toCredit.map((user) => ({
+        employeeId: user.id,
+        leaveTypeId: paidType.id,
+        periodYear: year,
+        periodMonth: month,
+        direction: BalanceTxDirection.CREDIT,
+        amountDays: monthlyRate,
+        sourceType: BalanceTxSource.MONTHLY_ACCRUAL,
+        sourceId: null,
+        note: `Paid leave accrual ${year}/${String(month).padStart(2, '0')} (${monthlyRate} day)`,
+      }));
+      await this.balanceTxRepo.save(transactions);
+    }
+
+    this.logger.log(
+      `[runMonthlyAccrual] ${year}/${month}: credited ${toCredit.length}, skipped ${existingIds.size}`,
+    );
+
+    return { credited: toCredit.length, skipped: existingIds.size };
+  }
+
+  /**
    * Initialize balance for a single employee (e.g. on activation).
-   * Pro-rates based on remaining months if mid-year.
    */
   async initializeBalanceForEmployee(
     employeeId: number,
     year: number,
     annualDays = 12,
-  ): Promise<{ credited: boolean; days: number }> {
+  ): Promise<{ credited: boolean; days: number; months: number }> {
     const paidType = await this.leaveTypeRepo.findOne({
       where: { code: 'PAID', isActive: true },
     });
@@ -867,47 +1317,59 @@ export class LeaveBalanceService {
       throw new Error('PAID leave type not found');
     }
 
-    // Check if already has accrual
     const existing = await this.balanceTxRepo.findOne({
       where: {
         employeeId,
         leaveTypeId: paidType.id,
         periodYear: year,
-        sourceType: 'ACCRUAL',
+        sourceType: BalanceTxSource.MONTHLY_ACCRUAL,
       },
     });
 
     if (existing) {
-      return { credited: false, days: 0 };
+      return { credited: false, days: 0, months: 0 };
     }
 
-    // Pro-rate: remaining months / 12 * annualDays (rounded to 0.5)
-    const currentMonth = new Date().getMonth() + 1; // 1-12
-    const remainingMonths = Math.max(13 - currentMonth, 1); // inclusive current month
-    const proRatedDays = Math.round((remainingMonths / 12) * annualDays * 2) / 2; // round to 0.5
+    const policy = await this.getActivePolicy(paidType.id, `${year}-01-01`);
+    const monthlyRate = policy?.monthlyLimitDays
+      ? Number(policy.monthlyLimitDays)
+      : annualDays / 12;
 
-    await this.balanceTxRepo.save({
-      employeeId,
-      leaveTypeId: paidType.id,
-      periodYear: year,
-      periodMonth: null,
-      direction: 'CREDIT',
-      amountDays: proRatedDays,
-      sourceType: 'ACCRUAL',
-      sourceId: null,
-      note: `Paid leave allocation for ${year} (${proRatedDays} days, pro-rated from month ${currentMonth})`,
-    });
+    const startMonth = new Date().getMonth() + 1;
+    const transactions: Partial<LeaveBalanceTransaction>[] = [];
+
+    for (let m = startMonth; m <= 12; m++) {
+      transactions.push({
+        employeeId,
+        leaveTypeId: paidType.id,
+        periodYear: year,
+        periodMonth: m,
+        direction: BalanceTxDirection.CREDIT,
+        amountDays: monthlyRate,
+        sourceType: BalanceTxSource.MONTHLY_ACCRUAL,
+        sourceId: null,
+        note: `Paid leave accrual ${year}/${String(m).padStart(2, '0')} (${monthlyRate} day, employee init)`,
+      });
+    }
+
+    const totalDays = Math.round(transactions.length * monthlyRate * 2) / 2;
+
+    await this.balanceTxRepo.save(transactions);
 
     this.logger.log(
-      `[initializeBalanceForEmployee] Employee ${employeeId}: credited ${proRatedDays} days for ${year}`,
+      `[initializeBalanceForEmployee] Employee ${employeeId}: ${transactions.length} monthly accruals ` +
+      `(${totalDays} days total) for ${year} starting month ${startMonth}`,
     );
 
-    return { credited: true, days: proRatedDays };
+    return { credited: true, days: totalDays, months: transactions.length };
   }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Balance Summary & Reports
+  // ═══════════════════════════════════════════════════════════════════
 
   /**
    * Get balance summary for an employee for a given year.
-   * Returns balance info for each leave type that has transactions or a policy.
    */
   async getEmployeeBalanceSummary(
     employeeId: number,
@@ -920,17 +1382,21 @@ export class LeaveBalanceService {
       leaveTypeName: string;
       categoryCode: string;
       categoryName: string;
+      unit: 'days' | 'hours';
       totalCredit: number;
+      accruedToDate: number;
+      monthlyAccrual: number | null;
       totalDebit: number;
       pendingDays: number;
       balance: number;
-      monthlyLimit: number | null;
       annualLimit: number | null;
+      isHardLimit: boolean;
     }[]
   > {
-    // Get all active non-system leave types with their category
+    const BALANCE_TYPE_CODES = ['PAID', 'UNPAID', 'COMP'];
+
     const leaveTypes = await this.leaveTypeRepo.find({
-      where: { isActive: true, isSystem: false },
+      where: BALANCE_TYPE_CODES.map((code) => ({ code, isActive: true, isSystem: false })),
       relations: ['category'],
       order: { id: 'ASC' },
     });
@@ -938,52 +1404,205 @@ export class LeaveBalanceService {
     const result = [];
 
     for (const lt of leaveTypes) {
-      // Sum credits
-      const creditResult = await this.balanceTxRepo
+      const policy = await this.getActivePolicy(lt.id, `${year}-01-01`);
+      const unit: 'days' | 'hours' = lt.code === 'COMP' ? 'hours' : 'days';
+
+      // Split credits: entitlement (MONTHLY_ACCRUAL etc.) vs reversal (RELEASE, REFUND)
+      const creditBreakdown = await this.balanceTxRepo
         .createQueryBuilder('tx')
-        .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+        .select("COALESCE(SUM(CASE WHEN tx.source_type IN ('RELEASE', 'REFUND') THEN tx.amount_days ELSE 0 END), 0)", 'reversal')
+        .addSelect("COALESCE(SUM(CASE WHEN tx.source_type NOT IN ('RELEASE', 'REFUND') THEN tx.amount_days ELSE 0 END), 0)", 'entitlement')
         .where('tx.employee_id = :employeeId', { employeeId })
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
-        .andWhere('tx.period_month IS NULL OR tx.period_month = :month', { month })
         .andWhere('tx.period_year = :year', { year })
         .andWhere("tx.direction = 'CREDIT'")
         .getRawOne();
+      const entitlementCredit = parseFloat(creditBreakdown?.entitlement ?? '0');
+      const reversalCredit = parseFloat(creditBreakdown?.reversal ?? '0');
 
-      // Sum debits
+      // Gross debit (RESERVE + APPROVAL)
       const debitResult = await this.balanceTxRepo
         .createQueryBuilder('tx')
         .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
         .where('tx.employee_id = :employeeId', { employeeId })
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
-        .andWhere('tx.period_month IS NULL OR tx.period_month = :month', { month })
         .andWhere('tx.period_year = :year', { year })
         .andWhere("tx.direction = 'DEBIT'")
         .getRawOne();
+      const grossDebit = parseFloat(debitResult?.total ?? '0');
 
-      const totalCredit = parseFloat(creditResult?.total ?? '0');
-      const totalDebit = parseFloat(debitResult?.total ?? '0');
+      // Pending = RESERVE debits only (submitted but not yet approved)
+      const pendingResult = await this.balanceTxRepo
+        .createQueryBuilder('tx')
+        .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+        .where('tx.employee_id = :employeeId', { employeeId })
+        .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
+        .andWhere('tx.period_year = :year', { year })
+        .andWhere("tx.direction = 'DEBIT'")
+        .andWhere("tx.source_type = 'RESERVE'")
+        .getRawOne();
+      const pendingDays = parseFloat(pendingResult?.total ?? '0');
 
-      // Include pending request items as committed usage
-      const pendingDays = await this.getPendingItemDays(employeeId, lt.id, year);
+      const netDebit = Math.max(grossDebit - reversalCredit, 0);
+      const ledgerBalance = entitlementCredit - netDebit;
 
-      // Get annual limit from policy
-      const policy = await this.getActivePolicy(lt.id, `${year}-01-01`);
+      if (lt.code === 'PAID') {
+        const monthlyRate = policy?.monthlyLimitDays ? Number(policy.monthlyLimitDays) : 1;
+        const annualLimit = policy?.annualLimitDays ? Number(policy.annualLimitDays) : entitlementCredit;
+        const accruedToDate = Math.min(month * monthlyRate, annualLimit);
+        const balance = Math.min(ledgerBalance, accruedToDate);
 
-      result.push({
-        leaveTypeId: Number(lt.id),
-        leaveTypeCode: lt.code,
-        leaveTypeName: lt.name,
-        categoryCode: lt.category?.code ?? '',
-        categoryName: lt.category?.name ?? '',
-        totalCredit,
-        totalDebit: totalDebit + pendingDays,
-        pendingDays,
-        balance: totalCredit - totalDebit - pendingDays,
-        monthlyLimit: policy?.monthlyLimitDays ? Number(policy.monthlyLimitDays) : null,
-        annualLimit: policy?.annualLimitDays ? Number(policy.annualLimitDays) : null,
-      });
+        result.push({
+          leaveTypeId: Number(lt.id),
+          leaveTypeCode: lt.code,
+          leaveTypeName: lt.name,
+          categoryCode: lt.category?.code ?? '',
+          categoryName: lt.category?.name ?? '',
+          unit,
+          totalCredit: entitlementCredit,
+          accruedToDate,
+          monthlyAccrual: monthlyRate,
+          totalDebit: netDebit,
+          pendingDays,
+          balance,
+          annualLimit,
+          isHardLimit: true,
+        });
+      } else if (lt.code === 'UNPAID') {
+        const annualLimit = policy?.annualLimitDays ? Number(policy.annualLimitDays) : 30;
+
+        result.push({
+          leaveTypeId: Number(lt.id),
+          leaveTypeCode: lt.code,
+          leaveTypeName: lt.name,
+          categoryCode: lt.category?.code ?? '',
+          categoryName: lt.category?.name ?? '',
+          unit,
+          totalCredit: entitlementCredit,
+          accruedToDate: annualLimit,
+          monthlyAccrual: null,
+          totalDebit: netDebit,
+          pendingDays,
+          balance: annualLimit - netDebit,
+          annualLimit,
+          isHardLimit: false,
+        });
+      } else {
+        result.push({
+          leaveTypeId: Number(lt.id),
+          leaveTypeCode: lt.code,
+          leaveTypeName: lt.name,
+          categoryCode: lt.category?.code ?? '',
+          categoryName: lt.category?.name ?? '',
+          unit,
+          totalCredit: entitlementCredit,
+          accruedToDate: entitlementCredit,
+          monthlyAccrual: null,
+          totalDebit: netDebit,
+          pendingDays,
+          balance: entitlementCredit - netDebit,
+          annualLimit: policy?.annualLimitDays ? Number(policy.annualLimitDays) : null,
+          isHardLimit: false,
+        });
+      }
     }
 
     return result;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Monthly Balance Report
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Per-month balance report for an employee (year).
+   *
+   * Queries leave_balance_transactions grouped by (period_year, period_month):
+   *   credit_in_month  = SUM(CREDIT)
+   *   debit_in_month   = SUM(DEBIT)
+   *   cumulativeBalance = running total (window function equivalent)
+   */
+  async getMonthlyBalanceReport(
+    employeeId: number,
+    year: number,
+  ): Promise<
+    {
+      month: number;
+      leaveTypeCode: string;
+      leaveTypeName: string;
+      accrued: number;
+      used: number;
+      released: number;
+      refunded: number;
+      cumulativeBalance: number;
+    }[]
+  > {
+    const paidType = await this.leaveTypeRepo.findOne({
+      where: { code: 'PAID', isActive: true },
+    });
+    if (!paidType) return [];
+
+    const txRows = await this.balanceTxRepo
+      .createQueryBuilder('tx')
+      .select('tx.period_month', 'month')
+      .addSelect('tx.direction', 'direction')
+      .addSelect('tx.source_type', 'sourceType')
+      .addSelect('SUM(tx.amount_days)', 'total')
+      .where('tx.employee_id = :employeeId', { employeeId })
+      .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: paidType.id })
+      .andWhere('tx.period_year = :year', { year })
+      .groupBy('tx.period_month')
+      .addGroupBy('tx.direction')
+      .addGroupBy('tx.source_type')
+      .orderBy('tx.period_month', 'ASC')
+      .getRawMany();
+
+    const monthData = new Map<number, { accrued: number; used: number; released: number; refunded: number }>();
+    for (let m = 1; m <= 12; m++) {
+      monthData.set(m, { accrued: 0, used: 0, released: 0, refunded: 0 });
+    }
+
+    for (const row of txRows) {
+      const m = parseInt(row.month) || 1;
+      const total = parseFloat(row.total);
+      const direction = row.direction as string;
+      const sourceType = row.sourceType as string;
+
+      const entry = monthData.get(m);
+      if (!entry) continue;
+
+      if (direction === BalanceTxDirection.CREDIT) {
+        if (sourceType === BalanceTxSource.RELEASE) {
+          entry.released += total;
+        } else if (sourceType === BalanceTxSource.REFUND) {
+          entry.refunded += total;
+        } else {
+          entry.accrued += total;
+        }
+      } else if (direction === BalanceTxDirection.DEBIT) {
+        entry.used += total;
+      }
+    }
+
+    const report = [];
+    let cumulative = 0;
+
+    for (let m = 1; m <= 12; m++) {
+      const d = monthData.get(m)!;
+      cumulative += d.accrued + d.released + d.refunded - d.used;
+
+      report.push({
+        month: m,
+        leaveTypeCode: paidType.code,
+        leaveTypeName: paidType.name,
+        accrued: d.accrued,
+        used: d.used,
+        released: d.released,
+        refunded: d.refunded,
+        cumulativeBalance: Math.round(cumulative * 2) / 2,
+      });
+    }
+
+    return report;
   }
 }

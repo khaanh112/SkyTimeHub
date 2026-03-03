@@ -1,22 +1,30 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { leaveRequestService } from '../services';
-import { LoadingSpinner, StatusBadge, DetailSection, Modal } from '../components';
+import { LoadingSpinner, StatusBadge, Modal } from '../components';
 import { useAuth } from '../context';
 import { toast } from 'react-toastify';
-import { 
-  ArrowLeft, 
-  Calendar, 
-  Clock, 
-  User, 
-  FileText, 
-  XCircle, 
+import {
+  ArrowLeft,
+  Calendar,
+  Clock,
+  User,
+  FileText,
+  XCircle,
   AlertCircle,
+  AlertTriangle,
   Users,
   Edit,
   Info,
-  CheckCircle
+  CheckCircle,
+  Mail,
 } from 'lucide-react';
+
+const SectionNumber = ({ number }) => (
+  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0">
+    {number}
+  </div>
+);
 
 const LeaveRequestDetailPage = () => {
   const { id } = useParams();
@@ -31,6 +39,8 @@ const LeaveRequestDetailPage = () => {
   const [rejectedReason, setRejectedReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [processingId, setProcessingId] = useState(null);
+  const [balanceSummary, setBalanceSummary] = useState(null);
+  const [showBalanceTooltip, setShowBalanceTooltip] = useState(false);
 
   useEffect(() => {
     fetchLeaveRequestDetail();
@@ -41,7 +51,21 @@ const LeaveRequestDetailPage = () => {
       setLoading(true);
       setError(null);
       const response = await leaveRequestService.getLeaveRequest(id);
-      setLeaveRequest(response.data || response);
+      const data = response.data || response;
+      setLeaveRequest(data);
+
+      // Fetch balance summary for the requester
+      try {
+        if (data.userId && data.userId !== currentUser?.id) {
+          const balance = await leaveRequestService.getUserBalanceSummary(data.userId);
+          setBalanceSummary(balance.data || balance);
+        } else {
+          const balance = await leaveRequestService.getBalanceSummary();
+          setBalanceSummary(balance.data || balance);
+        }
+      } catch (balanceError) {
+        console.warn('Could not fetch balance summary:', balanceError);
+      }
     } catch (error) {
       console.error('Error fetching leave request detail:', error);
       setError(error.response?.data?.message || 'Failed to load leave request details');
@@ -152,12 +176,32 @@ const LeaveRequestDetailPage = () => {
   };
 
   const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('en-US', { 
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    if (!date) return '';
+    const d = new Date(date);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  const formatDateWithTime = (date, session) => {
+    if (!date) return '';
+    const d = new Date(date);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const time = session === 'AM' ? '8:30' : '13:30';
+    return `${dd}/${mm}/${yyyy} ${time}`;
+  };
+
+  const formatEndDateWithTime = (date, session) => {
+    if (!date) return '';
+    const d = new Date(date);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const time = session === 'PM' ? '17:30' : '12:00';
+    return `${dd}/${mm}/${yyyy} ${time}`;
   };
 
   const formatDateTime = (date) => {
@@ -168,6 +212,38 @@ const LeaveRequestDetailPage = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Get leave type items breakdown (paid vs unpaid)
+  const getItemsBreakdown = () => {
+    if (!leaveRequest?.items || leaveRequest.items.length === 0) return [];
+    return leaveRequest.items.map((item) => ({
+      leaveTypeName: item.leaveType?.name || 'Unknown',
+      leaveTypeCode: item.leaveType?.code || '',
+      amountDays: parseFloat(item.amountDays),
+    }));
+  };
+
+  // Check if there are multiple leave types (limit exceeded)
+  const hasLimitExceeded = () => {
+    const items = getItemsBreakdown();
+    return items.length > 1;
+  };
+
+  // Get balance info for tooltip (only types with actual balance pools)
+  const getBalanceInfo = () => {
+    if (!balanceSummary || !Array.isArray(balanceSummary)) return [];
+    return balanceSummary.map((b) => ({
+      name: b.leaveTypeName,
+      code: b.leaveTypeCode,
+      unit: b.unit || (b.leaveTypeCode === 'COMP' ? 'hours' : 'days'),
+      balance: b.balance,
+      accruedToDate: b.accruedToDate ?? b.totalCredit,
+      totalDebit: b.totalDebit,
+      annualLimit: b.annualLimit,
+      monthlyAccrual: b.monthlyAccrual,
+      isHardLimit: b.isHardLimit,
+    }));
   };
 
   if (loading) {
@@ -212,223 +288,332 @@ const LeaveRequestDetailPage = () => {
     );
   }
 
+  const itemsBreakdown = getItemsBreakdown();
+  const balanceInfo = getBalanceInfo();
+  const totalDuration = leaveRequest.durationDays || leaveRequest.duration || 0;
+
   return (
     <>
-      <div className="w-full">
+      <div className="w-full max-w-4xl mx-auto">
         {/* Page Header */}
         <div className="mb-6">
-          <button
-            onClick={() => navigate('/leave-requests')}
-            className="inline-flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-white border border-transparent hover:border-gray-200 rounded-lg transition-colors mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span className="text-sm font-medium">
-              {view === 'management' ? 'Back to Management View' : 'Back to My Requests'}
-            </span>
-          </button>
-          
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Leave Request Details</h1>
-              <p className="text-sm text-gray-600 mt-1">Request ID: #{leaveRequest.id}</p>
-            </div>
+          <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+            <button
+              onClick={() => navigate('/leave-requests')}
+              className="hover:text-blue-600 transition-colors"
+            >
+              Leave Management
+            </button>
+            <span>&gt;</span>
+            <span className="text-gray-900 font-medium">View Request</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">View Leave Request</h1>
             <StatusBadge status={leaveRequest.status} size="lg" />
           </div>
         </div>
 
-        {/* Main Content Card */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm mb-6">
-          <div className="p-6 space-y-5">
-            {/* Requester Information - Management View Only */}
-            {view === 'management' && leaveRequest.user && (
-              <DetailSection title="Requester Information" icon={User}>
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-linear-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-xl font-semibold">
-                    {leaveRequest.user.username?.charAt(0).toUpperCase() || 'U'}
-                  </div>
-                  <div className="flex-1">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-gray-600 mb-1">Name</p>
-                        <p className="text-sm font-semibold text-gray-900">{leaveRequest.user.username}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600 mb-1">Email</p>
-                        <p className="text-sm font-medium text-gray-900">{leaveRequest.user.email}</p>
-                      </div>
-                      {leaveRequest.user.employeeId && (
-                        <div>
-                          <p className="text-xs text-gray-600 mb-1">Employee ID</p>
-                          <p className="text-sm font-medium text-gray-900">{leaveRequest.user.employeeId}</p>
-                        </div>
-                      )}
-                      {leaveRequest.user.department && (
-                        <div>
-                          <p className="text-xs text-gray-600 mb-1">Department</p>
-                          <p className="text-sm font-medium text-gray-900">{leaveRequest.user.department}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </DetailSection>
-            )}
-
-            {/* Leave Period */}
-            <DetailSection title="Leave Period" icon={Calendar}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">Start Date</p>
-                  <p className="text-sm font-semibold text-gray-900">{formatDate(leaveRequest.startDate)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">End Date</p>
-                  <p className="text-sm font-semibold text-gray-900">{formatDate(leaveRequest.endDate)}</p>
-                </div>
-              </div>
-              <div className="pt-4 border-t border-gray-200 flex items-center justify-between">
-                <span className="text-sm text-gray-600">Total Duration</span>
-                <span className="inline-flex items-center gap-2 text-blue-700 font-semibold">
-                  <Clock className="w-4 h-4" />
-                  {calculateDays(leaveRequest.startDate, leaveRequest.endDate)} days
-                </span>
-              </div>
-            </DetailSection>
-
-            {/* Reason & Work Solution */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <DetailSection title="Reason" icon={FileText}>
-                <p className="text-sm text-gray-900">
-                  {leaveRequest.reason || <span className="text-gray-400 italic">No reason provided</span>}
-                </p>
-              </DetailSection>
-
-              {leaveRequest.workSolution && (
-                <DetailSection title="Work Solution / Handover" icon={FileText}>
-                  <p className="text-sm text-gray-900">{leaveRequest.workSolution}</p>
-                </DetailSection>
-              )}
+        {/* Main Content */}
+        <div className="space-y-8">
+          {/* ── Section 1: Basic Info ────────────────────────────── */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <SectionNumber number={1} />
+              <h2 className="text-lg font-bold text-gray-900">Basic Info</h2>
             </div>
 
-            {/* Rejection Reason */}
-            {leaveRequest.status === 'rejected' && leaveRequest.rejectedReason && (
-              <DetailSection title="Rejection Reason" icon={XCircle} variant="warning">
-                <p className="text-sm text-red-900 font-medium">{leaveRequest.rejectedReason}</p>
-              </DetailSection>
-            )}
-
-            {/* Approver & CC Recipients */}
-            <div className={`grid grid-cols-1 ${leaveRequest.ccRecipients && leaveRequest.ccRecipients.length > 0 ? 'md:grid-cols-2' : ''} gap-6`}>
-              <DetailSection title="Approver" icon={User}>
-                {leaveRequest.approver ? (
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                      {leaveRequest.approver.username?.charAt(0).toUpperCase() || 'A'}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{leaveRequest.approver.username}</p>
-                      <p className="text-xs text-gray-600">{leaveRequest.approver.email}</p>
-                      {leaveRequest.approver.department && (
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {leaveRequest.approver.department}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No approver assigned</p>
-                )}
-              </DetailSection>
-
-              {/* CC Recipients */}
-              {leaveRequest.ccRecipients && leaveRequest.ccRecipients.length > 0 && (
-                <DetailSection title={`CC Recipients (${leaveRequest.ccRecipients.length})`} icon={Users}>
-                  <div className="flex flex-wrap gap-2">
-                    {leaveRequest.ccRecipients.map((recipient, index) => (
-                      <div
-                        key={index}
-                        className="inline-flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200"
+            {/* Employee Info */}
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-14 h-14 bg-linear-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-xl font-semibold shrink-0">
+                {leaveRequest.user?.username?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base font-bold text-gray-900">
+                    {leaveRequest.user?.username || 'Unknown'}
+                  </h3>
+                  {/* Balance tooltip trigger */}
+                  {balanceInfo.length > 0 && (
+                    <div className="relative">
+                      <button
+                        onMouseEnter={() => setShowBalanceTooltip(true)}
+                        onMouseLeave={() => setShowBalanceTooltip(false)}
+                        className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold hover:bg-blue-200 transition-colors"
                       >
-                        <div className="w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                          {recipient.username?.charAt(0).toUpperCase() || recipient.email?.charAt(0).toUpperCase() || 'U'}
+                        i
+                      </button>
+                      {showBalanceTooltip && (
+                        <div className="absolute left-6 top-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-70">
+                          {balanceInfo.map((b, idx) => (
+                            <div key={idx} className="text-xs text-gray-700 py-0.5">
+                              <span className="font-medium">{b.name}:</span>{' '}
+                              <span className="text-blue-600 font-semibold">
+                                {b.balance} {b.unit === 'hours' ? 'hrs' : 'days'}
+                              </span>
+                              {b.monthlyAccrual && (
+                                <span className="text-gray-400 ml-1">
+                                  (accrued {b.accruedToDate}/{b.annualLimit ?? b.accruedToDate})
+                                </span>
+                              )}
+                              {b.isHardLimit === false && b.code === 'UNPAID' && (
+                                <span className="text-amber-500 ml-1">(soft limit)</span>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                        <div className="text-left">
-                          <p className="text-xs font-medium text-gray-900">{recipient.username || recipient.email}</p>
-                          {recipient.username && recipient.email && (
-                            <p className="text-xs text-gray-500">{recipient.email}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </DetailSection>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {leaveRequest.user?.employeeId && (
+                  <p className="text-sm text-gray-500">ID: {leaveRequest.user.employeeId}</p>
+                )}
+                {(leaveRequest.user?.department?.name || leaveRequest.user?.department) && (
+                  <p className="text-sm text-gray-500">
+                    {leaveRequest.user.department?.name || leaveRequest.user.department}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Leave Type & Approver */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">Leave Type</label>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium border border-blue-100">
+                    {leaveRequest.requestedLeaveType?.name || 'N/A'}
+                    {leaveRequest.requestedLeaveType?.category && (
+                      <span
+                        className="w-4 h-4 bg-blue-200 text-blue-700 rounded-full flex items-center justify-center text-[10px] font-bold cursor-help"
+                        title={`Category: ${leaveRequest.requestedLeaveType.category.name}`}
+                      >
+                        i
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">Approver</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-sm font-medium text-gray-900">
+                    {leaveRequest.approver?.username || 'Not assigned'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Section 2: Time Selection ────────────────────────── */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <SectionNumber number={2} />
+              <h2 className="text-lg font-bold text-gray-900">Time Selection</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">Start</label>
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                  <Calendar className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-900">
+                    {formatDateWithTime(leaveRequest.startDate, leaveRequest.startSession)}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">End</label>
+                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                  <Calendar className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-900">
+                    {formatEndDateWithTime(leaveRequest.endDate, leaveRequest.endSession)}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">Total Duration</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                  <span className="text-sm font-semibold text-gray-900">
+                    {totalDuration} {totalDuration === 1 ? 'Day' : 'Days'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Limit Exceeded Warning - shows breakdown when multiple leave types */}
+            {hasLimitExceeded() && (
+              <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                  <span className="text-sm font-bold text-yellow-800">Limit Exceeded</span>
+                </div>
+                <div className="space-y-1">
+                  {itemsBreakdown.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between">
+                      <span className={`text-sm ${item.leaveTypeCode === 'UNPAID' ? 'text-red-600' : 'text-yellow-700'}`}>
+                        {item.leaveTypeName}:
+                      </span>
+                      <span className={`text-sm font-semibold ${item.leaveTypeCode === 'UNPAID' ? 'text-red-700' : 'text-blue-700'}`}>
+                        {item.amountDays} {item.amountDays === 1 ? 'Day' : 'Days'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Single item breakdown (no limit exceeded) */}
+            {!hasLimitExceeded() && itemsBreakdown.length === 1 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-blue-700">{itemsBreakdown[0].leaveTypeName}:</span>
+                  <span className="text-sm font-semibold text-blue-700">
+                    {itemsBreakdown[0].amountDays} {itemsBreakdown[0].amountDays === 1 ? 'Day' : 'Days'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Section 3: Justification ─────────────────────────── */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <SectionNumber number={3} />
+              <h2 className="text-lg font-bold text-gray-900">Justification</h2>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">Reason</label>
+                <div className="px-4 py-3 bg-yellow-50 rounded-lg border border-yellow-200 min-h-15">
+                  <p className="text-sm text-gray-900">
+                    {leaveRequest.reason || <span className="text-gray-400 italic">No reason provided</span>}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">Work Solution / Handover</label>
+                <div className="px-4 py-3 bg-yellow-50 rounded-lg border border-yellow-200 min-h-15">
+                  <p className="text-sm text-gray-900">
+                    {leaveRequest.workSolution || <span className="text-gray-400 italic">No work solution provided</span>}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Rejection Reason */}
+          {leaveRequest.status === 'rejected' && leaveRequest.rejectedReason && (
+            <div className="bg-red-50 rounded-xl border border-red-200 shadow-sm p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <XCircle className="w-6 h-6 text-red-500" />
+                <h2 className="text-lg font-bold text-red-800">Rejection Reason</h2>
+              </div>
+              <p className="text-sm text-red-900 font-medium">{leaveRequest.rejectedReason}</p>
+            </div>
+          )}
+
+          {/* ── Section 4: Additional ────────────────────────────── */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <SectionNumber number={4} />
+              <h2 className="text-lg font-bold text-gray-900">Additional</h2>
+            </div>
+
+            {/* CC Recipients */}
+            <div>
+              <label className="block text-sm font-medium text-gray-500 mb-2">CC</label>
+              {leaveRequest.ccRecipients && leaveRequest.ccRecipients.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {leaveRequest.ccRecipients.map((recipient, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm border border-gray-200"
+                    >
+                      <Mail className="w-3.5 h-3.5 text-gray-400" />
+                      {recipient.email || recipient.username}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 italic">No CC recipients</p>
               )}
             </div>
 
-            {/* Request Information */}
-            <DetailSection title="Request Information" icon={Info}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Request metadata */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-500">
                 <div>
-                  <p className="text-xs text-gray-600 mb-1">Submitted On</p>
-                  <p className="text-xs font-medium text-gray-900">{formatDateTime(leaveRequest.createdAt)}</p>
+                  <span className="font-medium">Submitted:</span>{' '}
+                  {formatDateTime(leaveRequest.createdAt)}
                 </div>
                 {leaveRequest.updatedAt && leaveRequest.updatedAt !== leaveRequest.createdAt && (
                   <div>
-                    <p className="text-xs text-gray-600 mb-1">Last Updated</p>
-                    <p className="text-xs font-medium text-gray-900">{formatDateTime(leaveRequest.updatedAt)}</p>
+                    <span className="font-medium">Last Updated:</span>{' '}
+                    {formatDateTime(leaveRequest.updatedAt)}
                   </div>
                 )}
               </div>
-            </DetailSection>
+            </div>
           </div>
         </div>
 
-        {/* Actions - Only show edit/cancel for request owner */}
-        {leaveRequest.status === 'pending' && leaveRequest.userId === currentUser?.id && (
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={() => navigate(`/leave-requests/${leaveRequest.id}/edit`)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                <Edit className="w-4 h-4" />
-                Edit Request
-              </button>
-              <button
-                onClick={handleCancel}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 rounded-lg text-sm font-medium transition-colors"
-              >
-                <XCircle className="w-4 h-4" />
-                Cancel Request
-              </button>
-            </div>
-          </div>
-        )}
+        {/* ── Action Buttons (bottom bar) ────────────────────────── */}
+        {leaveRequest.status === 'pending' && (
+          <div className="mt-8 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+            {/* Owner actions */}
+            {leaveRequest.userId === currentUser?.id && (
+              <>
+                <button
+                  onClick={() => navigate('/leave-requests')}
+                  className="px-6 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => navigate(`/leave-requests/${leaveRequest.id}/edit`)}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  Edit Request
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel Request
+                </button>
+              </>
+            )}
 
-        {/* Actions - Approve/Reject for approvers (not the request owner) */}
-        {leaveRequest.status === 'pending' && leaveRequest.userId !== currentUser?.id && (
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions</h3>
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={handleApprove}
-                disabled={!!processingId}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {processingId === leaveRequest.id && <LoadingSpinner size="sm" />}
-                <CheckCircle className="w-4 h-4" />
-                {processingId === leaveRequest.id ? 'Approving...' : 'Approve'}
-              </button>
-              <button
-                onClick={handleReject}
-                disabled={!!processingId}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <XCircle className="w-4 h-4" />
-                Reject
-              </button>
-            </div>
+            {/* Approver actions */}
+            {leaveRequest.userId !== currentUser?.id && (
+              <>
+                <button
+                  onClick={() => navigate('/leave-requests')}
+                  className="px-6 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleReject}
+                  disabled={!!processingId}
+                  className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Reject
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={!!processingId}
+                  className="px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                >
+                  {processingId === leaveRequest.id && <LoadingSpinner size="sm" />}
+                  {processingId === leaveRequest.id ? 'Approving...' : 'Approve'}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
