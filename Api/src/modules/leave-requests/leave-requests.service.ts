@@ -20,7 +20,7 @@ import { RecipientType } from '@common/enums/recipient-type.enum';
 import { UserRole } from '@common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { NotificationsService } from '@modules/notifications/notifications.service';
-import { LeaveBalanceService } from './leave-balance.service';
+import { LeaveBalanceService, LeaveValidationResult } from './leave-balance.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
 import { LeaveRequestDetailsDto } from './dto/leave-request-details.dto';
@@ -196,6 +196,9 @@ export class LeaveRequestsService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
+    let savedRequest: LeaveRequest;
+    let validation: LeaveValidationResult;
+
     try {
       // Create leave request first to get ID for source_id in transactions
       const leaveRequest = this.leaveRequestRepository.create({
@@ -214,10 +217,10 @@ export class LeaveRequestsService {
         status: LeaveRequestStatus.PENDING,
       });
 
-      const savedRequest = await queryRunner.manager.save(leaveRequest);
+      savedRequest = await queryRunner.manager.save(leaveRequest);
 
       // Reserve balance under advisory lock (re-validates inside tx)
-      const validation = await this.leaveBalanceService.reserveBalanceForSubmit(
+      validation = await this.leaveBalanceService.reserveBalanceForSubmit(
         queryRunner.manager,
         userId,
         savedRequest.id,
@@ -304,36 +307,38 @@ export class LeaveRequestsService {
       }
 
       await queryRunner.commitTransaction();
-
-      // Reload with all generated fields
-      const reloadedRequest = await this.leaveRequestRepository.findOne({
-        where: { id: savedRequest.id },
-        relations: ['items', 'items.leaveType'],
-      });
-
-      await this.notificationsService.enqueueLeaveRequestCreatedNotification(
-        reloadedRequest.id,
-        reloadedRequest.approverId,
-        reloadedRequest.notificationRecipients || [],
-        {
-          requesterName: reloadedRequest.user.username,
-          approverName: reloadedRequest.approver.username,
-          startDate: reloadedRequest.startDate,
-          endDate: reloadedRequest.endDate,
-          leaveRequestId: reloadedRequest.id,
-          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${reloadedRequest.id}`,
-        },
-      );
-
-      this.logger.log(`Leave request ${reloadedRequest.id} created by user ${userId} — ${validation.durationDays} days, ${validation.items.length} item(s)`);
-      return reloadedRequest;
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       this.logger.error(`Failed to create leave request: ${error.message}`, error.stack);
       throw error;
     } finally {
       await queryRunner.release();
     }
+
+    // Post-commit: reload with all required relations (outside transaction scope)
+    const reloadedRequest = await this.leaveRequestRepository.findOne({
+      where: { id: savedRequest.id },
+      relations: ['items', 'items.leaveType', 'user', 'approver', 'notificationRecipients'],
+    });
+
+    await this.notificationsService.enqueueLeaveRequestCreatedNotification(
+      reloadedRequest.id,
+      reloadedRequest.approverId,
+      reloadedRequest.notificationRecipients || [],
+      {
+        requesterName: reloadedRequest.user.username,
+        approverName: reloadedRequest.approver.username,
+        startDate: reloadedRequest.startDate,
+        endDate: reloadedRequest.endDate,
+        leaveRequestId: reloadedRequest.id,
+        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${reloadedRequest.id}`,
+      },
+    );
+
+    this.logger.log(`Leave request ${reloadedRequest.id} created by user ${userId} — ${validation.durationDays} days, ${validation.items.length} item(s)`);
+    return reloadedRequest;
   }
 
 
