@@ -10,6 +10,7 @@ import {
   ParseIntPipe,
   ForbiddenException,
   Query,
+  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -26,12 +27,16 @@ import { ApproveLeaveRequestDto } from './dto/approve-leave-request.dto';
 import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
 import { LeaveRequestDetailsDto } from './dto/leave-request-details.dto';
+import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
+import { LeaveRequestListResponseDto } from './dto/leave-request-list.dto';
 import { Roles } from '../authorization';
 
 @ApiTags('Leave Requests')
 @ApiBearerAuth()
 @Controller('leave-requests')
 export class LeaveRequestsController {
+  private readonly logger = new Logger(LeaveRequestsController.name);
+
   constructor(
     private readonly leaveRequestsService: LeaveRequestsService,
     private readonly leaveBalanceService: LeaveBalanceService,
@@ -103,30 +108,29 @@ export class LeaveRequestsController {
 
   @Get()
   @ApiOperation({
-    summary: 'Get all leave requests for current user',
-    description: 'Retrieve all leave requests created by the authenticated user.',
+    summary: 'List leave requests (personal or management view)',
+    description:
+      'Returns a paginated, filtered list of leave requests. ' +
+      'view=personal returns the authenticated user\'s own requests. ' +
+      'view=management returns team/all requests (requires HR, Admin, Dept Leader, or Approver role).',
   })
-  @ApiResponse({ status: 200, description: 'List of leave requests retrieved successfully.' })
+  @ApiResponse({ status: 200, description: 'Paginated leave request list.', type: LeaveRequestListResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async findAll(@Request() req) {
-    console.log('[LeaveRequestsController] findAll called for user:', req.user?.id);
+  @ApiResponse({ status: 403, description: 'Not authorized for management view.' })
+  async findAll(
+    @Request() req,
+    @Query() query: ListLeaveRequestsQueryDto,
+  ): Promise<LeaveRequestListResponseDto> {
+    this.logger.log(`[findAll] userId=${req.user?.id} role=${req.user?.role} query=${JSON.stringify(query)}`);
     try {
-      const result = await this.leaveRequestsService.findUserLeaveRequests(req.user.id);
-      console.log('[LeaveRequestsController] findAll result count:', result?.length);
-
-      // Transform each request to include ccUserIds from notificationRecipients
-      const transformedResult = result.map((request) => {
-        const ccUserIds =
-          request.notificationRecipients?.filter((r) => r.type === 'CC').map((r) => r.userId) || [];
-        return {
-          ...request,
-          ccUserIds,
-        };
-      });
-
-      return transformedResult;
+      const result = await this.leaveRequestsService.findLeaveRequests(
+        { id: req.user.id, role: req.user.role },
+        query,
+      );
+      this.logger.log(`[findAll] OK – returned ${result?.data?.length ?? 0} items (total=${result?.page?.total})`);
+      return result;
     } catch (error) {
-      console.error('[LeaveRequestsController] findAll error:', error);
+      this.logger.error(`[findAll] ERROR userId=${req.user?.id}`, error?.stack ?? error);
       throw error;
     }
   }
@@ -246,31 +250,6 @@ export class LeaveRequestsController {
   }
 
 
-  @Get('management')
-  @ApiOperation({
-    summary: 'Get leave requests for management view',
-    description:
-      'For HR: returns all leave requests (all statuses). For Approvers: returns all requests where they are the approver (all statuses).',
-  })
-  @ApiResponse({ status: 200, description: 'List of leave requests retrieved successfully.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async findForManagement(@Request() req) {
-    console.log(
-      '[LeaveRequestsController] findForManagement called for user:',
-      req.user?.id,
-      'role:',
-      req.user?.role,
-    );
-    try {
-      const result = await this.leaveRequestsService.findRequestsForManagement(req.user);
-      console.log('[LeaveRequestsController] findForManagement result count:', result?.length);
-      return result;
-    } catch (error) {
-      console.error('[LeaveRequestsController] findForManagement error:', error);
-      throw error;
-    }
-  }
-
   @Get(':id')
   @ApiOperation({
     summary: 'Get leave request by ID',
@@ -281,7 +260,15 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 404, description: 'Leave request not found.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async findOne(@Param('id', ParseIntPipe) id: number): Promise<LeaveRequestDetailsDto> {
-    return this.leaveRequestsService.findOne(id);
+    this.logger.log(`[findOne] id=${id}`);
+    try {
+      const result = await this.leaveRequestsService.findOne(id);
+      this.logger.log(`[findOne] OK – id=${id}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[findOne] ERROR id=${id}`, error?.stack ?? error);
+      throw error;
+    }
   }
 
   @Put(':id')

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { leaveRequestService } from '../services';
 import { LoadingSpinner, Modal } from '../components';
@@ -15,43 +15,22 @@ import {
   ChevronRight,
   Info,
   ChevronDown,
+  Search,
+  FileText,
 } from 'lucide-react';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-/** Format YYYY-MM-DD → DD/MM/YYYY */
-const fmtDate = (d) => {
-  if (!d) return '';
-  const dt = new Date(d + 'T00:00:00');
-  return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
-};
-
-/** Format ID as #LV-001 */
-const fmtId = (id) => `#LV-${String(id).padStart(3, '0')}`;
-
-/** Format duration_days as "X Day(s)" */
-const fmtDuration = (days) => {
-  if (days == null) return '-';
-  const n = Number(days);
-  if (n === 0.5) return '0.5 Day';
-  if (n === 1) return '1 Day';
-  return `${n % 1 === 0 ? n : n} Days`;
-};
-
 /**
- * Build display string for Leave Type from items + requestedLeaveType.
- * e.g. "Policy Leave + Paid Leave", "Paid Leave", "Sick Leave"
+ * Format ISO datetime from API → "DD/MM/YYYY HH:MM"
+ * Uses string-parse so timezone offset in the ISO string is respected as-is.
+ * e.g. "2026-03-07T08:30:00+07:00" → "07/03/2026 08:30"
  */
-const getLeaveTypeDisplay = (request) => {
-  const items = request.items || [];
-  if (items.length > 1) {
-    const names = items.map((item) => item.leaveType?.name || item.note || 'Unknown');
-    return [...new Set(names)].join(' + ');
-  }
-  if (items.length === 1) {
-    return items[0].leaveType?.name || items[0].note || 'Unknown';
-  }
-  return request.requestedLeaveType?.name || 'Unknown';
+const fmtDateTime = (isoStr) => {
+  if (!isoStr) return '';
+  const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return isoStr;
+  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
 };
 
 // ── Status Badge (plain coloured text, matching screenshot) ─────────────
@@ -94,15 +73,13 @@ const ActionMenu = ({ request, onEdit, onCancel, onApprove, onReject, view }) =>
   }, []);
 
   const items = [];
+  const { permissions } = request;
 
   if (view === 'my-requests') {
-    if (request.status === 'pending') {
-      items.push({ icon: Edit, label: 'Update', onClick: () => onEdit(request) });
+    if (permissions?.canUpdate)
+      items.push({ icon: Edit,   label: 'Update', onClick: () => onEdit(request) });
+    if (permissions?.canCancel)
       items.push({ icon: Trash2, label: 'Cancel', onClick: () => onCancel(request.id), danger: true });
-    }
-    if (request.status === 'approved') {
-      items.push({ icon: Trash2, label: 'Cancel', onClick: () => onCancel(request.id), danger: true });
-    }
   }
 
   if (view === 'management' && request.status === 'pending') {
@@ -152,21 +129,24 @@ const ActionMenu = ({ request, onEdit, onCancel, onApprove, onReject, view }) =>
 const LeaveRequestManagementPage = () => {
   const navigate = useNavigate();
 
-  // Data
-  const [view, setView] = useState('my-requests');
+  // ── View & data ───────────────────────────────────────
+  const [view, setView]               = useState('my-requests'); // 'my-requests' | 'management'
   const [leaveRequests, setLeaveRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [leaveCategories, setLeaveCategories] = useState([]);
+  const [total, setTotal]             = useState(0);
+  const [loading, setLoading]         = useState(true);
+  const [leaveTypes, setLeaveTypes]   = useState([]); // [{id, name}]
 
-  // Filters
-  const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // ── Filters ────────────────────────────────────────
+  const [searchInput, setSearchInput]         = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState('all'); // leave type ID or 'all'
+  const [statusFilter, setStatusFilter]       = useState('all');
+  const [dateFrom, setDateFrom]               = useState('');
+  const [dateTo, setDateTo]                   = useState('');
 
-  // Pagination
-  const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  // ── Pagination ───────────────────────────────────────
+  const [page, setPage]       = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Modals
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -189,72 +169,58 @@ const LeaveRequestManagementPage = () => {
   }, []);
 
   // ── Data loading ───────────────────────────────────────────
-  useEffect(() => { fetchData(); }, [view]);
+  // ── Debounce search ────────────────────────────────────────
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchInput), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-  const fetchData = async () => {
+  // ── Load leave types once (for filter dropdown) ─────────────
+  useEffect(() => {
+    leaveRequestService.getLeaveTypes()
+      .then((res) => {
+        const cats = res.data || res || [];
+        const flat = [];
+        cats.forEach((cat) =>
+          (cat.leaveTypes || []).forEach((lt) => flat.push({ id: lt.id, name: lt.name }))
+        );
+        setLeaveTypes(flat.sort((a, b) => a.name.localeCompare(b.name)));
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Reset to page 1 when filters / view change ──────────────
+  useEffect(() => {
+    setPage(1);
+  }, [view, leaveTypeFilter, statusFilter, dateFrom, dateTo, debouncedSearch, pageSize]);
+
+  // ── Fetch from server ───────────────────────────────────────
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [reqRes, typeRes] = await Promise.all([
-        view === 'my-requests'
-          ? leaveRequestService.getMyLeaveRequests()
-          : leaveRequestService.getManagementRequests(),
-        leaveCategories.length === 0 ? leaveRequestService.getLeaveTypes() : Promise.resolve(null),
-      ]);
-      setLeaveRequests(reqRes.data || reqRes);
-      if (typeRes) setLeaveCategories(typeRes.data || typeRes || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
+      const res = await leaveRequestService.getLeaveRequestsList({
+        view:      view === 'my-requests' ? 'personal' : 'management',
+        page,
+        pageSize,
+        status:    statusFilter    !== 'all' ? statusFilter    : undefined,
+        leaveType: leaveTypeFilter !== 'all' ? leaveTypeFilter : undefined,
+        from:      dateFrom  || undefined,
+        to:        dateTo    || undefined,
+        q:         debouncedSearch || undefined,
+      });
+      setLeaveRequests(res.data || []);
+      setTotal(res.page?.total ?? 0);
+    } catch (err) {
+      console.error('Error fetching leave requests:', err);
       toast.error('Failed to load leave requests');
     } finally {
       setLoading(false);
     }
-  };
+  }, [view, page, pageSize, statusFilter, leaveTypeFilter, dateFrom, dateTo, debouncedSearch]);
 
-  // Reset page when filters change
-  useEffect(() => { setPage(1); }, [leaveTypeFilter, statusFilter, dateFrom, dateTo, view]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Build flat list of leave type names for the filter dropdown ─────
-  const allLeaveTypeNames = useMemo(() => {
-    const names = new Set();
-    leaveCategories.forEach((cat) => {
-      (cat.leaveTypes || []).forEach((lt) => names.add(lt.name));
-    });
-    return [...names].sort();
-  }, [leaveCategories]);
-
-  // ── Filtered data ──────────────────────────────────────────
-  const filteredRequests = useMemo(() => {
-    let data = [...leaveRequests];
-
-    // Leave type filter
-    if (leaveTypeFilter !== 'all') {
-      data = data.filter((r) => {
-        const display = getLeaveTypeDisplay(r).toLowerCase();
-        return display.includes(leaveTypeFilter.toLowerCase());
-      });
-    }
-
-    // Status filter
-    if (statusFilter !== 'all') {
-      data = data.filter((r) => {
-        const s = r.status?.toLowerCase();
-        return s === statusFilter || (statusFilter === 'cancelled' && s === 'canceled');
-      });
-    }
-
-    // Date range
-    if (dateFrom) data = data.filter((r) => r.startDate >= dateFrom);
-    if (dateTo) data = data.filter((r) => r.endDate <= dateTo);
-
-    return data;
-  }, [leaveRequests, leaveTypeFilter, statusFilter, dateFrom, dateTo]);
-
-  // ── Paginated slice ────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / rowsPerPage));
-  const paginatedRequests = filteredRequests.slice(
-    (page - 1) * rowsPerPage,
-    page * rowsPerPage,
-  );
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // ── Actions ────────────────────────────────────────────────
   const handleEdit = (request) => navigate(`/leave-requests/${request.id}/edit`);
@@ -329,24 +295,12 @@ const LeaveRequestManagementPage = () => {
   };
 
   // ── Render ─────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center py-20">
-        <div className="text-center">
-          <LoadingSpinner />
-          <p className="mt-4 text-sm text-gray-500">Loading leave requests...</p>
-        </div>
-      </div>
-    );
-  }
-
   const viewLabel = view === 'my-requests' ? 'Personal view' : 'Management view';
 
   return (
     <div>
       {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Leave Requests</h1>
+      <div className="flex items-center justify-between mb-6">        <h1 className="text-2xl font-bold text-gray-900">Leave Requests</h1>
         <div className="flex items-center gap-3">
           {/* View Selector */}
           <div className="relative" ref={viewDropdownRef}>
@@ -362,9 +316,7 @@ const LeaveRequestManagementPage = () => {
                 <button
                   onClick={() => { setView('my-requests'); setShowViewDropdown(false); }}
                   className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                    view === 'my-requests'
-                      ? 'font-bold text-gray-900 bg-gray-50'
-                      : 'text-gray-700 hover:bg-gray-50'
+                    view === 'my-requests' ? 'font-bold text-gray-900 bg-gray-50' : 'text-gray-700 hover:bg-gray-50'
                   }`}
                 >
                   Personal view
@@ -372,9 +324,7 @@ const LeaveRequestManagementPage = () => {
                 <button
                   onClick={() => { setView('management'); setShowViewDropdown(false); }}
                   className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                    view === 'management'
-                      ? 'font-bold text-gray-900 bg-gray-50'
-                      : 'text-gray-700 hover:bg-gray-50'
+                    view === 'management' ? 'font-bold text-gray-900 bg-gray-50' : 'text-gray-700 hover:bg-gray-50'
                   }`}
                 >
                   Management view
@@ -383,8 +333,8 @@ const LeaveRequestManagementPage = () => {
             )}
           </div>
 
-          {/* Create Button */}
-          {view === 'my-requests' && (
+          {/* Action Button */}
+          {view === 'my-requests' ? (
             <button
               onClick={() => navigate('/leave-requests/create')}
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
@@ -392,12 +342,34 @@ const LeaveRequestManagementPage = () => {
               <Plus className="w-4 h-4" />
               Create Request
             </button>
+          ) : (
+            <button
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+              title="Export report (coming soon)"
+            >
+              <FileText className="w-4 h-4" />
+              Report
+            </button>
           )}
         </div>
       </div>
 
-      {/* ── Filters ────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-4 mb-5">
+      {/* ── Filters ──────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        {/* Search — management view only */}
+        {view === 'management' && (
+          <div className="relative flex-1 min-w-[220px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search by name or reason"
+              className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        )}
+
         {/* Leave Type Filter */}
         <select
           value={leaveTypeFilter}
@@ -405,8 +377,8 @@ const LeaveRequestManagementPage = () => {
           className="px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[180px]"
         >
           <option value="all">Leave Type: All</option>
-          {allLeaveTypeNames.map((name) => (
-            <option key={name} value={name}>{name}</option>
+          {leaveTypes.map((lt) => (
+            <option key={lt.id} value={String(lt.id)}>{lt.name}</option>
           ))}
         </select>
 
@@ -431,7 +403,6 @@ const LeaveRequestManagementPage = () => {
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
             className="text-sm text-gray-700 border-none focus:outline-none bg-transparent w-[130px]"
-            placeholder="Start"
           />
           <span className="text-gray-400">–</span>
           <input
@@ -439,14 +410,20 @@ const LeaveRequestManagementPage = () => {
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
             className="text-sm text-gray-700 border-none focus:outline-none bg-transparent w-[130px]"
-            placeholder="End"
           />
         </div>
       </div>
 
-      {/* ── Table ──────────────────────────────────────────── */}
+      {/* ── Table ───────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-visible">
-        {filteredRequests.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center items-center py-20">
+            <div className="text-center">
+              <LoadingSpinner />
+              <p className="mt-4 text-sm text-gray-500">Loading leave requests...</p>
+            </div>
+          </div>
+        ) : leaveRequests.length === 0 ? (
           <div className="text-center py-16 px-4">
             <div className="inline-flex items-center justify-center w-14 h-14 bg-gray-100 rounded-full mb-4">
               <Calendar className="w-7 h-7 text-gray-400" />
@@ -476,67 +453,61 @@ const LeaveRequestManagementPage = () => {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Leave Type</th>
                     {view === 'management' && (
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Requester</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee Name</th>
                     )}
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Start Date</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">End Date</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Start Time</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">End Time</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Duration</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Approver</th>
+                    {view === 'my-requests' && (
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Approver</th>
+                    )}
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {paginatedRequests.map((request) => (
+                  {leaveRequests.map((request) => (
                     <tr
                       key={request.id}
                       className="hover:bg-gray-50/50 transition-colors cursor-pointer"
-                      onClick={() => navigate(`/leave-requests/${request.id}${view === 'management' ? '?view=management' : ''}`)}
+                      onClick={() =>
+                        navigate(`/leave-requests/${request.id}${view === 'management' ? '?view=management' : ''}`)
+                      }
                     >
-                      {/* ID */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                        {fmtId(request.id)}
+                        #{request.code}
                       </td>
-
-                      {/* Leave Type */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {getLeaveTypeDisplay(request)}
+                      <td className="px-6 py-4 text-sm text-gray-700">
+                        {(request.leaveTypes ?? []).map((name, i) => (
+                          <div key={i}>{name}</div>
+                        ))}
                       </td>
-
-                      {/* Requester — management only */}
                       {view === 'management' && (
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                          {request.user?.username || 'Unknown'}
+                          {request.employeeName || '—'}
                         </td>
                       )}
-
-                      {/* Start Date */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {fmtDate(request.startDate)}
+                        {fmtDateTime(request.startTime)}
                       </td>
-
-                      {/* End Date */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {fmtDate(request.endDate)}
+                        {fmtDateTime(request.endTime)}
                       </td>
-
-                      {/* Duration */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {fmtDuration(request.durationDays)}
+                        {request.durationLabel}
                       </td>
-
-                      {/* Approver */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {request.approver?.username || 'N/A'}
-                      </td>
-
-                      {/* Status */}
+                      {view === 'my-requests' && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {request.approverName || '—'}
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <StatusBadge status={request.status} rejectedReason={request.rejectedReason} />
                       </td>
-
-                      {/* Actions */}
-                      <td className="px-6 py-4 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="px-6 py-4 whitespace-nowrap text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <ActionMenu
                           request={request}
                           view={view}
@@ -552,13 +523,13 @@ const LeaveRequestManagementPage = () => {
               </table>
             </div>
 
-            {/* ── Pagination ─────────────────────────────────── */}
+            {/* ── Pagination ────────────────────────────────── */}
             <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <span>Rows per page:</span>
                 <select
-                  value={rowsPerPage}
-                  onChange={(e) => { setRowsPerPage(Number(e.target.value)); setPage(1); }}
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
                   className="border border-gray-300 rounded-md px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {[10, 20, 50].map((n) => (
@@ -577,10 +548,7 @@ const LeaveRequestManagementPage = () => {
                 </button>
 
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter((p) => {
-                    if (p === 1 || p === totalPages) return true;
-                    return Math.abs(p - page) <= 1;
-                  })
+                  .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
                   .reduce((acc, p, idx, arr) => {
                     if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...');
                     acc.push(p);
@@ -594,9 +562,7 @@ const LeaveRequestManagementPage = () => {
                         key={item}
                         onClick={() => setPage(item)}
                         className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${
-                          page === item
-                            ? 'bg-blue-600 text-white'
-                            : 'text-gray-700 hover:bg-gray-100'
+                          page === item ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
                         }`}
                       >
                         {item}
@@ -621,16 +587,20 @@ const LeaveRequestManagementPage = () => {
       {showRejectModal && selectedRequest && (
         <Modal
           isOpen={showRejectModal}
-          onClose={() => { setShowRejectModal(false); setRejectedReason(''); setSelectedRequest(null); }}
+          onClose={() => {
+            setShowRejectModal(false);
+            setRejectedReason('');
+            setSelectedRequest(null);
+          }}
           title="Reject Leave Request"
         >
           <div className="space-y-4">
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <p className="text-sm text-yellow-800">
-                <strong>Employee:</strong> {selectedRequest.user?.username || 'Unknown'}
+                <strong>Employee:</strong> {selectedRequest.employeeName || '—'}
               </p>
               <p className="text-sm text-yellow-800">
-                <strong>Period:</strong> {fmtDate(selectedRequest.startDate)} – {fmtDate(selectedRequest.endDate)}
+                <strong>Period:</strong> {fmtDateTime(selectedRequest.startTime)} – {fmtDateTime(selectedRequest.endTime)}
               </p>
             </div>
             <div>
@@ -645,7 +615,9 @@ const LeaveRequestManagementPage = () => {
               />
               <div className="flex justify-between mt-1">
                 <p className="text-xs text-gray-500">Minimum 10 characters</p>
-                <p className={`text-xs ${rejectedReason.length > 450 ? 'text-amber-500' : rejectedReason.length < 10 ? 'text-red-400' : 'text-gray-400'}`}>
+                <p className={`text-xs ${
+                  rejectedReason.length > 450 ? 'text-amber-500' : rejectedReason.length < 10 ? 'text-red-400' : 'text-gray-400'
+                }`}>
                   {rejectedReason.length}/500
                 </p>
               </div>

@@ -6,7 +6,6 @@ export { default as AddEmployeePage } from './AddEmployeePage';
 export { default as EditEmployeePage } from './EditEmployeePage';
 export { default as EmployeeDetailPage } from './EmployeeDetailPage';
 export { default as ProfilePage } from './ProfilePage';
-export { default as LeaveRequestsPage } from './LeaveRequestsPage';
 export { default as LeaveRequestManagementPage } from './LeaveRequestManagementPage';
 export { default as LeaveRequestDetailPage } from './LeaveRequestDetailPage';
 export { default as CreateLeaveRequestPage } from './CreateLeaveRequestPage';

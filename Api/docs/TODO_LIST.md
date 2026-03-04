@@ -61,6 +61,6 @@ locking trong db tránh 2 transaction
  tối ưu truy vấn db
 lưu activation mail vào email queue
 
-
+fix luồng lưu mail ngoài transaction
 
 

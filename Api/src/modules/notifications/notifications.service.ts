@@ -339,9 +339,10 @@ export class NotificationsService implements OnModuleDestroy {
   /**
    * Enqueue leave request notification (for approver + HR/CC)
    */
-  async enqueueLeaveRequestNotification(
+  async enqueueLeaveRequestCreatedNotification(
     leaveRequestId: number,
     recipientUserId: number,
+    recipients: LeaveRequestNotificationRecipient[],
     context: {
       requesterName: string;
       approverName: string;

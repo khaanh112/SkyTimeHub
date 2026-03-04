@@ -1,22 +1,24 @@
 import api from './api';
 
 const leaveRequestService = {
-  // Get all leave requests for current user
-  getMyLeaveRequests: async () => {
-    const response = await api.get('/leave-requests');
-    return response.data;
-  },
-
-  // Get leave requests for management view (HR: all, Approver: assigned to them)
-  getManagementRequests: async () => {
-    const response = await api.get('/leave-requests/management');
-    return response.data;
-  },
-
-  // Get pending approvals for current user (deprecated, use getManagementRequests)
-  getPendingApprovals: async () => {
-    const response = await api.get('/leave-requests/pending-approvals');
-    return response.data;
+  // List leave requests with server-side pagination & filters
+  // params: { view, page, pageSize, status, leaveType, from, to, q, sort }
+  // view: 'personal' | 'management'
+  // status: comma-separated string e.g. 'pending,approved'
+  // leaveType: comma-separated leave type IDs e.g. '1,3'
+  getLeaveRequestsList: async (params = {}) => {
+    const query = {};
+    if (params.view)      query.view      = params.view;
+    if (params.page)      query.page      = params.page;
+    if (params.pageSize)  query.pageSize  = params.pageSize;
+    if (params.status)    query.status    = params.status;
+    if (params.leaveType) query.leaveType = params.leaveType;
+    if (params.from)      query.from      = params.from;
+    if (params.to)        query.to        = params.to;
+    if (params.q)         query.q         = params.q;
+    if (params.sort)      query.sort      = params.sort;
+    const response = await api.get('/leave-requests', { params: query });
+    return response.data; // { success, data, page: { page, pageSize, total } }
   },
 
   // Get available leave types grouped by category
@@ -51,18 +53,13 @@ const leaveRequestService = {
 
   // Approve a leave request (with optimistic locking version)
   approveLeaveRequest: async (id, version) => {
-    const response = await api.patch(`/leave-requests/${id}/approve`, {
-      version,
-    });
+    const response = await api.patch(`/leave-requests/${id}/approve`, { version });
     return response.data;
   },
 
   // Reject a leave request (with optimistic locking version)
   rejectLeaveRequest: async (id, rejectedReason, version) => {
-    const response = await api.patch(`/leave-requests/${id}/reject`, {
-      rejectedReason,
-      version,
-    });
+    const response = await api.patch(`/leave-requests/${id}/reject`, { rejectedReason, version });
     return response.data;
   },
 

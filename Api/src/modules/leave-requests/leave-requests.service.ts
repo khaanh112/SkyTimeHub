@@ -24,7 +24,18 @@ import { LeaveBalanceService } from './leave-balance.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
 import { LeaveRequestDetailsDto } from './dto/leave-request-details.dto';
+import {
+  LeaveRequestListItemDto,
+  LeaveRequestListResponseDto,
+  LeaveRequestPermissionsDto,
+} from './dto/leave-request-list.dto';
+import {
+  ListLeaveRequestsQueryDto,
+  LeaveRequestView,
+} from './dto/list-leave-requests-query.dto';
 import { AppException, ErrorCode } from '@/common';
+import { Department } from '@entities/departments.entity';
+import { buildDateTime, buildDurationLabel } from './utils/formatter';
 
 @Injectable()
 export class LeaveRequestsService {
@@ -300,8 +311,19 @@ export class LeaveRequestsService {
         relations: ['items', 'items.leaveType'],
       });
 
-      // Enqueue notifications (async, outside transaction)
-      await this.enqueueLeaveRequestNotifications(reloadedRequest, requester, userApprover.approver);
+      await this.notificationsService.enqueueLeaveRequestCreatedNotification(
+        reloadedRequest.id,
+        reloadedRequest.approverId,
+        reloadedRequest.notificationRecipients || [],
+        {
+          requesterName: reloadedRequest.user.username,
+          approverName: reloadedRequest.approver.username,
+          startDate: reloadedRequest.startDate,
+          endDate: reloadedRequest.endDate,
+          leaveRequestId: reloadedRequest.id,
+          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${reloadedRequest.id}`,
+        },
+      );
 
       this.logger.log(`Leave request ${reloadedRequest.id} created by user ${userId} — ${validation.durationDays} days, ${validation.items.length} item(s)`);
       return reloadedRequest;
@@ -529,30 +551,7 @@ export class LeaveRequestsService {
     return updatedRequest;
   }
 
-  /**
-   * Enqueue email notifications for new leave request
-   */
-  private async enqueueLeaveRequestNotifications(
-    leaveRequest: LeaveRequest,
-    requester: User,
-    approver: User,
-  ) {
-    const context = {
-      requesterName: requester.username,
-      approverName: approver.username,
-      startDate: leaveRequest.startDate,
-      endDate: leaveRequest.endDate,
-      leaveRequestId: leaveRequest.id, //for idempotency key
-      dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
-    };
-
-    // Notify approver
-    await this.notificationsService.enqueueLeaveRequestNotification(
-      leaveRequest.id,
-      approver.id,
-      context,
-    );
-  }
+ 
 
   /**
    * Approve leave request with optimistic locking
@@ -865,67 +864,277 @@ export class LeaveRequestsService {
     });
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  LIST (paginated, filtered, personal / management view)
+  // ═══════════════════════════════════════════════════════════
+
   /**
-   * Find all leave requests for a user
+   * Unified list endpoint for both personal and management views.
+   * Returns a paginated, filtered, searchable list of leave requests
+   * with per-row permission flags.
    */
-  async findUserLeaveRequests(userId: number): Promise<LeaveRequest[]> {
-    this.logger.log(`[findUserLeaveRequests] Called for userId: ${userId}`);
+  async findLeaveRequests(
+    currentUser: { id: number; role: UserRole },
+    query: ListLeaveRequestsQueryDto,
+  ): Promise<LeaveRequestListResponseDto> {
+    this.logger.log(`[findLeaveRequests] START userId=${currentUser.id} role=${currentUser.role} query=${JSON.stringify(query)}`);
     try {
-      const results = await this.leaveRequestRepository.find({
-        where: { userId },
-        relations: ['approver', 'notificationRecipients', 'items', 'items.leaveType', 'requestedLeaveType', 'requestedLeaveType.category'],
-        order: { createdAt: 'DESC' },
-      });
-      this.logger.log(`[findUserLeaveRequests] Query completed, found ${results.length} results`);
-      return results;
-    } catch (error) {
-      this.logger.error(`[findUserLeaveRequests] Error: ${error.message}`, error.stack);
-      throw error;
+    const {
+      view = LeaveRequestView.PERSONAL,
+      page = 1,
+      pageSize = 10,
+      status,
+      leaveType,
+      from,
+      to,
+      q,
+      sort = '-startTime',
+    } = query;
+
+    // ── Authorization ──────────────────────────────────────────
+    if (view === LeaveRequestView.MANAGEMENT) {
+      const allowed = await this.canAccessManagementView(currentUser);
+      if (!allowed) {
+        throw new ForbiddenException('You do not have permission to access management view');
+      }
     }
-  }
 
-  /**
-   * Find leave requests for management view
-   * - HR: all requests (all statuses)
-   * - Approver: all requests where they are the approver (all statuses)
-   */
-  async findRequestsForManagement(user: { id: number; role: UserRole }): Promise<LeaveRequest[]> {
-    this.logger.log(
-      `[findRequestsForManagement] Called for userId: ${user.id}, role: ${user.role}`,
-    );
-    try {
-      let results: LeaveRequest[];
+    // ── QueryBuilder ───────────────────────────────────────────
+    const qb = this.leaveRequestRepository
+      .createQueryBuilder('lr')
+      .leftJoinAndSelect('lr.items', 'item')
+      .leftJoinAndSelect('item.leaveType', 'itemType')
+      .leftJoinAndSelect('lr.approver', 'approver')
+      .leftJoinAndSelect('lr.user', 'employee');
 
-      if (user.role === 'hr') {
-        // HR can see all requests regardless of status
-        this.logger.log(`[findRequestsForManagement] User is HR, fetching all requests`);
-        results = await this.leaveRequestRepository.find({
-          relations: ['user', 'approver', 'items', 'items.leaveType', 'requestedLeaveType', 'requestedLeaveType.category'],
-          order: { createdAt: 'DESC' },
-        });
-      } else {
-        // Approvers see all requests where they are the approver (all statuses)
-        this.logger.log(
-          `[findRequestsForManagement] User is approver, fetching their assigned requests`,
-        );
-        results = await this.leaveRequestRepository.find({
-          where: {
-            approverId: user.id,
-          },
-          relations: ['user', 'approver', 'items', 'items.leaveType', 'requestedLeaveType', 'requestedLeaveType.category'],
-          order: { createdAt: 'DESC' },
+    // ── View scoping ───────────────────────────────────────────
+    if (view === LeaveRequestView.PERSONAL) {
+      qb.andWhere('lr.user_id = :userId', { userId: currentUser.id });
+    } else {
+      // management view
+      if (
+        currentUser.role !== UserRole.ADMIN &&
+        currentUser.role !== UserRole.HR
+      ) {
+        // Department leader / approver: only their assigned requests
+        qb.andWhere('lr.approver_id = :approverId', {
+          approverId: currentUser.id,
         });
       }
+      // Admin / HR: no extra filter → see all
+    }
 
-      this.logger.log(
-        `[findRequestsForManagement] Query completed, found ${results.length} results`,
+    // ── Status filter ──────────────────────────────────────────
+    if (status?.length) {
+      qb.andWhere('lr.status IN (:...statuses)', { statuses: status });
+    }
+
+    // ── Leave type filter (by items) ───────────────────────────
+    if (leaveType?.length) {
+      // Request must have at least one item whose leaveTypeId is in the list
+      qb.andWhere(
+        `lr.id IN (
+          SELECT lri.leave_request_id
+          FROM leave_request_items lri
+          WHERE lri.leave_type_id IN (:...leaveTypeIds)
+        )`,
+        { leaveTypeIds: leaveType },
       );
-      return results;
+    }
+
+    // ── Date range filter ──────────────────────────────────────
+    if (from) {
+      qb.andWhere('lr.end_date >= :from', { from });
+    }
+    if (to) {
+      qb.andWhere('lr.start_date <= :to', { to });
+    }
+
+    // ── Search ─────────────────────────────────────────────────
+    if (q?.trim()) {
+      const search = `%${q.trim()}%`;
+      if (view === LeaveRequestView.MANAGEMENT) {
+        // Search by code (ID), reason, or employee name
+        qb.andWhere(
+          `(
+            CAST(lr.id AS TEXT) ILIKE :search
+            OR lr.reason ILIKE :search
+            OR employee.username ILIKE :search
+          )`,
+          { search },
+        );
+      } else {
+        // Personal view: search by code (ID) or reason
+        qb.andWhere(
+          `(
+            CAST(lr.id AS TEXT) ILIKE :search
+            OR lr.reason ILIKE :search
+          )`,
+          { search },
+        );
+      }
+    }
+
+    // ── Sort ───────────────────────────────────────────────────
+    // NOTE: QueryBuilder orderBy requires entity property names (camelCase),
+    // NOT database column names (snake_case).
+    const sortMapping: Record<string, string> = {
+      startTime: 'lr.startDate',
+      createdAt: 'lr.createdAt',
+      status: 'lr.status',
+      endTime: 'lr.endDate',
+    };
+
+    let sortField = 'lr.startDate';
+    let sortOrder: 'ASC' | 'DESC' = 'DESC';
+
+    if (sort) {
+      const desc = sort.startsWith('-');
+      const field = desc ? sort.slice(1) : sort;
+      sortField = sortMapping[field] ?? 'lr.startDate';
+      sortOrder = desc ? 'DESC' : 'ASC';
+    }
+    qb.orderBy(sortField, sortOrder);
+    // Secondary sort by id for stable pagination
+    qb.addOrderBy('lr.id', 'DESC');
+
+    // ── Count total (before pagination) ────────────────────────
+    const total = await qb.getCount();
+
+    // ── Pagination ─────────────────────────────────────────────
+    qb.skip((page - 1) * pageSize).take(pageSize);
+
+    const leaveRequests = await qb.getMany();
+
+    // ── Map to DTOs ────────────────────────────────────────────
+    const now = new Date();
+    const isManagement = view === LeaveRequestView.MANAGEMENT;
+
+    const data: LeaveRequestListItemDto[] = leaveRequests.map((lr) => {
+      // Collect distinct leave type names from items
+      const leaveTypeNames = [
+        ...new Set(
+          (lr.items ?? [])
+            .map((item) => item.leaveType?.name)
+            .filter(Boolean) as string[],
+        ),
+      ];
+
+      // Build human-readable start/end time
+      const startTime = buildDateTime(lr.startDate, lr.startSession, 'start');
+      const endTime = buildDateTime(lr.endDate, lr.endSession, 'end');
+
+      // Duration label
+      const durationLabel = buildDurationLabel(lr.durationDays);
+
+      // Permissions
+      const permissions = this.computePermissions(lr, now);
+
+      return {
+        id: lr.id,
+        code: `LV-${String(lr.id).padStart(3, '0')}`,
+        leaveTypes: leaveTypeNames,
+        startTime,
+        endTime,
+        durationLabel,
+        approverName: lr.approver?.username ?? '',
+        ...(isManagement ? { employeeName: lr.user?.username ?? '' } : {}),
+        status: lr.status,
+        rejectedReason: lr.rejectedReason ?? null,
+        version: lr.version,
+        permissions,
+      };
+    });
+
+    const response = {
+      success: true as const,
+      data,
+      page: { page, pageSize, total },
+    };
+    this.logger.log(`[findLeaveRequests] OK – returned ${data.length} items, total=${total}`);
+    return response;
     } catch (error) {
-      this.logger.error(`[findRequestsForManagement] Error: ${error.message}`, error.stack);
+      this.logger.error(`[findLeaveRequests] ERROR userId=${currentUser.id}`, error?.stack ?? error);
       throw error;
     }
   }
+
+  // ── Private helpers ──────────────────────────────────────────
+
+  /**
+   * Check if the user is allowed to access management view.
+   * Admin / HR: always.
+   * Others: must be a department leader or active approver.
+   */
+  private async canAccessManagementView(user: {
+    id: number;
+    role: UserRole;
+  }): Promise<boolean> {
+    if (user.role === UserRole.ADMIN || user.role === UserRole.HR) {
+      return true;
+    }
+
+    // Check if user is a department leader
+    const isDeptLeader = await this.dataSource
+      .getRepository(Department)
+      .createQueryBuilder('d')
+      .where('d.leader_id = :userId', { userId: user.id })
+      .getCount();
+
+    if (isDeptLeader > 0) return true;
+
+    // Check if user is an active approver for anyone
+    const isApprover = await this.userApproverRepository.count({
+      where: { approverId: user.id, active: true },
+    });
+
+    return isApprover > 0;
+  }
+
+ /**
+     * Compute per-row action permissions based on status and whether
+     * the leave start date is in the future.
+     */
+    private computePermissions(
+      lr: LeaveRequest,
+      now: Date,
+    ): LeaveRequestPermissionsDto {
+      const isFuture = new Date(lr.startDate + 'T00:00:00') > now;
+  
+      switch (lr.status) {
+        case LeaveRequestStatus.PENDING:
+          return {
+            canViewDetail: true,
+            canUpdate: isFuture,
+            canCancel: isFuture,
+          };
+        case LeaveRequestStatus.APPROVED:
+          return {
+            canViewDetail: true,
+            canUpdate: false,
+            canCancel: isFuture,
+          };
+        case LeaveRequestStatus.REJECTED:
+          return {
+            canViewDetail: true,
+            canUpdate: false,
+            canCancel: false,
+          };
+        case LeaveRequestStatus.CANCELLED:
+          return {
+            canViewDetail: true,
+            canUpdate: false,
+            canCancel: false,
+          };
+        default:
+          return {
+            canViewDetail: true,
+            canUpdate: false,
+            canCancel: false,
+          };
+      }
+    }
+
 
   /**
    * Find one leave request by ID.
@@ -933,6 +1142,8 @@ export class LeaveRequestsService {
    * no raw entity spread, no sensitive data, optimised relations.
    */
   async findOne(id: number): Promise<LeaveRequestDetailsDto> {
+    this.logger.log(`[findOne] START id=${id}`);
+    try {
     const lr = await this.leaveRequestRepository.findOne({
       where: { id },
       relations: [
@@ -1038,6 +1249,11 @@ export class LeaveRequestsService {
       updatedAt: lr.updatedAt,
     };
 
+    this.logger.log(`[findOne] OK – id=${id} status=${dto.status}`);
     return dto;
+    } catch (error) {
+      this.logger.error(`[findOne] ERROR id=${id}`, error?.stack ?? error);
+      throw error;
+    }
   }
 }
