@@ -17,6 +17,7 @@ import { ChildbirthMethod } from '@/common/enums/childbirth-method.enum';
 import { UserGender } from '@/common/enums/user-genders';
 import { BalanceTxDirection } from '@/common/enums/balance-tx-direction.enum';
 import { BalanceTxSource } from '@/common/enums/balance-tx-source.enum';
+import { validateAllocationsNoDuplicateBucket, assertAllocationSum } from './utils/allocation-validator';
 
 export interface BalanceInfo {
   leaveTypeId: number;
@@ -388,10 +389,8 @@ export class LeaveBalanceService {
     const endYear = endDateObj.getFullYear();
     const endMonth = endDateObj.getMonth() + 1;
 
-    // Pre-compute monthly duration split
-    const monthlyBuckets: MonthlyDuration[] = isParentalLeave
-      ? []
-      : await splitLeaveDaysByMonth(
+    // Pre-compute monthly duration split (always compute, including PARENTAL)
+    const monthlyBuckets: MonthlyDuration[] = await splitLeaveDaysByMonth(
           leaveTypeId,
           this.calendarRepo,
           startDate,
@@ -472,86 +471,154 @@ export class LeaveBalanceService {
     }
 
     // 2b. POLICY / SOCIAL categories (non-parental)
+    //     Per-bucket balance check for excess (no aggregate endYear/endMonth)
     else if (categoryCode === 'POLICY' || categoryCode === 'SOCIAL') {
+      let entitlementDays: number;
+
       if (policy?.maxPerRequestDays) {
         const maxDays = Number(policy.maxPerRequestDays);
-        const coveredDays = Math.min(remainingDays, maxDays);
+        entitlementDays = Math.min(remainingDays, maxDays);
         items.push({
           leaveTypeId: leaveType.id,
           leaveTypeCode: leaveType.code,
-          amountDays: coveredDays,
+          amountDays: entitlementDays,
           note: `${leaveType.name} (policy entitlement)`,
         });
-        remainingDays -= coveredDays;
+        remainingDays -= entitlementDays;
       } else {
+        entitlementDays = remainingDays;
         items.push({
           leaveTypeId: leaveType.id,
           leaveTypeCode: leaveType.code,
-          amountDays: remainingDays,
+          amountDays: entitlementDays,
           note: leaveType.name,
         });
         remainingDays = 0;
       }
 
-      // Excess → auto-convert: original type → PAID → UNPAID
+      // Build monthlyAllocations for the entitlement portion (waterfall across buckets)
+      let entitlementLeft = entitlementDays;
+      for (const bucket of monthlyBuckets) {
+        const take = Math.min(bucket.durationDays, entitlementLeft);
+        if (take > 0) {
+          monthlyAllocations.push({
+            year: bucket.year,
+            month: bucket.month,
+            leaveTypeId: leaveType.id,
+            leaveTypeCode: leaveType.code,
+            amountDays: take,
+            note: `${leaveType.name} (${bucket.year}/${String(bucket.month).padStart(2, '0')})`,
+          });
+          entitlementLeft -= take;
+        }
+      }
+
+      // Excess → per-bucket: original type → PAID → UNPAID
       if (remainingDays > 0) {
         const conversions = await this.getConversions(leaveType.id);
         for (const conv of conversions) {
           if (conv.reason !== 'EXCEED_MAX_PER_REQUEST' || remainingDays <= 0) continue;
 
           const paidType = conv.toLeaveType;
-          const paidBalance = await this.getBalance(
-            employeeId, paidType.id, endYear, excludeRequestId, endMonth, manager,
-          );
-          const fromPaid = Math.min(remainingDays, Math.max(paidBalance, 0));
 
-          if (fromPaid > 0) {
+          // Determine which buckets have excess days after entitlement consumed
+          let capLeft = entitlementDays;
+          const excessBuckets: { year: number; month: number; excessDays: number }[] = [];
+          for (const bucket of monthlyBuckets) {
+            const consumed = Math.min(bucket.durationDays, capLeft);
+            capLeft -= consumed;
+            const excess = bucket.durationDays - consumed;
+            if (excess > 0) {
+              excessBuckets.push({ year: bucket.year, month: bucket.month, excessDays: excess });
+            }
+          }
+
+          // Per-bucket paid balance check with running total per year
+          const runningPaidByYear = new Map<number, number>();
+          let totalFromPaid = 0;
+          let totalUnpaid = 0;
+
+          // Resolve PAID → UNPAID conversion once
+          const paidConversions = await this.getConversions(paidType.id);
+          const unpaidConv = paidConversions.find((c) => c.reason === 'EXCEED_BALANCE');
+          const unpaidType = unpaidConv?.toLeaveType ?? (await this.getLeaveTypeByCode('UNPAID'));
+
+          for (const eb of excessBuckets) {
+            const runningUsed = runningPaidByYear.get(eb.year) ?? 0;
+            const paidBalance = await this.getBalance(
+              employeeId, paidType.id, eb.year, excludeRequestId, eb.month, manager,
+            );
+            const effectiveBalance = Math.max(paidBalance - runningUsed, 0);
+            const paidTake = Math.min(eb.excessDays, effectiveBalance);
+            const unpaidTake = eb.excessDays - paidTake;
+
+            if (paidTake > 0) {
+              monthlyAllocations.push({
+                year: eb.year,
+                month: eb.month,
+                leaveTypeId: paidType.id,
+                leaveTypeCode: paidType.code,
+                amountDays: paidTake,
+                note: `Excess from ${leaveType.name} → ${paidType.name} (${eb.year}/${String(eb.month).padStart(2, '0')})`,
+              });
+              runningPaidByYear.set(eb.year, runningUsed + paidTake);
+              totalFromPaid += paidTake;
+            }
+
+            if (unpaidTake > 0 && unpaidType) {
+              monthlyAllocations.push({
+                year: eb.year,
+                month: eb.month,
+                leaveTypeId: unpaidType.id,
+                leaveTypeCode: unpaidType.code,
+                amountDays: unpaidTake,
+                note: `Excess from ${leaveType.name} → ${unpaidType.name} (${eb.year}/${String(eb.month).padStart(2, '0')})`,
+              });
+              totalUnpaid += unpaidTake;
+            }
+          }
+
+          // Build aggregated items for summary
+          if (totalFromPaid > 0) {
             items.push({
               leaveTypeId: paidType.id,
               leaveTypeCode: paidType.code,
-              amountDays: fromPaid,
+              amountDays: totalFromPaid,
               note: `Excess from ${leaveType.name} → ${paidType.name}`,
             });
-            remainingDays -= fromPaid;
+            remainingDays -= totalFromPaid;
           }
 
-          if (remainingDays > 0) {
+          if (totalUnpaid > 0 && unpaidType) {
+            items.push({
+              leaveTypeId: unpaidType.id,
+              leaveTypeCode: unpaidType.code,
+              amountDays: totalUnpaid,
+              note: `Excess from ${leaveType.name} → ${unpaidType.name}`,
+            });
+            remainingDays -= totalUnpaid;
+
             warnings.push(
-              `Your paid leave balance (${paidBalance} days) is insufficient to cover the excess. ${remainingDays} days will be deducted as unpaid leave.`,
+              `Your paid leave balance is insufficient to cover the excess. ${totalUnpaid} day(s) will be deducted as unpaid leave.`,
             );
+
+            // Check UNPAID annual limit
+            const unpaidPolicy = await this.getActivePolicy(unpaidType.id, startDate);
+            const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId, manager);
+            const unpaidLimit = unpaidPolicy?.annualLimitDays
+              ? Number(unpaidPolicy.annualLimitDays)
+              : Infinity;
+            if (unpaidUsed + totalUnpaid > unpaidLimit) {
+              warnings.push(
+                `Unpaid leave annual limit (${unpaidLimit} days/year) may be exceeded. ${unpaidUsed} days already used this year.`,
+              );
+            }
           }
 
-          // PAID → UNPAID chain
-          if (remainingDays > 0) {
-            const paidConversions = await this.getConversions(paidType.id);
-            for (const paidConv of paidConversions) {
-              if (paidConv.reason !== 'EXCEED_BALANCE' || remainingDays <= 0) continue;
-              const unpaidType = paidConv.toLeaveType;
-
-              const unpaidPolicy = await this.getActivePolicy(unpaidType.id, startDate);
-              const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId, manager);
-              const unpaidLimit = unpaidPolicy?.annualLimitDays
-                ? Number(unpaidPolicy.annualLimitDays)
-                : Infinity;
-              const unpaidAvailable = Math.max(unpaidLimit - unpaidUsed, 0);
-              const fromUnpaid = Math.min(remainingDays, unpaidAvailable);
-
-              if (fromUnpaid > 0) {
-                items.push({
-                  leaveTypeId: unpaidType.id,
-                  leaveTypeCode: unpaidType.code,
-                  amountDays: fromUnpaid,
-                  note: `Excess from ${leaveType.name} → ${unpaidType.name}`,
-                });
-                remainingDays -= fromUnpaid;
-              }
-
-              if (remainingDays > 0) {
-                warnings.push(
-                  `Unpaid leave limit (${unpaidLimit} days/year) may be exceeded. ${unpaidUsed} days already used this year.`,
-                );
-              }
-            }
+          if (totalFromPaid === 0 && totalUnpaid === 0 && remainingDays > 0) {
+            warnings.push(
+              `Your paid leave balance is insufficient to cover the excess. ${remainingDays} day(s) will be deducted as unpaid leave.`,
+            );
           }
         }
       }
@@ -575,10 +642,12 @@ export class LeaveBalanceService {
 
       let totalPaid = 0;
       let totalUnpaid = 0;
-      let runningPaidUsedByThisRequest = 0;
+      // Track running paid used PER YEAR — resets when crossing year boundary
+      const runningPaidByYear = new Map<number, number>();
 
       for (const bucket of monthlyBuckets) {
         let monthRemaining = bucket.durationDays;
+        const runningUsed = runningPaidByYear.get(bucket.year) ?? 0;
 
         // Available paid balance at this month
         const paidAvailableAtMonth = await this.getBalance(
@@ -589,8 +658,8 @@ export class LeaveBalanceService {
           bucket.month,
           manager,
         );
-        const effectiveAvailable = paidAvailableAtMonth - runningPaidUsedByThisRequest;
-        const paidFromMonth = Math.min(monthRemaining, Math.max(effectiveAvailable, 0));
+        const effectiveAvailable = Math.max(paidAvailableAtMonth - runningUsed, 0);
+        const paidFromMonth = Math.min(monthRemaining, effectiveAvailable);
 
         if (paidFromMonth > 0) {
           monthlyAllocations.push({
@@ -602,7 +671,7 @@ export class LeaveBalanceService {
             note: `Paid leave (${bucket.year}/${String(bucket.month).padStart(2, '0')})`,
           });
           totalPaid += paidFromMonth;
-          runningPaidUsedByThisRequest += paidFromMonth;
+          runningPaidByYear.set(bucket.year, runningUsed + paidFromMonth);
           monthRemaining -= paidFromMonth;
         }
 
@@ -774,6 +843,16 @@ export class LeaveBalanceService {
       }
     }
 
+    // ── Guards: catch allocation bugs before DB save ──
+    if (monthlyAllocations.length > 0) {
+      // P1-5: no duplicate (leaveTypeId, year, month) buckets
+      validateAllocationsNoDuplicateBucket(monthlyAllocations);
+      // P1-6: sum must equal total duration
+      assertAllocationSum(monthlyAllocations, durationDays);
+    } else if (items.length > 0) {
+      assertAllocationSum(items, durationDays);
+    }
+
     return {
       durationDays,
       items,
@@ -861,14 +940,9 @@ export class LeaveBalanceService {
     }
 
     // Create DEBIT RESERVE transactions for each monthly allocation
-    // Skip UNPAID — no quota to hold
-    const unpaidType = await this.getLeaveTypeByCode('UNPAID');
-    const unpaidTypeId = unpaidType?.id;
-
+    // Now includes UNPAID allocations — limit-based model tracks usage via ledger
     const reserveTxs: Partial<LeaveBalanceTransaction>[] = [];
     for (const alloc of finalValidation.monthlyAllocations) {
-      if (unpaidTypeId && alloc.leaveTypeId === unpaidTypeId) continue;
-
       reserveTxs.push({
         employeeId,
         leaveTypeId: alloc.leaveTypeId,

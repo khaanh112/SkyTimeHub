@@ -51,16 +51,17 @@ CHIA THEO NĂM, CHIA THEO THÁNG THÀNH CÁC BUCKET SAU ĐÓ XEM LOẠI NGHỈ, 
 
 connection pool
 
-phân trang cusor , limit offset
+phân trang cusor , limit offset cho user
 
 locking trong db tránh 2 transaction
  sửa cách viết migration
  index db (đánh đổi)
- xóa checkdto thừa
+
 
  tối ưu truy vấn db
-lưu activation mail vào email queue
 
+logic tính > 5namw, vào sau ít phép, nghỉ kéo dài trừ phép
 fix luồng lưu mail ngoài transaction
 
 
+nghỉ đẻ nữ không tính chủ nhật thế thì xuất ra report như nào, phải giới hạn nghỉ xa tương lai ra sao nếu nghỉ đến tương lai chưa có kế hoạch (nghỉ đẻ nữ) (chưa set được holiday, ngày làm bù, chưa khởi tạo quỹ nghỉ) nên giới hạn không cho convert nghỉ đẻ nữ

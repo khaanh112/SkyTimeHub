@@ -36,6 +36,7 @@ import {
 import { AppException, ErrorCode } from '@/common';
 import { Department } from '@entities/departments.entity';
 import { buildDateTime, buildDurationLabel } from './utils/formatter';
+import { validateAllocationsNoDuplicateBucket } from './utils/allocation-validator';
 
 @Injectable()
 export class LeaveRequestsService {
@@ -237,6 +238,16 @@ export class LeaveRequestsService {
       );
 
       // Save leave request items with per-month allocation
+      // P1-5: guard against duplicate (leaveTypeId, year, month) before save
+      const allocationsToSave = validation.monthlyAllocations.length > 0
+        ? validation.monthlyAllocations
+        : validation.items.map((item) => ({
+            ...item,
+            year: new Date(dto.startDate).getFullYear(),
+            month: new Date(dto.startDate).getMonth() + 1,
+          }));
+      validateAllocationsNoDuplicateBucket(allocationsToSave);
+
       if (validation.monthlyAllocations.length > 0) {
         const items = validation.monthlyAllocations.map((alloc) =>
           this.leaveRequestItemRepository.create({
