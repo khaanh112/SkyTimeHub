@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Briefcase, Phone, Calendar, Shield, CheckCircle, XCircle, Building2, MapPin, FileText, Clock } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { User, Calendar, FileText, Clock } from 'lucide-react';
 import { userService, leaveRequestService } from '../services';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-toastify';
@@ -16,7 +15,6 @@ const getLeaveTypeStyle = (code) => {
 };
 
 const ProfilePage = () => {
-  const { user: authUser } = useAuth();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [balanceSummary, setBalanceSummary] = useState([]);
@@ -80,6 +78,18 @@ const ProfilePage = () => {
     return roleConfig[role] || roleConfig.employee;
   };
 
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  };
+
+  const formatContractType = (value) => {
+    if (!value) return '';
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase().replace(/_/g, ' ');
+  };
+
   const roleBadge = getRoleBadge(user.role);
 
   return (
@@ -91,66 +101,71 @@ const ProfilePage = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
         <div className="flex items-start gap-6">
           {/* Avatar */}
-          <div className="w-20 h-20 bg-linear-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shrink-0">
-            <span className="text-3xl text-white font-bold">
-              {user.username?.charAt(0).toUpperCase() || 'U'}
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shrink-0">
+            <span className="text-2xl text-white font-bold leading-none">
+              {getInitials(user.username)}
             </span>
           </div>
 
           {/* Info Grid */}
           <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">{user.username}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3">
-              {user.employeeId && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Employee ID</span>
-                  <span className="text-sm font-semibold text-gray-900">{user.employeeId}</span>
-                </div>
-              )}
-              {user.department && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Department</span>
-                  <span className="text-sm font-semibold text-gray-900">{user.department?.name || user.department}</span>
-                </div>
-              )}
-              {user.position && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Position</span>
-                  <span className="text-sm font-semibold text-gray-900">{user.position}</span>
-                </div>
-              )}
+            <h2 className="text-xl font-bold text-gray-900 mb-5">{user.username}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-3">
+              {/* Row 1 */}
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Employee ID</span>
+                <span className="text-sm font-semibold text-gray-900">{user.employeeId || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Department</span>
+                <span className="text-sm font-semibold text-gray-900">{user.departmentName || '—'}</span>
+              </div>
+
+              {/* Row 2 */}
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Position</span>
+                <span className="text-sm font-semibold text-gray-900">{user.position || '—'}</span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Email</span>
                 <span className="text-sm font-semibold text-gray-900 truncate ml-4">{user.email}</span>
               </div>
+
+              {/* Row 3 */}
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Role</span>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadge.color}`}>
-                  {roleBadge.label}
+                <span className="text-sm font-semibold text-gray-900">{roleBadge.label}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Contract type</span>
+                <span className="text-sm font-semibold text-gray-900">
+                  {formatContractType(user.contractType) || '—'}
                 </span>
               </div>
-              {user.contractType && (
+
+              {/* Row 4 */}
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Official Contract Date</span>
+                <span className="text-sm font-semibold text-gray-900">
+                  {user.officialContractDate
+                    ? new Date(user.officialContractDate).toLocaleDateString('en-GB')
+                    : '—'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-500">Date of Joining</span>
+                <span className="text-sm font-semibold text-gray-900">
+                  {user.joinDate
+                    ? new Date(user.joinDate).toLocaleDateString('en-GB')
+                    : '—'}
+                </span>
+              </div>
+
+              {/* Row 5 — Approver */}
+              {user.approverName && (
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Contract type</span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {user.contractType.charAt(0).toUpperCase() + user.contractType.slice(1).replace('_', ' ')}
-                  </span>
-                </div>
-              )}
-              {user.officialContractDate && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Official Contract Date</span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {new Date(user.officialContractDate).toLocaleDateString('en-GB')}
-                  </span>
-                </div>
-              )}
-              {user.joinDate && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Date of Joining</span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {new Date(user.joinDate).toLocaleDateString('en-GB')}
-                  </span>
+                  <span className="text-sm text-gray-500">Approver</span>
+                  <span className="text-sm font-semibold text-gray-900">{user.approverName}</span>
                 </div>
               )}
             </div>
@@ -175,6 +190,7 @@ const ProfilePage = () => {
               const accruedToDate = balance.accruedToDate ?? balance.totalCredit;
               const used = balance.totalDebit;
               const annualLimit = balance.annualLimit;
+
               const monthlyAccrual = balance.monthlyAccrual;
               const isHardLimit = balance.isHardLimit;
 

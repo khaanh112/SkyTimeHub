@@ -11,6 +11,7 @@ import { NotificationsService } from '@modules/notifications/notifications.servi
 import { generateActivationToken, generateEmployeeId } from '@modules/users/utils/user.utils';
 import { CreateUserProfileDto } from './dto/create-user-profile.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
+import { UserViewProfileDto } from './dto/user-view-profile.dto';
 
 @Injectable()
 export class UserProfileService {
@@ -26,6 +27,45 @@ export class UserProfileService {
     private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  /**
+   * Get profile of a user by ID, returning a flat UserViewProfileDto
+   * with department name and approver name resolved.
+   */
+  async getUserProfile(userId: number): Promise<UserViewProfileDto> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      relations: ['department'],
+    });
+
+    if (!user) {
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const userApprover = await this.userApproverRepository.findOne({
+      where: { userId, active: true },
+      relations: ['approver'],
+    });
+
+    const dto = new UserViewProfileDto();
+    dto.id = user.id;
+    dto.employeeId = user.employeeId;
+    dto.username = user.username;
+    dto.email = user.email;
+    dto.position = user.position ?? null;
+    dto.departmentName = user.department?.name ?? null;
+    dto.role = user.role;
+    dto.contractType = user.contractType ?? null;
+    dto.officialContractDate = user.officialContractDate ?? null;
+    dto.joinDate = user.joinDate ?? null;
+    dto.approverName = userApprover?.approver?.username ?? null;
+
+    return dto;
+  }
 
   /**
    * Create a new user with approver and department leader assignment — all in one transaction.

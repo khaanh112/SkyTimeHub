@@ -33,8 +33,6 @@ const UsersPage = () => {
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
-  // Modal states
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedApproverId, setSelectedApproverId] = useState('');
@@ -110,43 +108,6 @@ const UsersPage = () => {
     });
   };
 
-
-  const handleDelete = async () => {
-    if (!selectedUser) return;
-    setFormLoading(true);
-    try {
-      await userService.delete(selectedUser.id);
-      toast.success('Xóa user thành công!');
-      setIsDeleteModalOpen(false);
-      setSelectedUser(null);
-      fetchUsers();
-    } catch (error) {
-      console.error('Failed to delete user:', error);
-    } finally {
-      setFormLoading(false);
-    }
-  };
-
-  
-
-  const openDeleteModal = (user) => {
-    setSelectedUser(user);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDeactivate = async (user) => {
-    if (!window.confirm(`Deactivate user ${user.username}? User sẽ không thể đăng nhập.`)) {
-      return;
-    }
-    try {
-      await userService.deactivate(user.id);
-      toast.success('Đã deactivate user thành công!');
-      fetchUsers();
-    } catch (error) {
-      console.error('Failed to deactivate user:', error);
-      toast.error('Không thể deactivate user');
-    }
-  };
 
   
 
@@ -351,14 +312,7 @@ const UsersPage = () => {
                           </button>
                           
                           
-                          {/* Delete button - always visible */}
-                          <button
-                            onClick={() => openDeleteModal(user)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Xóa"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                         
                         </div>
                       </td>
                     </tr>
@@ -368,51 +322,6 @@ const UsersPage = () => {
             </div>
           )}
         </div>
-
-      
-
-
-        {/* Delete Confirmation Modal */}
-        <Modal
-          isOpen={isDeleteModalOpen}
-          onClose={() => {
-            setIsDeleteModalOpen(false);
-            setSelectedUser(null);
-          }}
-          title="Xác nhận xóa"
-          size="sm"
-        >
-          <div className="text-center py-4">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Trash2 className="w-8 h-8 text-red-600" />
-            </div>
-            <p className="text-gray-700 mb-2">
-              Bạn có chắc chắn muốn xóa user này?
-            </p>
-            <p className="text-sm text-gray-500">
-              <strong>{selectedUser?.username}</strong> ({selectedUser?.email})
-            </p>
-          </div>
-          <div className="flex justify-center space-x-3 pt-4">
-            <button
-              onClick={() => {
-                setIsDeleteModalOpen(false);
-                setSelectedUser(null);
-              }}
-              className="px-6 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-            >
-              Hủy
-            </button>
-            <button
-              onClick={handleDelete}
-              disabled={formLoading}
-              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center space-x-2"
-            >
-              {formLoading && <LoadingSpinner size="sm" />}
-              <span>Xóa</span>
-            </button>
-          </div>
-        </Modal>
 
       </div>
   );

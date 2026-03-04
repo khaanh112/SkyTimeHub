@@ -97,24 +97,6 @@ export class UsersController {
   }
 
   @Roles(UserRole.HR)
-  @Put(':id')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update an existing user' })
-  @ApiResponse({ status: 200, description: 'User updated successfully.' })
-  async updateUser(@Param('id') id: number, @Body() user: UpdateUserDto): Promise<User> {
-    return this.usersService.updateUser(id, user);
-  }
-
-  @Roles(UserRole.HR)
-  @Delete(':id')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Delete a user' })
-  @ApiResponse({ status: 200, description: 'User deleted successfully.' })
-  async deleteUser(@Param('id') id: number): Promise<void> {
-    return await this.usersService.deleteUser(id);
-  }
-
-  @Roles(UserRole.HR)
   @Post(':id/deactivate')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Deactivate user account' })

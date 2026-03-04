@@ -64,4 +64,6 @@ logic tính > 5namw, vào sau ít phép, nghỉ kéo dài trừ phép
 fix luồng lưu mail ngoài transaction
 
 
-nghỉ đẻ nữ không tính chủ nhật thế thì xuất ra report như nào, phải giới hạn nghỉ xa tương lai ra sao nếu nghỉ đến tương lai chưa có kế hoạch (nghỉ đẻ nữ) (chưa set được holiday, ngày làm bù, chưa khởi tạo quỹ nghỉ) nên giới hạn không cho convert nghỉ đẻ nữ
+nghỉ đẻ nữ không tính chủ nhật thế thì xuất ra report hàng tháng có tính chủ nhật không, phải giới hạn nghỉ xa tương lai ra sao nếu nghỉ đến tương lai chưa có kế hoạch (nghỉ đẻ nữ) (chưa set được holiday, ngày làm bù, chưa khởi tạo quỹ nghỉ) năm tiếp theo. 
+nên giới hạn nếu nghỉ đẻ nữ chỉ được nghỉ đẻ trong thời gian
+các loại nghỉ phải giới hạn start date, enddate trong tương lai gần cụ thể.

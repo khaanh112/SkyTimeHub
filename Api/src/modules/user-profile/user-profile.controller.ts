@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Put,
   Param,
@@ -9,14 +10,27 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { User } from '@entities/users.entity';
 import { UserRole } from '@common/enums/roles.enum';
 import { Roles } from '@modules/authorization/decorators/roles.decorator';
+import { CurrentUser } from '@modules/authentication/decorators/current-user.decorator';
 import { UserProfileService } from './user-profile.service';
 import { CreateUserProfileDto } from './dto/create-user-profile.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
+import { UserViewProfileDto } from './dto/user-view-profile.dto';
 
 @ApiTags('User Profile')
 @Controller('user-profile')
 export class UserProfileController {
   constructor(private readonly userProfileService: UserProfileService) {}
+
+  @Get('me')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get current user profile',
+    description: 'Returns the full profile of the currently authenticated user, including department name and approver name.',
+  })
+  @ApiResponse({ status: 200, description: 'User profile retrieved successfully.', type: UserViewProfileDto })
+  async getMyProfile(@CurrentUser('id') userId: number): Promise<UserViewProfileDto> {
+    return this.userProfileService.getUserProfile(userId);
+  }
 
   @Roles(UserRole.HR)
   @Post()

@@ -13,9 +13,9 @@ export const userService = {
     return response.data.data || response.data;
   },
 
-  // Get current user profile
+  // Get current user profile (including approver and department leader)
   getCurrentProfile: async () => {
-    const response = await api.get('/users/me/profile');
+    const response = await api.get('/user-profile/me');
     return response.data.data || response.data;
   },
 
@@ -37,11 +37,7 @@ export const userService = {
     return response.data.data || response.data;
   },
 
-  // Update user
-  update: async (id, userData) => {
-    const response = await api.put(`/users/${id}`, userData);
-    return response.data.data || response.data;
-  },
+ 
 
   // Delete user
   delete: async (id) => {

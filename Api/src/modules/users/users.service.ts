@@ -116,44 +116,6 @@ export class UsersService {
     }
   }
 
-
-  // Update user details (except email and employeeId)
-  async updateUser(id: number, user: UpdateUserDto): Promise<User> {
-    const existingUser = await this.usersRepository.findOne({ where: { id } });
-    if (!existingUser) {
-      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
-    }
-    // Email cannot be changed
-    if ('email' in user && (user as any).email !== undefined) {
-      throw new AppException(
-        ErrorCode.INVALID_INPUT,
-        'Email cannot be changed',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    // Employee ID cannot be changed
-    if ('employeeId' in user && user.employeeId !== undefined) {
-      throw new AppException(
-        ErrorCode.INVALID_INPUT,
-        'Employee ID cannot be changed',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    const updatedUser = this.usersRepository.merge(existingUser, user);
-    return await this.usersRepository.save(updatedUser);
-  }
-
-
-  async deleteUser(id: number): Promise<void> {
-    const existingUser = await this.usersRepository.findOne({ where: { id } });
-    if (!existingUser) {
-      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
-    }
-    await this.usersRepository.delete(id);
-  }
-
-
   // Activate account using activation token
   async activateAccount(token: string): Promise<User> {
     this.logger.log('========== ACTIVATE ACCOUNT START ==========');
