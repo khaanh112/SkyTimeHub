@@ -218,8 +218,8 @@ const LeaveRequestDetailPage = () => {
   const getItemsBreakdown = () => {
     if (!leaveRequest?.items || leaveRequest.items.length === 0) return [];
     return leaveRequest.items.map((item) => ({
-      leaveTypeName: item.leaveType?.name || 'Unknown',
-      leaveTypeCode: item.leaveType?.code || '',
+      leaveTypeName: item.leaveTypeName || 'Unknown',
+      leaveTypeCode: item.leaveTypeCode || '',
       amountDays: parseFloat(item.amountDays),
     }));
   };
@@ -290,7 +290,7 @@ const LeaveRequestDetailPage = () => {
 
   const itemsBreakdown = getItemsBreakdown();
   const balanceInfo = getBalanceInfo();
-  const totalDuration = leaveRequest.durationDays || leaveRequest.duration || 0;
+  const totalDuration = parseFloat(leaveRequest.durationDays) || leaveRequest.duration || 0;
 
   return (
     <>
@@ -325,12 +325,12 @@ const LeaveRequestDetailPage = () => {
             {/* Employee Info */}
             <div className="flex items-start gap-4 mb-6">
               <div className="w-14 h-14 bg-linear-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white text-xl font-semibold shrink-0">
-                {leaveRequest.user?.username?.charAt(0).toUpperCase() || 'U'}
+                {leaveRequest.requester?.username?.charAt(0).toUpperCase() || 'U'}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-base font-bold text-gray-900">
-                    {leaveRequest.user?.username || 'Unknown'}
+                    {leaveRequest.requester?.username || 'Unknown'}
                   </h3>
                   {/* Balance tooltip trigger */}
                   {balanceInfo.length > 0 && (
@@ -365,12 +365,12 @@ const LeaveRequestDetailPage = () => {
                     </div>
                   )}
                 </div>
-                {leaveRequest.user?.employeeId && (
-                  <p className="text-sm text-gray-500">ID: {leaveRequest.user.employeeId}</p>
+                {leaveRequest.requester?.employeeId && (
+                  <p className="text-sm text-gray-500">ID: {leaveRequest.requester.employeeId}</p>
                 )}
-                {(leaveRequest.user?.department?.name || leaveRequest.user?.department) && (
+                {leaveRequest.requester?.department && (
                   <p className="text-sm text-gray-500">
-                    {leaveRequest.user.department?.name || leaveRequest.user.department}
+                    {leaveRequest.requester.department}
                   </p>
                 )}
               </div>
@@ -632,7 +632,7 @@ const LeaveRequestDetailPage = () => {
             {/* Request Info */}
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <p className="text-sm text-yellow-800">
-                <strong>Employee:</strong> {leaveRequest?.user?.username || 'Unknown'}
+                <strong>Employee:</strong> {leaveRequest?.requester?.username || 'Unknown'}
               </p>
               <p className="text-sm text-yellow-800">
                 <strong>Period:</strong> {formatDate(leaveRequest?.startDate)} - {formatDate(leaveRequest?.endDate)}

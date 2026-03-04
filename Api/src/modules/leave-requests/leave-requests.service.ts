@@ -23,6 +23,7 @@ import { NotificationsService } from '@modules/notifications/notifications.servi
 import { LeaveBalanceService } from './leave-balance.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
+import { LeaveRequestDetailsDto } from './dto/leave-request-details.dto';
 import { AppException, ErrorCode } from '@/common';
 
 @Injectable()
@@ -115,12 +116,7 @@ export class LeaveRequestsService {
     if (endDate < startDate) {
       throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
-
-    if (!dto.reason) {
-      throw new AppException(ErrorCode.INVALID_INPUT, 'Reason for leave request is required', 400);
-    }
-
-
+    
     //  Approver lookup 
     const userApprover = await this.userApproverRepository.findOne({
       where: { userId, active: true },
@@ -318,6 +314,7 @@ export class LeaveRequestsService {
     }
   }
 
+
   /**
    * Update leave request with optimistic locking
    */
@@ -337,9 +334,6 @@ export class LeaveRequestsService {
       throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
 
-    if (!dto.reason) {
-      throw new AppException(ErrorCode.INVALID_INPUT, 'Reason for leave request is required', 400);
-    }
 
     // ── Find & authorise ─────────────────────────────────────
     const leaveRequest = await this.leaveRequestRepository.findOne({
@@ -895,7 +889,7 @@ export class LeaveRequestsService {
    * - HR: all requests (all statuses)
    * - Approver: all requests where they are the approver (all statuses)
    */
-  async findRequestsForManagement(user: { id: number; role: string }): Promise<LeaveRequest[]> {
+  async findRequestsForManagement(user: { id: number; role: UserRole }): Promise<LeaveRequest[]> {
     this.logger.log(
       `[findRequestsForManagement] Called for userId: ${user.id}, role: ${user.role}`,
     );
@@ -934,18 +928,116 @@ export class LeaveRequestsService {
   }
 
   /**
-   * Find one leave request by ID
+   * Find one leave request by ID.
+   * Returns a flat DTO with only the fields the frontend needs —
+   * no raw entity spread, no sensitive data, optimised relations.
    */
-  async findOne(id: number): Promise<LeaveRequest> {
-    const leaveRequest = await this.leaveRequestRepository.findOne({
+  async findOne(id: number): Promise<LeaveRequestDetailsDto> {
+    const lr = await this.leaveRequestRepository.findOne({
       where: { id },
-      relations: ['user', 'approver', 'notificationRecipients', 'notificationRecipients.user', 'items', 'items.leaveType', 'requestedLeaveType', 'requestedLeaveType.category'],
+      relations: [
+        'user',
+        'user.department',
+        'approver',
+        'approver.department',
+        'notificationRecipients',
+        'notificationRecipients.user',
+        'items',
+        'items.leaveType',
+        'requestedLeaveType',
+        'requestedLeaveType.category',
+      ],
     });
 
-    if (!leaveRequest) {
+    if (!lr) {
       throw new NotFoundException('Leave request not found');
     }
 
-    return leaveRequest;
+    // ── Map to DTO ───────────────────────────────────────────
+    const ccRecipients = (lr.notificationRecipients ?? [])
+      .filter((r) => r.type === RecipientType.CC && r.user)
+      .map((r) => ({ id: r.user.id, username: r.user.username, email: r.user.email }));
+
+    const dto: LeaveRequestDetailsDto = {
+      id: lr.id,
+      status: lr.status,
+      version: lr.version,
+
+      // People
+      userId: lr.userId,
+      requester: {
+        id: lr.user.id,
+        employeeId: lr.user.employeeId,
+        username: lr.user.username,
+        email: lr.user.email,
+        department: lr.user.department?.name ?? null,
+      },
+      approverId: lr.approverId,
+      approver: {
+        id: lr.approver.id,
+        employeeId: lr.approver.employeeId,
+        username: lr.approver.username,
+        email: lr.approver.email,
+        department: lr.approver.department?.name ?? null,
+      },
+
+      // Leave type
+      requestedLeaveType: lr.requestedLeaveType
+        ? {
+            id: lr.requestedLeaveType.id,
+            code: lr.requestedLeaveType.code,
+            name: lr.requestedLeaveType.name,
+            category: lr.requestedLeaveType.category
+              ? {
+                  id: lr.requestedLeaveType.category.id,
+                  code: lr.requestedLeaveType.category.code,
+                  name: lr.requestedLeaveType.category.name,
+                }
+              : null,
+          }
+        : null,
+
+      // Date & session
+      startDate: lr.startDate,
+      endDate: lr.endDate,
+      startSession: lr.startSession,
+      endSession: lr.endSession,
+      durationDays: lr.durationDays,
+
+      // Parental leave
+      numberOfChildren: lr.numberOfChildren,
+      childbirthMethod: lr.childbirthMethod,
+
+      // Content
+      reason: lr.reason,
+      workSolution: lr.workSolution ?? null,
+
+      // Items breakdown
+      items: (lr.items ?? []).map((item) => ({
+        leaveTypeId: Number(item.leaveTypeId),
+        leaveTypeName: item.leaveType?.name ?? 'Unknown',
+        leaveTypeCode: item.leaveType?.code ?? '',
+        amountDays: Number(item.amountDays),
+        periodYear: item.periodYear,
+        periodMonth: item.periodMonth,
+        note: item.note,
+      })),
+
+      // CC
+      ccUserIds: ccRecipients.map((r) => r.id),
+      ccRecipients,
+
+      // Status workflow
+      rejectedReason: lr.rejectedReason ?? null,
+      rejectedAt: lr.rejectedAt ?? null,
+      approvedAt: lr.approvedAt ?? null,
+      cancelledAt: lr.cancelledAt ?? null,
+
+      // Timestamps
+      createdAt: lr.createdAt,
+      updatedAt: lr.updatedAt,
+    };
+
+    return dto;
   }
 }

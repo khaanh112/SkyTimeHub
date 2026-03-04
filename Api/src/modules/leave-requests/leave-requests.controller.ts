@@ -25,6 +25,7 @@ import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ApproveLeaveRequestDto } from './dto/approve-leave-request.dto';
 import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
+import { LeaveRequestDetailsDto } from './dto/leave-request-details.dto';
 import { Roles } from '../authorization';
 
 @ApiTags('Leave Requests')
@@ -276,26 +277,11 @@ export class LeaveRequestsController {
     description: 'Retrieve detailed information about a specific leave request.',
   })
   @ApiParam({ name: 'id', description: 'Leave request ID', type: 'number' })
-  @ApiResponse({ status: 200, description: 'Leave request retrieved successfully.' })
+  @ApiResponse({ status: 200, description: 'Leave request retrieved successfully.', type: LeaveRequestDetailsDto })
   @ApiResponse({ status: 404, description: 'Leave request not found.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    const leaveRequest = await this.leaveRequestsService.findOne(id);
-
-    // Transform notificationRecipients to ccUserIds for frontend
-    const ccUserIds =
-      leaveRequest.notificationRecipients?.filter((r) => r.type === 'CC').map((r) => r.userId) ||
-      [];
-
-    // Also include ccRecipients with full user info for detail view
-    const ccRecipients =
-      leaveRequest.notificationRecipients?.filter((r) => r.type === 'CC').map((r) => r.user) || [];
-
-    return {
-      ...leaveRequest,
-      ccUserIds,
-      ccRecipients,
-    };
+  async findOne(@Param('id', ParseIntPipe) id: number): Promise<LeaveRequestDetailsDto> {
+    return this.leaveRequestsService.findOne(id);
   }
 
   @Put(':id')

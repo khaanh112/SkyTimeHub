@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   ManyToOne,
@@ -18,6 +19,7 @@ import { UserGender } from '@/common/enums/user-genders';
 import { ContractType } from '@/common/enums/contract-type.enum';
 
 @Entity('users')
+@Index('idx_users_department', ['departmentId'])
 export class User {
   @ApiProperty({ example: 1, description: 'User ID' })
   @PrimaryGeneratedColumn()

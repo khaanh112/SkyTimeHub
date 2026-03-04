@@ -57,8 +57,10 @@ locking trong db tránh 2 transaction
  sửa cách viết migration
  index db (đánh đổi)
  xóa checkdto thừa
- xóa nodemodule thừa bên ngoài
+
  tối ưu truy vấn db
 lưu activation mail vào email queue
+
+
 
 

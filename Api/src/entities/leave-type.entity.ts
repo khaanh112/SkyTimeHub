@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -12,6 +13,7 @@ import { LeaveCategory } from './leave-category.entity';
 import { LeaveTypePolicy } from './leave-type-policy.entity';
 
 @Entity('leave_types')
+@Index('idx_leave_types_category', ['categoryId'])
 export class LeaveType {
   @ApiProperty({ example: 1 })
   @PrimaryGeneratedColumn({ type: 'bigint' })

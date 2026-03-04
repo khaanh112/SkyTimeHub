@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsBoolean,
   Length,
+  IsNotEmpty,
 } from 'class-validator';
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -24,6 +25,7 @@ export class UpdateLeaveRequestDto {
     example: '2026-02-10',
   })
   @IsDateString()
+  @IsNotEmpty({ message: 'Start date is required' })
   startDate: string;
 
   @ApiProperty({
@@ -31,14 +33,17 @@ export class UpdateLeaveRequestDto {
     example: '2026-02-12',
   })
   @IsDateString()
+  @IsNotEmpty({ message: 'End date is required' })
   endDate: string;
 
   @ApiProperty({ enum: LeaveSession, description: 'Start session (AM or PM)', example: 'AM' })
   @IsEnum(LeaveSession)
+  @IsNotEmpty({ message: 'Start session is required' })
   startSession: LeaveSession;
 
   @ApiProperty({ enum: LeaveSession, description: 'End session (AM or PM)', example: 'PM' })
   @IsEnum(LeaveSession)
+  @IsNotEmpty({ message: 'End session is required' })
   endSession: LeaveSession;
 
   @ApiProperty({
@@ -46,8 +51,10 @@ export class UpdateLeaveRequestDto {
     example: 'Family vacation',
   })
   @IsString()
+  @IsNotEmpty({ message: 'Reason is required' })
   @Length(5, 500)
   reason: string;
+
 
   @ApiPropertyOptional({
     description: 'Work solution/handover plan for leave',
@@ -58,6 +65,7 @@ export class UpdateLeaveRequestDto {
   @Length(0, 1000)
   workSolution?: string;
 
+
   @ApiPropertyOptional({
     description: 'Array of user IDs to CC on notifications',
     example: [2, 3],
@@ -67,6 +75,7 @@ export class UpdateLeaveRequestDto {
   @IsArray()
   @IsInt({ each: true })
   ccUserIds?: number[];
+
 
   @ApiPropertyOptional({
     description: 'Number of children (for parental leave)',

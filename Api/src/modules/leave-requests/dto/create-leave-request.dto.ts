@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsBoolean,
   Length,
+  IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -23,6 +24,7 @@ export class CreateLeaveRequestDto {
     description: 'Start date of leave (YYYY-MM-DD)',
     example: '2026-02-10',
   })
+  @IsNotEmpty({ message: 'Start date is required' })
   @IsDateString()
   startDate: string;
 
@@ -30,15 +32,18 @@ export class CreateLeaveRequestDto {
     description: 'End date of leave (YYYY-MM-DD)',
     example: '2026-02-12',
   })
+  @IsNotEmpty({ message: 'End date is required' })
   @IsDateString()
   endDate: string;
 
   @ApiProperty({ enum: LeaveSession, description: 'Start session (AM or PM)', example: 'AM' })
   @IsEnum(LeaveSession)
+  @IsNotEmpty({ message: 'Start session is required' })
   startSession: LeaveSession;
 
   @ApiProperty({ enum: LeaveSession, description: 'End session (AM or PM)', example: 'PM' })
   @IsEnum(LeaveSession)
+  @IsNotEmpty({ message: 'End session is required' })
   endSession: LeaveSession;
 
   @ApiProperty({
@@ -46,6 +51,7 @@ export class CreateLeaveRequestDto {
     example: 'Family vacation',
   })
   @IsString()
+  @IsNotEmpty({ message: 'Reason is required' })
   @Length(5, 500)
   reason: string;
 
