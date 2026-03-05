@@ -38,14 +38,6 @@ export class LeaveTypePolicy {
   @Column({ name: 'min_duration_days', type: 'numeric', precision: 5, scale: 2, nullable: true })
   minDurationDays: number | null;
 
-  @ApiPropertyOptional({ example: false, description: 'Allow negative balance (compensatory)' })
-  @Column({ name: 'allow_negative', type: 'boolean', default: false })
-  allowNegative: boolean;
-
-  @ApiPropertyOptional({ example: 2.0, description: 'Max negative balance limit' })
-  @Column({ name: 'max_negative_limit_days', type: 'numeric', precision: 5, scale: 2, nullable: true })
-  maxNegativeLimitDays: number | null;
-
   @ApiPropertyOptional({ example: 5.0, description: 'Monthly limit (e.g. 1 days/month)' })
   @Column({ name: 'monthly_limit_days', type: 'numeric', precision: 5, scale: 2, nullable: true })
   monthlyLimitDays: number | null;

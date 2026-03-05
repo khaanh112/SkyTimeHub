@@ -18,6 +18,7 @@ import { UserGender } from '@/common/enums/user-genders';
 import { BalanceTxDirection } from '@/common/enums/balance-tx-direction.enum';
 import { BalanceTxSource } from '@/common/enums/balance-tx-source.enum';
 import { validateAllocationsNoDuplicateBucket, assertAllocationSum } from './utils/allocation-validator';
+import { LeaveCategory } from '@/common/enums/leave-category.enum';
 
 export interface BalanceInfo {
   leaveTypeId: number;
@@ -268,7 +269,7 @@ export class LeaveBalanceService {
     }
 
     const policy = await this.getActivePolicy(leaveTypeId, startDate);
-    const year = new Date(startDate).getFullYear();
+    const startyear = new Date(startDate).getFullYear();
     const categoryCode = leaveType.category?.code ?? '';
 
     const warnings: string[] = [];
@@ -287,8 +288,16 @@ export class LeaveBalanceService {
 
       if (isFemale) {
         const numChildren = parentalOptions?.numberOfChildren ?? 1;
-        parentalEntitlementDays = 180 + Math.max(0, numChildren - 1) * 30;
+       const start = new Date(startDate);
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + 6);   // +6 tháng
+      end.setDate(end.getDate() - 1);     // inclusive
 
+      const sixMonthsDays =
+        Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      parentalEntitlementDays = sixMonthsDays + Math.max(0, numChildren - 1) * 30;
+          
         const calendarDuration = calculateCalendarDuration(
           startDate, finalEndDate, startSession, finalEndSession,
         );
@@ -379,6 +388,7 @@ export class LeaveBalanceService {
         `Minimum leave duration for ${leaveType.name} is ${policy.minDurationDays} days`,
       );
     }
+    console.log(`Calculated duration: ${durationDays} days (parental entitlement: ${parentalEntitlementDays} days, excess working days: ${excessWorkingDays} days)`);
 
     // ── Step 2: Build items with conversion logic ───────────
     const items: ConversionItem[] = [];
@@ -444,7 +454,7 @@ export class LeaveBalanceService {
               if (paidConv.reason !== 'EXCEED_BALANCE' || remainingDays <= 0) continue;
               const unpaidType = paidConv.toLeaveType;
               const unpaidPolicy = await this.getActivePolicy(unpaidType.id, startDate);
-              const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId, manager);
+              const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, startyear, excludeRequestId, manager);
               const unpaidLimit = unpaidPolicy?.annualLimitDays ? Number(unpaidPolicy.annualLimitDays) : Infinity;
               const unpaidAvailable = Math.max(unpaidLimit - unpaidUsed, 0);
               const fromUnpaid = Math.min(remainingDays, unpaidAvailable);
@@ -472,7 +482,7 @@ export class LeaveBalanceService {
 
     // 2b. POLICY / SOCIAL categories (non-parental)
     //     Per-bucket balance check for excess (no aggregate endYear/endMonth)
-    else if (categoryCode === 'POLICY' || categoryCode === 'SOCIAL') {
+    else if (categoryCode === LeaveCategory.POLICY || categoryCode === LeaveCategory.SOCIAL) {
       let entitlementDays: number;
 
       if (policy?.maxPerRequestDays) {
@@ -604,7 +614,7 @@ export class LeaveBalanceService {
 
             // Check UNPAID annual limit
             const unpaidPolicy = await this.getActivePolicy(unpaidType.id, startDate);
-            const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, year, excludeRequestId, manager);
+            const unpaidUsed = await this.getUsedDays(employeeId, unpaidType.id, startyear, excludeRequestId, manager);
             const unpaidLimit = unpaidPolicy?.annualLimitDays
               ? Number(unpaidPolicy.annualLimitDays)
               : Infinity;
@@ -632,10 +642,10 @@ export class LeaveBalanceService {
     //   available = getBalance(…, atMonth)
     //   paidUsed = min(need, available)
     //   remaining → UNPAID
-    else if (categoryCode === 'ANNUAL') {
+    else if (categoryCode === LeaveCategory.ANNUAL) {
       const conversions = await this.getConversions(leaveType.id);
       const unpaidConv = conversions.find((c) => c.reason === 'EXCEED_BALANCE');
-      const unpaidType = unpaidConv?.toLeaveType ?? (await this.getLeaveTypeByCode('UNPAID'));
+      const unpaidType = unpaidConv?.toLeaveType ?? (await this.getLeaveTypeByCode(LeaveTypes.UNPAID_LEAVE));
       const unpaidPolicy = unpaidType
         ? await this.getActivePolicy(unpaidType.id, startDate)
         : null;
@@ -717,7 +727,7 @@ export class LeaveBalanceService {
         const existingUnpaidUsed = await this.getUsedDays(
           employeeId,
           unpaidType.id,
-          year,
+          startyear,
           excludeRequestId,
           manager,
         );
@@ -1137,19 +1147,35 @@ export class LeaveBalanceService {
     const policy = await this.getActivePolicy(leaveTypeId, startDate);
     if (!policy?.autoCalculateEndDate || !policy.maxPerRequestDays) return null;
 
-    if (leaveType.code === 'PARENTAL' && parentalOptions?.employeeId) {
+    if (leaveType.code === LeaveTypes.PARENTAL_LEAVE && parentalOptions?.employeeId) {
       const user = await this.userRepo.findOne({ where: { id: parentalOptions.employeeId } });
       const isFemale = user?.gender === UserGender.FEMALE;
 
-      if (isFemale) {
-        const numChildren = parentalOptions.numberOfChildren ?? 1;
-        const entitlementDays = 180 + Math.max(0, numChildren - 1) * 30;
-        const result = calculateCalendarEndDate(startDate, startSession, entitlementDays);
-        return {
-          suggestedEndDate: result.endDate,
-          suggestedEndSession: result.endSession,
-        };
-      } else {
+        if (isFemale) {
+      const numChildren = parentalOptions?.numberOfChildren ?? 1;
+
+      const start = new Date(startDate + 'T00:00:00');
+      const startDay = start.getDate();
+
+      // add 6 months safely
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + 6);
+
+      // if day overflowed (e.g., 31st -> next month), clamp to last day of target month
+      if (end.getDate() !== startDay) {
+        end.setDate(0); // last day of previous month
+      }
+
+      // inclusive: subtract 1 day
+      end.setDate(end.getDate() - 1);
+
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const sixMonthsDays = Math.round((end.getTime() - start.getTime()) / msPerDay) + 1;
+
+      const entitlementDays = sixMonthsDays + Math.max(0, numChildren - 1) * 30;
+      const result = calculateCalendarEndDate(startDate, startSession, entitlementDays);
+      return { suggestedEndDate: result.endDate, suggestedEndSession: result.endSession };
+    } else {
         const entitlement =
           parentalOptions.childbirthMethod === ChildbirthMethod.C_SECTION ? 7 : 5;
         const auto = await autoCalculateEndDate(

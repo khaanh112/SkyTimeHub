@@ -227,7 +227,7 @@ const CreateLeaveRequestPage = () => {
 
     // Determine if this is PARENTAL leave
     const selectedType = cat.leaveTypes.find((lt) => lt.id === formData.leaveTypeId || String(lt.id) === String(formData.leaveTypeId));
-    const isParental = selectedType?.code === 'PARENTAL';
+    const isParental = selectedType?.code === 'PARENTAL_LEAVE';
 
     let cancelled = false;
     (async () => {
@@ -369,7 +369,7 @@ const CreateLeaveRequestPage = () => {
   const selectedLeaveType = selectedCategory?.leaveTypes.find(
     (lt) => lt.id === formData.leaveTypeId || String(lt.id) === String(formData.leaveTypeId)
   );
-  const isParentalLeave = selectedLeaveType?.code === 'PARENTAL';
+  const isParentalLeave = selectedLeaveType?.code === 'PARENTAL_LEAVE';
   const isFemalUser = user?.gender === 'female';
 
   // For female parental leave: total = maternity calendar days + excess working days
