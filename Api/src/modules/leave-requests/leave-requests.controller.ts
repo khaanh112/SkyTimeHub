@@ -30,6 +30,7 @@ import { LeaveRequestDetailsDto } from './dto/leave-request-details.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { LeaveRequestListResponseDto } from './dto/leave-request-list.dto';
 import { Roles } from '../authorization';
+import { BalanceSummaryQueryDto } from './dto/balance-summary-query.dto';
 
 @ApiTags('Leave Requests')
 @ApiBearerAuth()
@@ -145,17 +146,19 @@ export class LeaveRequestsController {
     return this.leaveRequestsService.getLeaveTypes();
   }
 
-  //sai logic
   @Get('balance-summary')
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get leave balance summary for current user',
-    description: 'Returns credit, debit and remaining balance for each leave type in the current year.',
+    description:
+      'Returns credit, debit and remaining balance for each leave type. If month is provided, returns balance up to that month (monthly accrual cap applied).',
   })
   @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
-  async getBalanceSummary(@Request() req) {
-    const month = new Date().getMonth() + 1; // 1-12
-    const year = new Date().getFullYear();
-    return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, month, year);
+  async getBalanceSummary(@Request() req, @Query() q: BalanceSummaryQueryDto) {
+    const year = q.year ?? new Date().getFullYear();
+    const month = q.month; // optional: undefined => full year
+
+    return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, year, month);
   }
 
   //sai logic

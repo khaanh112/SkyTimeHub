@@ -17,6 +17,7 @@ import {
   CreateLeaveRequestPage,
   EditLeaveRequestPage,
   SettingsPage,
+  OTManagementPage,
 } from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
 
@@ -168,6 +169,15 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <SettingsPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/ot-management"
+        element={
+          <ProtectedRoute>
+            <OTManagementPage />
           </ProtectedRoute>
         }
       />

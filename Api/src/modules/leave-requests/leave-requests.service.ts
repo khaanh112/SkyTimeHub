@@ -37,6 +37,7 @@ import { AppException, ErrorCode } from '@/common';
 import { Department } from '@entities/departments.entity';
 import { buildDateTime, buildDurationLabel } from './utils/formatter';
 import { validateAllocationsNoDuplicateBucket } from './utils/allocation-validator';
+import { DefaultLeaveType } from '@/common/enums/default-leavetype.enum';
 
 @Injectable()
 export class LeaveRequestsService {
@@ -138,6 +139,7 @@ export class LeaveRequestsService {
     if (!userApprover) {
       throw new AppException(ErrorCode.INVALID_INPUT, 'No active approver assigned to this user', 400);
     }
+    
 
     const requester = await this.userRepository.findOne({ where: { id: userId } });
 
@@ -156,6 +158,8 @@ export class LeaveRequestsService {
       }
     }
 
+    const leaveTypeId = dto.leaveTypeId ?? DefaultLeaveType.PAID_LEAVE; // default to paid leave if not provided
+
     // ── Overlap check 
     await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession);
 
@@ -165,7 +169,7 @@ export class LeaveRequestsService {
     // ── Pre-flight validation (outside transaction, for warnings) ─
     const preValidation = await this.leaveBalanceService.validateAndPrepare(
       userId,
-      dto.leaveTypeId,
+      leaveTypeId,
       dto.startDate,
       dto.endDate,
       dto.startSession,
@@ -205,7 +209,7 @@ export class LeaveRequestsService {
       const leaveRequest = this.leaveRequestRepository.create({
         userId,
         approverId: userApprover.approverId,
-        requestedLeaveTypeId: dto.leaveTypeId,
+        requestedLeaveTypeId: leaveTypeId,
         startDate: dto.startDate,
         endDate: finalEndDate,
         startSession: dto.startSession,
@@ -225,7 +229,7 @@ export class LeaveRequestsService {
         queryRunner.manager,
         userId,
         savedRequest.id,
-        dto.leaveTypeId,
+        leaveTypeId,
         dto.startDate,
         dto.endDate,
         dto.startSession,
@@ -403,13 +407,15 @@ export class LeaveRequestsService {
       }
     }
 
+    const leaveTypeId = dto.leaveTypeId ?? DefaultLeaveType.PAID_LEAVE ;
+
     // ── Overlap check (exclude current request) ─────────────
     await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession, requestId);
 
     // ── Pre-flight validation (outside transaction, for warnings) ─
     const preValidation = await this.leaveBalanceService.validateAndPrepare(
       userId,
-      dto.leaveTypeId,
+      leaveTypeId,
       dto.startDate,
       dto.endDate,
       dto.startSession,
@@ -455,7 +461,7 @@ export class LeaveRequestsService {
       const originalVersion = leaveRequest.version;
 
       // Update fields
-      leaveRequest.requestedLeaveTypeId = dto.leaveTypeId;
+      leaveRequest.requestedLeaveTypeId = leaveTypeId;
       leaveRequest.startDate = dto.startDate;
       leaveRequest.endDate = finalEndDate;
       leaveRequest.startSession = dto.startSession;
@@ -477,7 +483,7 @@ export class LeaveRequestsService {
         queryRunner.manager,
         userId,
         requestId,
-        dto.leaveTypeId,
+        leaveTypeId,
         dto.startDate,
         dto.endDate,
         dto.startSession,
@@ -787,12 +793,11 @@ export class LeaveRequestsService {
 
       if (wasApproved) {
         // After approve → CREDIT REFUND (reverses APPROVAL debits)
-        const year = new Date(leaveRequest.startDate).getFullYear();
+   
         await this.leaveBalanceService.refundBalanceForCancellation(
           leaveRequest.userId,
           leaveRequest.id,
           leaveRequest.items || [],
-          year,
           queryRunner.manager,
         );
       } else {

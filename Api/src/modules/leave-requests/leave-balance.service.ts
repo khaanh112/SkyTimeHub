@@ -11,7 +11,7 @@ import { LeaveTypes } from '@/common/enums/leave_type.enum';
 import { CalendarOverride } from '@entities/calendar-override.entity';
 import { User } from '@entities/users.entity';
 import { UserStatus } from '@/common/enums/user-status.enum';
-import { calculateLeaveDuration, autoCalculateEndDate, calculateCalendarDuration, calculateCalendarEndDate, splitLeaveDaysByMonth, MonthlyDuration } from './utils/duration-calculator';
+import { calculateLeaveDuration, autoCalculateEndDate, calculateCalendarDuration, calculateCalendarEndDate, splitLeaveDaysByMonth, splitCalendarDaysByMonth, MonthlyDuration } from './utils/duration-calculator';
 import { LeaveSession } from '@/common/enums/leave-session.enum';
 import { ChildbirthMethod } from '@/common/enums/childbirth-method.enum';
 import { UserGender } from '@/common/enums/user-genders';
@@ -111,12 +111,9 @@ export class LeaveBalanceService {
   /**
    * Get available balance for (employee, leaveType, year) up to a given month.
    *
-   * Balance = cumulative CREDIT − cumulative DEBIT (includes RESERVE rows)
-   *   where period_month ≤ atMonth.
-   *
-   * When `atMonth` is provided AND the leave type has monthly accrual,
-   * the balance is capped by (atMonth × monthlyRate) so employees
-   * cannot spend future accrual.
+   * Balance = cumulative CREDIT(1-> atMonth) − cumulative DEBIT (includes RESERVE rows, 1 -> 12)  
+   *   
+   * bugggggggggg
    *
    * @param manager   Optional EntityManager to run inside an existing transaction
    *                  (required when called under advisory lock).
@@ -135,7 +132,10 @@ export class LeaveBalanceService {
       ? manager.getRepository(LeaveBalanceTransaction)
       : this.balanceTxRepo;
 
-    // --- credit total up to atMonth ---
+    // --- credit total for the year (no month filter) ---
+    // All credits (ACCRUAL, REFUND, RELEASE, etc.) for the entire year are
+    // summed.  The monthly accrual cap at the end of this method constrains
+    // the effective balance to what the employee has earned up to `atMonth`.
     let creditQb = repo
       .createQueryBuilder('tx')
       .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
@@ -143,15 +143,17 @@ export class LeaveBalanceService {
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
       .andWhere("tx.direction = 'CREDIT'");
-
-    if (atMonth) {
+     if (atMonth) {
       creditQb = creditQb.andWhere('tx.period_month <= :atMonth', { atMonth });
     }
-
     const creditResult = await creditQb.getRawOne();
     const totalCredit = parseFloat(creditResult?.total ?? '0');
 
-    // --- debit total up to atMonth ---
+    // --- debit total for the year (no month filter) ---
+    // All debits (RESERVE, APPROVAL) for the entire year are summed so that
+    // commitments at later months are always visible when checking an earlier
+    // month.  Without this, booking leave at month 3 would ignore a 5-day
+    // debit already committed at month 10.
     let debitQb = repo
       .createQueryBuilder('tx')
       .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
@@ -159,11 +161,9 @@ export class LeaveBalanceService {
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
       .andWhere("tx.direction = 'DEBIT'");
+    
 
-    if (atMonth) {
-      debitQb = debitQb.andWhere('tx.period_month <= :atMonth', { atMonth });
-    }
-
+    /// check lại balance
     if (excludeRequestId) {
       debitQb = debitQb.andWhere(
         '(tx.source_id IS NULL OR tx.source_id != :excludeRequestId)',
@@ -278,13 +278,19 @@ export class LeaveBalanceService {
 
     // ── Step 1: Calculate duration ──────────────────────────
     const isParentalLeave = leaveType.code === LeaveTypes.PARENTAL_LEAVE;
+    const user = await this.userRepo.findOne({ where: { id: employeeId } });
+    const isFemale = user?.gender === UserGender.FEMALE;
     let durationDays: number;
     let parentalEntitlementDays = 0;
     let excessWorkingDays = 0;
+    // Saved for building calendar-day monthly allocations (female parental)
+    let maternityEndDateStr: string | undefined;
+    let maternityEndSessionVal: LeaveSession | undefined;
+    let excessStartStr: string | undefined;
+    let excessStartSessionVal: LeaveSession | undefined;
 
     if (isParentalLeave) {
-      const user = await this.userRepo.findOne({ where: { id: employeeId } });
-      const isFemale = user?.gender === UserGender.FEMALE;
+      
 
       if (isFemale) {
         const numChildren = parentalOptions?.numberOfChildren ?? 1;
@@ -312,6 +318,8 @@ export class LeaveBalanceService {
           const maternityEnd = calculateCalendarEndDate(
             startDate, startSession, parentalEntitlementDays,
           );
+          maternityEndDateStr = maternityEnd.endDate;
+          maternityEndSessionVal = maternityEnd.endSession;
 
           const excessStartDate = new Date(maternityEnd.endDate + 'T00:00:00');
           let excessStartSession: LeaveSession;
@@ -329,7 +337,8 @@ export class LeaveBalanceService {
             return `${yyyy}-${mm}-${dd}`;
           };
 
-          const excessStartStr = fmtDate(excessStartDate);
+          excessStartStr = fmtDate(excessStartDate);
+          excessStartSessionVal = excessStartSession;
           const excessDuration = await calculateLeaveDuration(
             leaveTypeId,
             this.calendarRepo,
@@ -402,6 +411,8 @@ export class LeaveBalanceService {
     // Pre-compute monthly duration split (always compute, including PARENTAL)
     const monthlyBuckets: MonthlyDuration[] = await splitLeaveDaysByMonth(
           leaveTypeId,
+        //  isParentalLeave,
+        //  isFemale,
           this.calendarRepo,
           startDate,
           endDate,
@@ -473,6 +484,89 @@ export class LeaveBalanceService {
                 warnings.push(
                   `Unpaid leave limit (${unpaidLimit} days/year) may be exceeded. ${unpaidUsed} days already used this year.`,
                 );
+              }
+            }
+          }
+        }
+      }
+
+      // ── Build monthlyAllocations for female parental (calendar-day buckets) ──
+      if (isFemale) {
+        // Entitlement portion: calendar-day buckets (no weekend/holiday skip)
+        const entitlementEnd = maternityEndDateStr ?? finalEndDate;
+        const entitlementEndSess = maternityEndSessionVal ?? finalEndSession;
+        const calendarBuckets = splitCalendarDaysByMonth(
+          startDate, entitlementEnd, startSession, entitlementEndSess,
+        );
+
+        // Waterfall fill coveredDays into calendar-day buckets
+        let coveredLeft = coveredDays;
+        for (const bucket of calendarBuckets) {
+          const take = Math.round(Math.min(bucket.durationDays, coveredLeft) * 2) / 2;
+          if (take > 0) {
+            monthlyAllocations.push({
+              year: bucket.year,
+              month: bucket.month,
+              leaveTypeId: leaveType.id,
+              leaveTypeCode: leaveType.code,
+              amountDays: take,
+              note: `${leaveType.name} (maternity entitlement) (${bucket.year}/${String(bucket.month).padStart(2, '0')})`,
+            });
+            coveredLeft -= take;
+          }
+        }
+
+        // Excess portion: working-day buckets (normal skip weekends/holidays)
+        if (excessWorkingDays > 0 && excessStartStr && excessStartSessionVal) {
+          const excessBuckets = await splitLeaveDaysByMonth(
+            leaveTypeId,
+            this.calendarRepo,
+            excessStartStr,
+            finalEndDate,
+            excessStartSessionVal,
+            finalEndSession,
+          );
+
+          const excessCapacities = excessBuckets.map(b => b.durationDays);
+          // Waterfall fill excess items (skip the first item which is entitlement)
+          for (const item of items.slice(1)) {
+            let remaining = item.amountDays;
+            for (let i = 0; i < excessBuckets.length && remaining > 0; i++) {
+              const canTake = Math.round(Math.min(remaining, excessCapacities[i]) * 2) / 2;
+              if (canTake > 0) {
+                monthlyAllocations.push({
+                  year: excessBuckets[i].year,
+                  month: excessBuckets[i].month,
+                  leaveTypeId: item.leaveTypeId,
+                  leaveTypeCode: item.leaveTypeCode,
+                  amountDays: canTake,
+                  note: `${item.note} (${excessBuckets[i].year}/${String(excessBuckets[i].month).padStart(2, '0')})`,
+                });
+                excessCapacities[i] -= canTake;
+                remaining -= canTake;
+              }
+            }
+
+            // Safety: leftover to last bucket
+            if (remaining > 0 && excessBuckets.length > 0) {
+              const lastBucket = excessBuckets[excessBuckets.length - 1];
+              const lastAlloc = monthlyAllocations[monthlyAllocations.length - 1];
+              if (
+                lastAlloc &&
+                lastAlloc.year === lastBucket.year &&
+                lastAlloc.month === lastBucket.month &&
+                lastAlloc.leaveTypeId === item.leaveTypeId
+              ) {
+                lastAlloc.amountDays = Math.round((lastAlloc.amountDays + remaining) * 2) / 2;
+              } else {
+                monthlyAllocations.push({
+                  year: lastBucket.year,
+                  month: lastBucket.month,
+                  leaveTypeId: item.leaveTypeId,
+                  leaveTypeCode: item.leaveTypeCode,
+                  amountDays: Math.round(remaining * 2) / 2,
+                  note: item.note,
+                });
               }
             }
           }
@@ -808,7 +902,7 @@ export class LeaveBalanceService {
 
       // Track remaining working-day capacity in each month bucket
       const capacities = buckets.map((b) => b.durationDays);
-
+      console.log(capacities);
       for (const item of items) {
         let remaining = item.amountDays;
 
@@ -1072,7 +1166,6 @@ export class LeaveBalanceService {
     employeeId: number,
     leaveRequestId: number,
     items: LeaveRequestItem[],
-    year: number,
     manager?: EntityManager,
   ): Promise<void> {
     const repo = manager
@@ -1105,18 +1198,18 @@ export class LeaveBalanceService {
         });
       }
     } else {
-      // Legacy fallback
+      // Legacy fallback — use item's periodYear/periodMonth directly
       for (const item of items) {
         transactions.push({
           employeeId,
           leaveTypeId: item.leaveTypeId,
-          periodYear: item.periodYear ?? year,
-          periodMonth: item.periodMonth ?? 1,
+          periodYear: item.periodYear,
+          periodMonth: item.periodMonth,
           direction: BalanceTxDirection.CREDIT,
           amountDays: Number(item.amountDays),
           sourceType: BalanceTxSource.REFUND,
           sourceId: leaveRequestId,
-          note: `Leave request #${leaveRequestId} cancelled – refund`,
+          note: `Leave request #${leaveRequestId} cancelled – refund ${item.periodYear}/${String(item.periodMonth).padStart(2, '0')}`,
         });
       }
     }
@@ -1469,7 +1562,7 @@ export class LeaveBalanceService {
   // ═══════════════════════════════════════════════════════════════════
 
   /**
-   * Get balance summary for an employee for a given year.
+   * Get balance summary for an employee for a given year.// ssai logic
    */
   async getEmployeeBalanceSummary(
     employeeId: number,

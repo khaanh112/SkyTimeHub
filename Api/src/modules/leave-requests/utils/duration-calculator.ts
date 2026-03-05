@@ -11,6 +11,7 @@
 import { Repository } from 'typeorm';
 import { CalendarOverride } from '@entities/calendar-override.entity';
 import { LeaveSession } from '@/common/enums/leave-session.enum';
+import { find } from 'rxjs';
 
 /** Check if a date is Sat or Sun */
 function isWeekend(date: Date): boolean {
@@ -304,12 +305,16 @@ export async function autoCalculateEndDate(
  */
 export async function splitLeaveDaysByMonth(
   leaveTypeId: number,
+//// isparentalLeave: boolean,
+  //isFemale: boolean,
   calendarRepo: Repository<CalendarOverride>,
   startDate: string,
   endDate: string,
   startSession: LeaveSession,
   endSession: LeaveSession,
 ): Promise<MonthlyDuration[]> {
+
+  
   // Load calendar overrides for the date range
   const overrides = await calendarRepo
     .createQueryBuilder('co')
@@ -368,6 +373,60 @@ export async function splitLeaveDaysByMonth(
   }
 
   // Return sorted chronologically
+  return Array.from(monthMap.values())
+    .sort((a, b) => a.year - b.year || a.month - b.month)
+    .map((e) => ({
+      year: e.year,
+      month: e.month,
+      durationDays: e.slots * 0.5,
+      slots: e.slots,
+    }));
+}
+
+/**
+ * Split leave duration into per-(year, month) buckets using **calendar days**
+ * (every day counts, including weekends and holidays).
+ *
+ * Used for female parental (maternity) leave where the entitlement period
+ * counts calendar days, not working days.
+ */
+export function splitCalendarDaysByMonth(
+  startDate: string,
+  endDate: string,
+  startSession: LeaveSession,
+  endSession: LeaveSession,
+): MonthlyDuration[] {
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+
+  const monthMap = new Map<string, { year: number; month: number; slots: number }>();
+  const current = new Date(start);
+
+  while (current <= end) {
+    const year = current.getFullYear();
+    const month = current.getMonth() + 1;
+    const key = `${year}-${String(month).padStart(2, '0')}`;
+
+    if (!monthMap.has(key)) {
+      monthMap.set(key, { year, month, slots: 0 });
+    }
+
+    const isSameAsStart = fmt(current) === startDate;
+    const isSameAsEnd = fmt(current) === endDate;
+
+    let amCounts = true;
+    let pmCounts = true;
+
+    if (isSameAsStart && startSession === LeaveSession.PM) amCounts = false;
+    if (isSameAsEnd && endSession === LeaveSession.AM) pmCounts = false;
+
+    const entry = monthMap.get(key)!;
+    if (amCounts) entry.slots++;
+    if (pmCounts) entry.slots++;
+
+    current.setDate(current.getDate() + 1);
+  }
+
   return Array.from(monthMap.values())
     .sort((a, b) => a.year - b.year || a.month - b.month)
     .map((e) => ({

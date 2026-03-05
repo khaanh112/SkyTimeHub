@@ -10,6 +10,7 @@ import {
   Shield,
   Calendar,
   Settings,
+  Clock,
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, setIsOpen }) => {
@@ -20,6 +21,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
   const menuItems = [
     { path: '/', icon: User, label: 'Account Management' },
     { path: '/leave-requests', icon: Calendar, label: 'Leave Management' },
+    { path: '/ot-management', icon: Clock, label: 'OT & Compensatory Management' },
     { path: '/employees', icon: Users, label: 'Employee Management' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ];
