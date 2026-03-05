@@ -19,6 +19,7 @@ import { BalanceTxDirection } from '@/common/enums/balance-tx-direction.enum';
 import { BalanceTxSource } from '@/common/enums/balance-tx-source.enum';
 import { validateAllocationsNoDuplicateBucket, assertAllocationSum } from './utils/allocation-validator';
 import { LeaveCategory } from '@/common/enums/leave-category.enum';
+import { BALANCE_TYPE_CODES } from '@/common/enums/balance_leavetype.enum';
 
 export interface BalanceInfo {
   leaveTypeId: number;
@@ -113,7 +114,7 @@ export class LeaveBalanceService {
    *
    * Balance = cumulative CREDIT(1-> atMonth) − cumulative DEBIT (includes RESERVE rows, 1 -> 12)  
    *   
-   * bugggggggggg
+   * 
    *
    * @param manager   Optional EntityManager to run inside an existing transaction
    *                  (required when called under advisory lock).
@@ -1567,7 +1568,15 @@ export class LeaveBalanceService {
   // ═══════════════════════════════════════════════════════════════════
 
   /**
-   * Get balance summary for an employee for a given year.// ssai logic
+   * Get balance summary for an employee for a given year/month.
+   *
+   * Fields:
+   *  - used:      net days consumed (DEBIT – RELEASE/REFUND)
+   *  - remaining: days still available (logic varies by leave type)
+   *
+   * PAID    → remaining = getBalance(atMonth) — accrual capped at effectiveMonth, debits full-year
+   * UNPAID  → used = net debits up to effectiveMonth; remaining = annualLimit (30) − used
+   * COMP    → remaining = entitlementCredit − netDebit
    */
   async getEmployeeBalanceSummary(
     employeeId: number,
@@ -1581,45 +1590,48 @@ export class LeaveBalanceService {
       categoryCode: string;
       categoryName: string;
       unit: 'days' | 'hours';
-      totalCredit: number;
-      accruedToDate: number;
-      monthlyAccrual: number | null;
-      totalDebit: number;
+      used: number;
+      remaining: number;
       pendingDays: number;
-      balance: number;
       annualLimit: number | null;
-      isHardLimit: boolean;
+      monthlyAccrual: number | null;
     }[]
   > {
-    const BALANCE_TYPE_CODES = ['PAID', 'UNPAID', 'COMP'];
+    const effectiveMonth = month ?? new Date().getMonth() + 1;
 
-    const leaveTypes = await this.leaveTypeRepo.find({
-      where: BALANCE_TYPE_CODES.map((code) => ({ code, isActive: true, isSystem: false })),
-      relations: ['category'],
-      order: { id: 'ASC' },
-    });
+
+    const leaveTypes = await this.leaveTypeRepo
+      .createQueryBuilder('lt')
+      .leftJoinAndSelect('lt.category', 'category')
+      .where('lt.code IN (:...codes)', { codes: Object.values(BALANCE_TYPE_CODES) })
+      .andWhere('lt.is_active = true')
+      .orderBy('lt.id', 'ASC')
+      .getMany();
+
+    this.logger.log(
+      `[getEmployeeBalanceSummary] employee=${employeeId} month=${effectiveMonth} year=${year} leaveTypes=${leaveTypes.map((l) => l.code).join(',')}`,
+    );
 
     const result = [];
 
     for (const lt of leaveTypes) {
       const policy = await this.getActivePolicy(lt.id, `${year}-01-01`);
-      const unit: 'days' | 'hours' = lt.code === 'COMP' ? 'hours' : 'days';
+      const unit: 'days' | 'hours' = lt.code === BALANCE_TYPE_CODES.COMPENSATORY_LEAVE ? 'hours' : 'days';
 
-      // Split credits: entitlement (MONTHLY_ACCRUAL etc.) vs reversal (RELEASE, REFUND)
-      const creditBreakdown = await this.balanceTxRepo
+      // Reversal credits (RELEASE + REFUND) — full year
+      const reversalCreditResult = await this.balanceTxRepo
         .createQueryBuilder('tx')
-        .select("COALESCE(SUM(CASE WHEN tx.source_type IN ('RELEASE', 'REFUND') THEN tx.amount_days ELSE 0 END), 0)", 'reversal')
-        .addSelect("COALESCE(SUM(CASE WHEN tx.source_type NOT IN ('RELEASE', 'REFUND') THEN tx.amount_days ELSE 0 END), 0)", 'entitlement')
+        .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
         .where('tx.employee_id = :employeeId', { employeeId })
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
         .andWhere('tx.period_year = :year', { year })
         .andWhere("tx.direction = 'CREDIT'")
+        .andWhere("tx.source_type IN ('RELEASE', 'REFUND')")
         .getRawOne();
-      const entitlementCredit = parseFloat(creditBreakdown?.entitlement ?? '0');
-      const reversalCredit = parseFloat(creditBreakdown?.reversal ?? '0');
+      const reversalCredit = parseFloat(reversalCreditResult?.total ?? '0');
 
-      // Gross debit (RESERVE + APPROVAL)
-      const debitResult = await this.balanceTxRepo
+      // Gross debit (RESERVE + APPROVAL) — full year
+      const grossDebitResult = await this.balanceTxRepo
         .createQueryBuilder('tx')
         .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
         .where('tx.employee_id = :employeeId', { employeeId })
@@ -1627,7 +1639,7 @@ export class LeaveBalanceService {
         .andWhere('tx.period_year = :year', { year })
         .andWhere("tx.direction = 'DEBIT'")
         .getRawOne();
-      const grossDebit = parseFloat(debitResult?.total ?? '0');
+      const grossDebit = parseFloat(grossDebitResult?.total ?? '0');
 
       // Pending = RESERVE debits only (submitted but not yet approved)
       const pendingResult = await this.balanceTxRepo
@@ -1641,14 +1653,15 @@ export class LeaveBalanceService {
         .getRawOne();
       const pendingDays = parseFloat(pendingResult?.total ?? '0');
 
+      // Net days consumed for the year (gross debit minus reversals)
       const netDebit = Math.max(grossDebit - reversalCredit, 0);
-      const ledgerBalance = entitlementCredit - netDebit;
 
-      if (lt.code === 'PAID') {
+      if (lt.code === BALANCE_TYPE_CODES.PAID_LEAVE) {
         const monthlyRate = policy?.monthlyLimitDays ? Number(policy.monthlyLimitDays) : 1;
-        const annualLimit = policy?.annualLimitDays ? Number(policy.annualLimitDays) : entitlementCredit;
-        const accruedToDate = Math.min(month * monthlyRate, annualLimit);
-        const balance = Math.min(ledgerBalance, accruedToDate);
+        const annualLimit = policy?.annualLimitDays ? Number(policy.annualLimitDays) : null;
+
+        // remaining: accrual capped at effectiveMonth, all debits counted (full year)
+        const remaining = await this.getBalance(employeeId, lt.id, year, undefined, effectiveMonth);
 
         result.push({
           leaveTypeId: Number(lt.id),
@@ -1657,18 +1670,41 @@ export class LeaveBalanceService {
           categoryCode: lt.category?.code ?? '',
           categoryName: lt.category?.name ?? '',
           unit,
-          totalCredit: entitlementCredit,
-          accruedToDate,
-          monthlyAccrual: monthlyRate,
-          totalDebit: netDebit,
+          used: netDebit,
+          remaining: Math.max(remaining, 0),
           pendingDays,
-          balance,
           annualLimit,
-          isHardLimit: true,
+          monthlyAccrual: monthlyRate,
         });
-      } else if (lt.code === 'UNPAID') {
+      } else if (lt.code === BALANCE_TYPE_CODES.UNPAID_LEAVE) {
         const annualLimit = policy?.annualLimitDays ? Number(policy.annualLimitDays) : 30;
 
+        // used: net debits from start of year up to effectiveMonth (inclusive)
+        const unpaidDebitResult = await this.balanceTxRepo
+          .createQueryBuilder('tx')
+          .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+          .where('tx.employee_id = :employeeId', { employeeId })
+          .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
+          .andWhere('tx.period_year = :year', { year })
+          .andWhere('tx.period_month <= :effectiveMonth', { effectiveMonth })
+          .andWhere("tx.direction = 'DEBIT'")
+          .getRawOne();
+        const unpaidGrossDebit = parseFloat(unpaidDebitResult?.total ?? '0');
+
+        const unpaidReleasesResult = await this.balanceTxRepo
+          .createQueryBuilder('tx')
+          .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+          .where('tx.employee_id = :employeeId', { employeeId })
+          .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
+          .andWhere('tx.period_year = :year', { year })
+          .andWhere('tx.period_month <= :effectiveMonth', { effectiveMonth })
+          .andWhere("tx.direction = 'CREDIT'")
+          .andWhere("tx.source_type IN ('RELEASE', 'REFUND')")
+          .getRawOne();
+        const unpaidReleases = parseFloat(unpaidReleasesResult?.total ?? '0');
+
+        const used = Math.max(unpaidGrossDebit - unpaidReleases, 0);
+
         result.push({
           leaveTypeId: Number(lt.id),
           leaveTypeCode: lt.code,
@@ -1676,16 +1712,25 @@ export class LeaveBalanceService {
           categoryCode: lt.category?.code ?? '',
           categoryName: lt.category?.name ?? '',
           unit,
-          totalCredit: entitlementCredit,
-          accruedToDate: annualLimit,
-          monthlyAccrual: null,
-          totalDebit: netDebit,
+          used,
+          remaining: Math.max(annualLimit - used, 0),
           pendingDays,
-          balance: annualLimit - netDebit,
           annualLimit,
-          isHardLimit: false,
+          monthlyAccrual: null,
         });
       } else {
+        // COMP (and any future types): entitlementCredit − netDebit
+        const entitlementResult = await this.balanceTxRepo
+          .createQueryBuilder('tx')
+          .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+          .where('tx.employee_id = :employeeId', { employeeId })
+          .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
+          .andWhere('tx.period_year = :year', { year })
+          .andWhere("tx.direction = 'CREDIT'")
+          .andWhere("tx.source_type NOT IN ('RELEASE', 'REFUND')")
+          .getRawOne();
+        const entitlementCredit = parseFloat(entitlementResult?.total ?? '0');
+
         result.push({
           leaveTypeId: Number(lt.id),
           leaveTypeCode: lt.code,
@@ -1693,18 +1738,18 @@ export class LeaveBalanceService {
           categoryCode: lt.category?.code ?? '',
           categoryName: lt.category?.name ?? '',
           unit,
-          totalCredit: entitlementCredit,
-          accruedToDate: entitlementCredit,
-          monthlyAccrual: null,
-          totalDebit: netDebit,
+          used: netDebit,
+          remaining: Math.max(entitlementCredit - netDebit, 0),
           pendingDays,
-          balance: entitlementCredit - netDebit,
           annualLimit: policy?.annualLimitDays ? Number(policy.annualLimitDays) : null,
-          isHardLimit: false,
+          monthlyAccrual: null,
         });
       }
     }
 
+    this.logger.log(
+      `[getEmployeeBalanceSummary] employee=${employeeId} →  returned ${result.length} items`,
+    );
     return result;
   }
 

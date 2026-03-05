@@ -156,9 +156,9 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
   async getBalanceSummary(@Request() req, @Query() q: BalanceSummaryQueryDto) {
     const year = q.year ?? new Date().getFullYear();
-    const month = q.month; // optional: undefined => full year
+    const month = q.month ?? new Date().getMonth() + 1;
 
-    return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, year, month);
+    return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, month, year);
   }
 
   //sai logic

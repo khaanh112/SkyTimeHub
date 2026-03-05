@@ -80,7 +80,7 @@ const ProfilePage = () => {
     const fetchBalances = async () => {
       try {
         setBalanceLoading(true);
-        const data = await leaveRequestService.getBalanceSummary();
+        const data = await leaveRequestService.getBalanceSummary(balanceYear, balanceMonth + 1);
         setBalanceSummary(data.data || data || []);
       } catch (error) {
         console.error('Failed to fetch balances:', error);
@@ -258,12 +258,9 @@ const ProfilePage = () => {
               const style = getLeaveTypeStyle(balance.leaveTypeCode);
               const Icon = style.icon;
               const unit = balance.unit === 'hours' || balance.leaveTypeCode === 'COMP' ? 'Hours' : 'Days';
-              const remaining = balance.balance;
-              const accruedToDate = balance.accruedToDate ?? balance.totalCredit;
-              const used = balance.totalDebit;
-              const annualLimit = balance.annualLimit;
+              const used = balance.used;
+              const remaining = balance.remaining;
               const monthlyAccrual = balance.monthlyAccrual;
-              const isHardLimit = balance.isHardLimit;
 
               const remainingColor =
                 remaining <= 0 ? 'text-red-500' : style.remainingColor;
@@ -282,21 +279,13 @@ const ProfilePage = () => {
                       {monthlyAccrual && (
                         <span className="text-xs text-gray-400">+{monthlyAccrual} {unit.toLowerCase()}/month</span>
                       )}
+                      {balance.leaveTypeCode === 'UNPAID' && (
+                        <span className="text-xs text-gray-400">{balance.annualLimit ?? 30} {unit.toLowerCase()}/year</span>
+                      )}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">
-                        {monthlyAccrual ? 'Accrued:' : isHardLimit === false ? 'Limit:' : 'Total:'}
-                      </span>
-                      <span className="text-sm font-medium text-gray-900">
-                        {monthlyAccrual
-                          ? `${accruedToDate}/${annualLimit ?? accruedToDate} ${unit}`
-                          : `${accruedToDate} ${unit}${!isHardLimit && balance.leaveTypeCode === 'UNPAID' ? '/year' : ''}`}
-                      </span>
-                    </div>
-
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-500">Used:</span>
                       <span className="text-sm font-medium text-gray-900">{used} {unit}</span>
@@ -308,10 +297,6 @@ const ProfilePage = () => {
                         {remaining} {unit}
                       </span>
                     </div>
-
-                    {isHardLimit === false && balance.leaveTypeCode === 'UNPAID' && (
-                      <p className="text-xs text-amber-600 mt-1">* Soft limit — exceeding allowed with warning</p>
-                    )}
                   </div>
                 </div>
               );
