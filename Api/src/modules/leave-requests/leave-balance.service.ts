@@ -132,22 +132,38 @@ export class LeaveBalanceService {
       ? manager.getRepository(LeaveBalanceTransaction)
       : this.balanceTxRepo;
 
-    // --- credit total for the year (no month filter) ---
-    // All credits (ACCRUAL, REFUND, RELEASE, etc.) for the entire year are
-    // summed.  The monthly accrual cap at the end of this method constrains
-    // the effective balance to what the employee has earned up to `atMonth`.
-    let creditQb = repo
+    // --- MONTHLY_ACCRUAL credits: only count up to atMonth ---
+    // Accrual is earned incrementally each month, so we cap it at the current
+    // month to avoid counting future accrual that hasn't been earned yet.
+    let accrualQb = repo
       .createQueryBuilder('tx')
       .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = 'CREDIT'");
-     if (atMonth) {
-      creditQb = creditQb.andWhere('tx.period_month <= :atMonth', { atMonth });
+      .andWhere("tx.direction = 'CREDIT'")
+      .andWhere("tx.source_type = 'MONTHLY_ACCRUAL'");
+    if (atMonth) {
+      accrualQb = accrualQb.andWhere('tx.period_month <= :atMonth', { atMonth });
     }
-    const creditResult = await creditQb.getRawOne();
-    const totalCredit = parseFloat(creditResult?.total ?? '0');
+    const accrualResult = await accrualQb.getRawOne();
+    const accrualCredit = parseFloat(accrualResult?.total ?? '0');
+
+    // --- Other credits (REFUND, RELEASE, ADJUSTMENT, etc.): full year ---
+    // Non-accrual credits (e.g. refunds, manual adjustments) are always
+    // fully counted regardless of the month being checked.
+    const otherCreditResult = await repo
+      .createQueryBuilder('tx')
+      .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+      .where('tx.employee_id = :employeeId', { employeeId })
+      .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
+      .andWhere('tx.period_year = :year', { year })
+      .andWhere("tx.direction = 'CREDIT'")
+      .andWhere("tx.source_type != 'MONTHLY_ACCRUAL'")
+      .getRawOne();
+    const otherCredit = parseFloat(otherCreditResult?.total ?? '0');
+
+    const totalCredit = accrualCredit + otherCredit;
 
     // --- debit total for the year (no month filter) ---
     // All debits (RESERVE, APPROVAL) for the entire year are summed so that
@@ -174,18 +190,7 @@ export class LeaveBalanceService {
     const debitResult = await debitQb.getRawOne();
     const totalDebit = parseFloat(debitResult?.total ?? '0');
 
-    const ledgerBalance = totalCredit - totalDebit;
-
-    // --- monthly accrual cap ---
-    if (atMonth) {
-      const policy = await this.getActivePolicy(leaveTypeId, `${year}-01-01`);
-      if (policy?.monthlyLimitDays) {
-        const accruedToDate = atMonth * Number(policy.monthlyLimitDays);
-        return Math.min(ledgerBalance, accruedToDate);
-      }
-    }
-
-    return ledgerBalance;
+    return totalCredit - totalDebit;
   }
 
   /**
