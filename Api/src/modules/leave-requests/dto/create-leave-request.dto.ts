@@ -52,7 +52,7 @@ export class CreateLeaveRequestDto {
   })
   @IsString()
   @IsNotEmpty({ message: 'Reason is required' })
-  @Length(5, 500)
+  @Length(5, 1000)
   reason: string;
 
   @ApiPropertyOptional({
@@ -99,4 +99,13 @@ export class CreateLeaveRequestDto {
   @IsOptional()
   @IsBoolean()
   confirmDespiteWarning?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Attachment ID returned from upload endpoint (Social leave only)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  attachmentId?: number;
 }

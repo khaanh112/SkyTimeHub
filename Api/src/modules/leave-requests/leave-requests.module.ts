@@ -14,7 +14,9 @@ import { LeaveTypeConversion } from '@entities/leave-type-conversion.entity';
 import { CalendarOverride } from '@entities/calendar-override.entity';
 import { UserApprover } from '@entities/user_approver.entity';
 import { User } from '@entities/users.entity';
+import { LeaveRequestAttachment } from '@entities/leave-request-attachment.entity';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
+import { StorageModule } from '@modules/storage/storage.module';
 
 @Module({
   imports: [
@@ -30,8 +32,10 @@ import { NotificationsModule } from '@modules/notifications/notifications.module
       CalendarOverride,
       UserApprover,
       User,
+      LeaveRequestAttachment,
     ]),
     NotificationsModule,
+    StorageModule,
   ],
   controllers: [LeaveRequestsController],
   providers: [LeaveRequestsService, LeaveBalanceService],

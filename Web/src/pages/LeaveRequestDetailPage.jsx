@@ -18,6 +18,8 @@ import {
   Info,
   CheckCircle,
   Mail,
+  Download,
+  Eye,
 } from 'lucide-react';
 
 const SectionNumber = ({ number }) => (
@@ -25,6 +27,106 @@ const SectionNumber = ({ number }) => (
     {number}
   </div>
 );
+
+/** Fetches a presigned URL and offers inline view + download for a PDF attachment */
+const AttachmentViewer = ({ attachmentId, originalFilename, sizeBytes }) => {
+  const [url, setUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+
+  const fetchUrl = async () => {
+    if (url) return url;
+    setLoading(true);
+    try {
+      const res = await leaveRequestService.getAttachmentUrl(attachmentId);
+      const fetchedUrl = res?.data?.url ?? res?.url;
+      setUrl(fetchedUrl);
+      return fetchedUrl;
+    } catch {
+      toast.error('Failed to load attachment URL');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleView = async () => {
+    const fetchedUrl = await fetchUrl();
+    if (fetchedUrl) setShowPreview(true);
+  };
+
+  const handleDownload = async () => {
+    const fetchedUrl = await fetchUrl();
+    if (!fetchedUrl) return;
+    const a = document.createElement('a');
+    a.href = fetchedUrl;
+    a.download = originalFilename || 'attachment.pdf';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+  };
+
+  const formatSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText className="w-4 h-4 text-red-500 shrink-0" />
+          <span className="text-sm text-gray-700 truncate">{originalFilename || 'document.pdf'}</span>
+          {sizeBytes && <span className="text-xs text-gray-400 shrink-0">{formatSize(sizeBytes)}</span>}
+        </div>
+        <div className="flex items-center gap-2 ml-3 shrink-0">
+          <button
+            type="button"
+            onClick={handleView}
+            disabled={loading}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50"
+          >
+            {loading ? <div className="w-3.5 h-3.5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+            View
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={loading}
+            className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download
+          </button>
+        </div>
+      </div>
+
+      {/* Inline PDF preview */}
+      {showPreview && url && (
+        <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 bg-gray-100 border-b border-gray-200">
+            <span className="text-xs text-gray-600 font-medium">Preview</span>
+            <button
+              type="button"
+              onClick={() => setShowPreview(false)}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <XCircle className="w-4 h-4" />
+            </button>
+          </div>
+          <iframe
+            src={url}
+            className="w-full"
+            style={{ height: '600px' }}
+            title={originalFilename || 'PDF Preview'}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
 
 const LeaveRequestDetailPage = () => {
   const { id } = useParams();
@@ -521,6 +623,18 @@ const LeaveRequestDetailPage = () => {
               <SectionNumber number={4} />
               <h2 className="text-lg font-bold text-gray-900">Additional</h2>
             </div>
+
+            {/* Supporting Document (Social leave) */}
+            {leaveRequest.attachment && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-500 mb-2">Supporting Document</label>
+                <AttachmentViewer
+                  attachmentId={leaveRequest.attachment.id}
+                  originalFilename={leaveRequest.attachment.originalFilename}
+                  sizeBytes={leaveRequest.attachment.sizeBytes}
+                />
+              </div>
+            )}
 
             {/* CC Recipients */}
             <div>

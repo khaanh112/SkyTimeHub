@@ -16,12 +16,12 @@ export class LeaveRequestAttachment {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
 
-  @Column({ name: 'leave_request_id', type: 'int' })
-  leaveRequestId: number;
+  @Column({ name: 'leave_request_id', type: 'int', nullable: true })
+  leaveRequestId: number | null;
 
-  @ManyToOne(() => LeaveRequest, (lr) => lr.attachments, { onDelete: 'CASCADE' })
+  @ManyToOne(() => LeaveRequest, (lr) => lr.attachments, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'leave_request_id' })
-  leaveRequest: LeaveRequest;
+  leaveRequest: LeaveRequest | null;
 
   @ApiPropertyOptional({ example: 'medical_cert.pdf' })
   @Column({ name: 'original_filename', type: 'varchar', length: 255, nullable: true })

@@ -13,6 +13,8 @@ import {
   X,
   Plus,
   AlertTriangle,
+  FileText,
+  CheckCircle,
 } from 'lucide-react';
 
 // ── Time slots for compensatory working plan (30-min increments, full 24h) ──
@@ -173,6 +175,10 @@ const CreateLeaveRequestPage = () => {
   const [loadingApprover, setLoadingApprover] = useState(true);
   const [showLimitExceeded, setShowLimitExceeded] = useState(false);
   const [limitInfo, setLimitInfo] = useState({ warnings: [], items: [], durationDays: 0 });
+  // Social leave attachment
+  const [attachmentFile, setAttachmentFile] = useState(null); // File object for preview
+  const [uploadedAttachmentId, setUploadedAttachmentId] = useState(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   // Dynamic leave types fetched from API
   const [leaveCategories, setLeaveCategories] = useState([]);
@@ -191,8 +197,6 @@ const CreateLeaveRequestPage = () => {
     // Compensatory-specific
     compensationMethod: 'fund', // 'fund' | 'working_plan'
     compensatoryPlans: [{ startDate: '', startTime: '08:30', endDate: '', endTime: '17:30' }],
-    // Social Benefits-specific
-    attachments: [],
     // Parental Leave-specific
     numberOfChildren: 1,
     childbirthMethod: 'natural', // 'natural' | 'c_section'
@@ -485,6 +489,8 @@ const CreateLeaveRequestPage = () => {
           numberOfChildren: formData.numberOfChildren || 1,
           childbirthMethod: formData.childbirthMethod || 'natural',
         }),
+        // Social leave attachment
+        ...(isSocialBenefits && uploadedAttachmentId && { attachmentId: uploadedAttachmentId }),
       };
       await leaveRequestService.createLeaveRequest(payload);
       toast.success('Leave request submitted successfully!');
@@ -541,27 +547,49 @@ const CreateLeaveRequestPage = () => {
   };
 
   // ── Attachment helpers ──
-  const handleFileDrop = (e) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer?.files || e.target?.files || []);
-    const valid = files.filter((f) => f.size <= 10 * 1024 * 1024); // 10MB limit
-    if (valid.length < files.length) {
-      toast.warning('Some files exceed the 10MB size limit and were not added.');
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      toast.error('Only PDF files are allowed');
+      return;
     }
-    setFormData((prev) => ({ ...prev, attachments: [...prev.attachments, ...valid] }));
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must not exceed 10 MB');
+      return;
+    }
+    setAttachmentFile(file);
+    setUploadedAttachmentId(null);
+    try {
+      setUploadingFile(true);
+      const result = await leaveRequestService.uploadAttachment(file);
+      const data = result?.data ?? result;
+      setUploadedAttachmentId(data.attachmentId);
+      toast.success('File uploaded successfully');
+    } catch {
+      toast.error('Failed to upload file. Please try again.');
+      setAttachmentFile(null);
+    } finally {
+      setUploadingFile(false);
+    }
   };
 
-  const removeAttachment = (index) => {
-    setFormData((prev) => ({
-      ...prev,
-      attachments: prev.attachments.filter((_, i) => i !== index),
-    }));
+  const removeAttachment = () => {
+    setAttachmentFile(null);
+    setUploadedAttachmentId(null);
+    document.getElementById('file-upload').value = '';
   };
 
   // ── Derived state ──
   const hasSubTypes = selectedCategory && !selectedCategory.autoConvert && selectedCategory.leaveTypes.length > 1;
   const isCompensatory = formData.leaveCategory === 'COMPENSATORY';
   const isSocialBenefits = formData.leaveCategory === 'SOCIAL';
+
+  const isFormValid =
+    !!formData.leaveTypeId &&
+    !!formData.startDate &&
+    !!formData.endDate &&
+    formData.reason.trim().length >= 5;
 
   const requestHours = totalDuration ? totalDuration * 8 : 0;
 
@@ -835,44 +863,50 @@ const CreateLeaveRequestPage = () => {
             </div>
 
             <div className="space-y-5">
-              {/* Attachments — only for Social Benefits Leave */}
+              {/* Attachment — only for Social Benefits Leave, PDF only, 1 file */}
               {isSocialBenefits && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Attachments</label>
-                  <div
-                    onDrop={handleFileDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                    className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
-                    onClick={() => document.getElementById('file-upload').click()}
-                  >
-                    <input
-                      id="file-upload"
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={handleFileDrop}
-                    />
-                    <Upload className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-                    <p className="text-sm text-gray-600">
-                      Drag and drop files here or{' '}
-                      <span className="text-blue-600 font-medium hover:underline">browse</span>
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">Maximum file size 10MB</p>
-                  </div>
-                  {formData.attachments.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {formData.attachments.map((file, idx) => (
-                        <div key={idx} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
-                          <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeAttachment(idx)}
-                            className="text-gray-400 hover:text-red-500 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Supporting Document (PDF)
+                  </label>
+                  {!attachmentFile ? (
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
+                      onClick={() => document.getElementById('file-upload').click()}
+                    >
+                      <input
+                        id="file-upload"
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
+                      <Upload className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600">
+                        Click to upload PDF proof document
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">PDF only · Maximum 10 MB · 1 file</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="w-4 h-4 text-red-500 shrink-0" />
+                        <span className="text-sm text-gray-700 truncate">{attachmentFile.name}</span>
+                        {uploadingFile && (
+                          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                        )}
+                        {!uploadingFile && uploadedAttachmentId && (
+                          <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={removeAttachment}
+                        className="text-gray-400 hover:text-red-500 transition-colors ml-2 shrink-0"
+                        disabled={uploadingFile}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1047,9 +1081,9 @@ const CreateLeaveRequestPage = () => {
             </button>
             <button
               type="submit"
-              disabled={submitting || loadingApprover || !approver}
+              disabled={!isFormValid || submitting || loadingApprover || !approver}
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-              title={!approver && !loadingApprover ? 'You need an approver assigned before submitting' : ''}
+              title={!approver && !loadingApprover ? 'You need an approver assigned before submitting' : !isFormValid ? 'Please fill in all required fields' : ''}
             >
               {submitting ? (
                 <>

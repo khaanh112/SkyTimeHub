@@ -362,7 +362,7 @@ export class LeaveBalanceService {
           parentalOptions?.childbirthMethod === ChildbirthMethod.C_SECTION ? 7 : 5;
         parentalEntitlementDays = entitlement;
 
-        const duration = await calculateLeaveDuration(
+        const duration = await calculateLeaveDuration(  
           leaveTypeId,
           this.calendarRepo,
           startDate,
@@ -893,7 +893,7 @@ export class LeaveBalanceService {
     // Items are processed in order — policy entitlement first, then the
     // PAID overflow, then UNPAID overflow — so the policy item naturally
     // fills the earliest days and stays whole.
-    if (categoryCode !== 'ANNUAL' && monthlyAllocations.length === 0) {
+    if (categoryCode !== LeaveCategory.ANNUAL && monthlyAllocations.length === 0) {
       const buckets =
         monthlyBuckets.length > 0
           ? monthlyBuckets
@@ -1753,99 +1753,5 @@ export class LeaveBalanceService {
     return result;
   }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Monthly Balance Report
-  // ═══════════════════════════════════════════════════════════════════
-
-  /**
-   * Per-month balance report for an employee (year).
-   *
-   * Queries leave_balance_transactions grouped by (period_year, period_month):
-   *   credit_in_month  = SUM(CREDIT)
-   *   debit_in_month   = SUM(DEBIT)
-   *   cumulativeBalance = running total (window function equivalent)
-   */
-  async getMonthlyBalanceReport(
-    employeeId: number,
-    year: number,
-  ): Promise<
-    {
-      month: number;
-      leaveTypeCode: string;
-      leaveTypeName: string;
-      accrued: number;
-      used: number;
-      released: number;
-      refunded: number;
-      cumulativeBalance: number;
-    }[]
-  > {
-    const paidType = await this.leaveTypeRepo.findOne({
-      where: { code: 'PAID', isActive: true },
-    });
-    if (!paidType) return [];
-
-    const txRows = await this.balanceTxRepo
-      .createQueryBuilder('tx')
-      .select('tx.period_month', 'month')
-      .addSelect('tx.direction', 'direction')
-      .addSelect('tx.source_type', 'sourceType')
-      .addSelect('SUM(tx.amount_days)', 'total')
-      .where('tx.employee_id = :employeeId', { employeeId })
-      .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: paidType.id })
-      .andWhere('tx.period_year = :year', { year })
-      .groupBy('tx.period_month')
-      .addGroupBy('tx.direction')
-      .addGroupBy('tx.source_type')
-      .orderBy('tx.period_month', 'ASC')
-      .getRawMany();
-
-    const monthData = new Map<number, { accrued: number; used: number; released: number; refunded: number }>();
-    for (let m = 1; m <= 12; m++) {
-      monthData.set(m, { accrued: 0, used: 0, released: 0, refunded: 0 });
-    }
-
-    for (const row of txRows) {
-      const m = parseInt(row.month) || 1;
-      const total = parseFloat(row.total);
-      const direction = row.direction as string;
-      const sourceType = row.sourceType as string;
-
-      const entry = monthData.get(m);
-      if (!entry) continue;
-
-      if (direction === BalanceTxDirection.CREDIT) {
-        if (sourceType === BalanceTxSource.RELEASE) {
-          entry.released += total;
-        } else if (sourceType === BalanceTxSource.REFUND) {
-          entry.refunded += total;
-        } else {
-          entry.accrued += total;
-        }
-      } else if (direction === BalanceTxDirection.DEBIT) {
-        entry.used += total;
-      }
-    }
-
-    const report = [];
-    let cumulative = 0;
-
-    for (let m = 1; m <= 12; m++) {
-      const d = monthData.get(m)!;
-      cumulative += d.accrued + d.released + d.refunded - d.used;
-
-      report.push({
-        month: m,
-        leaveTypeCode: paidType.code,
-        leaveTypeName: paidType.name,
-        accrued: d.accrued,
-        used: d.used,
-        released: d.released,
-        refunded: d.refunded,
-        cumulativeBalance: Math.round(cumulative * 2) / 2,
-      });
-    }
-
-    return report;
-  }
+  
 }

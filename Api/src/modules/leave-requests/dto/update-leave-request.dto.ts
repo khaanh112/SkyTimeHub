@@ -102,4 +102,14 @@ export class UpdateLeaveRequestDto {
   @IsOptional()
   @IsBoolean()
   confirmDespiteWarning?: boolean;
+
+   @ApiPropertyOptional({
+    description: 'Attachment ID returned from upload endpoint (Social leave only)',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  attachmentId?: number;
+  
 }

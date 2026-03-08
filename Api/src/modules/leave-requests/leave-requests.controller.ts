@@ -11,7 +11,12 @@ import {
   ForbiddenException,
   Query,
   Logger,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import {
   ApiTags,
   ApiOperation,
@@ -19,6 +24,7 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiBody,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { LeaveRequestsService } from './leave-requests.service';
 import { LeaveBalanceService } from './leave-balance.service';
@@ -215,43 +221,6 @@ export class LeaveRequestsController {
     return this.leaveBalanceService.initializeYearlyBalance(year, annualDays);
   }
 
-  @Get('monthly-report')
-  @ApiOperation({
-    summary: 'Get per-month paid leave balance report for current user',
-    description:
-      'Returns monthly accrual, usage, refunds and cumulative balance for the PAID leave type. ' +
-      'Used for auditing and month-by-month leave tracking.',
-  })
-  @ApiResponse({ status: 200, description: 'Monthly report retrieved successfully.' })
-  async getMonthlyReport(
-    @Request() req,
-    @Query('year') yearParam?: string,
-  ) {
-    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-    return this.leaveBalanceService.getMonthlyBalanceReport(req.user.id, year);
-  }
-
-  @Get('monthly-report/:userId')
-  @ApiOperation({
-    summary: 'Get per-month paid leave balance report for a specific user (HR/Manager)',
-    description:
-      'Returns monthly accrual, usage, refunds and cumulative balance for the PAID leave type for the given employee.',
-  })
-  @ApiParam({ name: 'userId', description: 'Target user ID', type: 'number' })
-  @ApiResponse({ status: 200, description: 'Monthly report retrieved successfully.' })
-  @ApiResponse({ status: 403, description: 'Not authorized.' })
-  async getUserMonthlyReport(
-    @Request() req,
-    @Param('userId', ParseIntPipe) userId: number,
-    @Query('year') yearParam?: string,
-  ) {
-    if (req.user.role !== 'hr' && req.user.role !== 'admin' && req.user.role !== 'manager') {
-      throw new ForbiddenException('Not authorized to view this report');
-    }
-    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-    return this.leaveBalanceService.getMonthlyBalanceReport(userId, year);
-  }
-
 
   @Get(':id')
   @ApiOperation({
@@ -384,4 +353,49 @@ export class LeaveRequestsController {
   async cancel(@Param('id', ParseIntPipe) id: number, @Request() req) {
     return this.leaveRequestsService.cancelLeaveRequest(id, req.user.id);
   }
+
+  // ── Attachments ──────────────────────────────────────────────
+
+  @Post('attachments/upload')
+  @ApiOperation({
+    summary: 'Upload a PDF attachment (Social leave proof)',
+    description: 'Uploads a PDF file to MinIO and returns an attachmentId. Pass this ID when creating a Social leave request. Only PDF, max 10 MB, 1 file.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'File uploaded successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid file type or size.' })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async uploadAttachment(
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    return this.leaveRequestsService.uploadAttachment(req.user.id, file);
+  }
+
+  @Get('attachments/:attachmentId/url')
+  @ApiOperation({
+    summary: 'Get a presigned download URL for an attachment',
+    description: 'Returns a short-lived presigned URL (1 hour) for viewing or downloading the PDF attachment.',
+  })
+  @ApiParam({ name: 'attachmentId', type: 'number' })
+  @ApiResponse({ status: 200, description: 'Presigned URL returned.' })
+  @ApiResponse({ status: 403, description: 'Access denied.' })
+  @ApiResponse({ status: 404, description: 'Attachment not found.' })
+  async getAttachmentUrl(
+    @Param('attachmentId', ParseIntPipe) attachmentId: number,
+    @Request() req,
+  ) {
+    return this.leaveRequestsService.getAttachmentUrl(attachmentId, req.user.id, req.user.role);
+  }
 }
+

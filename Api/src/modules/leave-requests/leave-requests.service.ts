@@ -15,6 +15,8 @@ import { LeaveType } from '@entities/leave-type.entity';
 import { LeaveCategory } from '@entities/leave-category.entity';
 import { UserApprover } from '@entities/user_approver.entity';
 import { User } from '@entities/users.entity';
+import { LeaveRequestAttachment } from '@entities/leave-request-attachment.entity';
+import { StorageService } from '@modules/storage/storage.service';
 import { LeaveRequestStatus } from '@common/enums/request_status';
 import { RecipientType } from '@common/enums/recipient-type.enum';
 import { UserRole } from '@common/enums/roles.enum';
@@ -58,9 +60,12 @@ export class LeaveRequestsService {
     private userApproverRepository: Repository<UserApprover>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(LeaveRequestAttachment)
+    private attachmentRepository: Repository<LeaveRequestAttachment>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
     private leaveBalanceService: LeaveBalanceService,
+    private storageService: StorageService,
   ) {}
 
   /**
@@ -114,6 +119,87 @@ export class LeaveRequestsService {
         409,
       );
     }
+  }
+
+  /**
+   * Upload a PDF attachment to MinIO and create an orphan attachment record.
+   * The attachment will be linked to the leave request upon creation.
+   */
+  async uploadAttachment(
+    uploadedBy: number,
+    file: Express.Multer.File,
+  ): Promise<{ attachmentId: number; originalFilename: string; sizeBytes: number }> {
+    if (file.mimetype !== 'application/pdf') {
+      throw new BadRequestException('Only PDF files are allowed');
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      throw new BadRequestException('File size must not exceed 10 MB');
+    }
+
+    const { objectKey, bucket } = await this.storageService.upload(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+    );
+
+    const attachment = this.attachmentRepository.create({
+      leaveRequestId: null,
+      originalFilename: file.originalname,
+      contentType: file.mimetype,
+      sizeBytes: file.size,
+      storageProvider: 'MINIO',
+      bucket,
+      objectKey,
+      uploadedBy,
+    });
+
+    const saved = await this.attachmentRepository.save(attachment);
+    return { attachmentId: saved.id, originalFilename: saved.originalFilename, sizeBytes: saved.sizeBytes };
+  }
+
+  /**
+   * Return a short-lived presigned URL for downloading/viewing an attachment.
+   * Access is granted to admins/HR, the uploader, the leave request owner, or the owner's configured approver.
+   */
+  async getAttachmentUrl(
+    attachmentId: number,
+    requesterId: number,
+    requesterRole: UserRole,
+  ): Promise<{ url: string; originalFilename: string | null }> {
+    const attachment = await this.attachmentRepository.findOne({
+      where: { id: attachmentId },
+    });
+
+    if (!attachment) {
+      throw new NotFoundException('Attachment not found');
+    }
+
+    // Admins and HR can access all attachments
+    if (requesterRole !== UserRole.ADMIN && requesterRole !== UserRole.HR) {
+      // Access check: uploader OR owner of the linked leave request OR configured approver
+      if (attachment.uploadedBy !== requesterId) {
+        if (attachment.leaveRequestId) {
+          const lr = await this.leaveRequestRepository.findOne({
+            where: { id: attachment.leaveRequestId },
+          });
+          if (!lr || lr.userId !== requesterId) {
+            const isApprover = lr
+              ? await this.userApproverRepository.findOne({
+                  where: { userId: lr.userId, approverId: requesterId, active: true },
+                })
+              : null;
+            if (!isApprover) {
+              throw new ForbiddenException('Access denied');
+            }
+          }
+        } else {
+          throw new ForbiddenException('Access denied');
+        }
+      }
+    }
+
+    const url = await this.storageService.getPresignedUrl(attachment.objectKey, 3600);
+    return { url, originalFilename: attachment.originalFilename };
   }
 
   /**
@@ -190,12 +276,6 @@ export class LeaveRequestsService {
       );
     }
 
-
-    // Sai logic ở chỗ này, dù có warning hay không thì endDate và endSession vẫn là user input, không bị override bởi hệ thống. Nếu có override thì sẽ gây ra sự nhầm lẫn cho người dùng vì họ đã chọn ngày này rồi mà hệ thống lại đổi thành ngày khác, dù có warning hay không thì cũng phải giữ nguyên ngày người dùng chọn, warning chỉ là cảnh báo về việc có thể bị trừ nhiều ngày phép hơn dự kiến thôi chứ không phải là cảnh báo về việc hệ thống sẽ đổi ngày của họ. Cần sửa lại phần này để luôn sử dụng endDate và endSession do người dùng cung cấp, không bị override bởi hệ thống dù có warning hay không.
-    // Always use user-provided endDate and endSession (no auto-override)
-    const finalEndDate = dto.endDate;
-    const finalEndSession = dto.endSession;
-
     // ── Transaction (advisory lock + reserve) ────────────────
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -211,9 +291,9 @@ export class LeaveRequestsService {
         approverId: userApprover.approverId,
         requestedLeaveTypeId: leaveTypeId,
         startDate: dto.startDate,
-        endDate: finalEndDate,
+        endDate: dto.endDate,
         startSession: dto.startSession,
-        endSession: finalEndSession,
+        endSession: dto.endSession,
         durationDays: preValidation.durationDays,
         reason: dto.reason,
         workSolution: dto.workSolution,
@@ -281,9 +361,6 @@ export class LeaveRequestsService {
         await queryRunner.manager.save(items);
       }
 
-      //end problem
-
-
 
       // Add notification recipients
       const recipients: LeaveRequestNotificationRecipient[] = [];
@@ -330,6 +407,14 @@ export class LeaveRequestsService {
       throw error;
     } finally {
       await queryRunner.release();
+    }
+
+    // Link orphan attachment to the newly created leave request
+    if (dto.attachmentId) {
+      await this.attachmentRepository.update(
+        { id: dto.attachmentId, uploadedBy: userId },
+        { leaveRequestId: savedRequest.id },
+      );
     }
 
     // Post-commit: reload with all required relations (outside transaction scope)
@@ -1178,6 +1263,7 @@ export class LeaveRequestsService {
         'items.leaveType',
         'requestedLeaveType',
         'requestedLeaveType.category',
+        'attachments',
       ],
     });
 
@@ -1268,6 +1354,15 @@ export class LeaveRequestsService {
       // Timestamps
       createdAt: lr.createdAt,
       updatedAt: lr.updatedAt,
+
+      // Attachment (Social benefits proof document)
+      attachment: lr.attachments?.[0]
+        ? {
+            id: Number(lr.attachments[0].id),
+            originalFilename: lr.attachments[0].originalFilename,
+            sizeBytes: lr.attachments[0].sizeBytes ? Number(lr.attachments[0].sizeBytes) : null,
+          }
+        : null,
     };
 
     this.logger.log(`[findOne] OK – id=${id} status=${dto.status}`);

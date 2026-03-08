@@ -172,4 +172,12 @@ export class LeaveRequestDetailsDto {
 
   @ApiProperty({ description: 'Last update timestamp' })
   updatedAt: Date;
+
+  // ── Attachment (Social Benefits only) ──────────────────────
+
+  @ApiPropertyOptional({
+    description: 'Attachment metadata (Social leave proof document)',
+    example: { id: 1, originalFilename: 'medical_cert.pdf', sizeBytes: 102400 },
+  })
+  attachment?: { id: number; originalFilename: string | null; sizeBytes: number | null } | null;
 }

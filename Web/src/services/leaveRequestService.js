@@ -83,6 +83,22 @@ const leaveRequestService = {
     const response = await api.get(`/leave-requests/balance-summary/${userId}`);
     return response.data;
   },
+
+  // Upload a PDF attachment for Social leave (returns { attachmentId, originalFilename, sizeBytes })
+  uploadAttachment: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/leave-requests/attachments/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  // Get a presigned URL for viewing/downloading an attachment
+  getAttachmentUrl: async (attachmentId) => {
+    const response = await api.get(`/leave-requests/attachments/${attachmentId}/url`);
+    return response.data; // { url, originalFilename }
+  },
 };
 
 export default leaveRequestService;
