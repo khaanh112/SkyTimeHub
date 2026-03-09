@@ -309,6 +309,7 @@ export class LeaveRequestsService {
 
     let savedRequest: LeaveRequest;
     let validation: LeaveValidationResult;
+    let emailIds: number[] = [];
 
     try {
       // Create leave request first to get ID for source_id in transactions
@@ -424,6 +425,22 @@ export class LeaveRequestsService {
         await queryRunner.manager.save(recipients);
       }
 
+      // Enqueue email notification INSIDE the transaction (transactional outbox)
+      emailIds = await this.notificationsService.enqueueLeaveRequestCreatedNotification(
+        savedRequest.id,
+        userApprover.approverId,
+        recipients,
+        {
+          requesterName: requester.username,
+          approverName: userApprover.approver.username,
+          startDate: savedRequest.startDate,
+          endDate: savedRequest.endDate,
+          leaveRequestId: savedRequest.id,
+          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${savedRequest.id}`,
+        },
+        queryRunner.manager,
+      );
+
       await queryRunner.commitTransaction();
     } catch (error) {
       if (queryRunner.isTransactionActive) {
@@ -434,6 +451,9 @@ export class LeaveRequestsService {
     } finally {
       await queryRunner.release();
     }
+
+    // Post-commit: trigger immediate send (fire and forget)
+    this.notificationsService.triggerImmediateSend(emailIds);
 
     // Link orphan attachment to the newly created leave request
     if (dto.attachmentId) {
@@ -448,20 +468,6 @@ export class LeaveRequestsService {
       where: { id: savedRequest.id },
       relations: ['items', 'items.leaveType', 'user', 'approver', 'notificationRecipients'],
     });
-
-    await this.notificationsService.enqueueLeaveRequestCreatedNotification(
-      reloadedRequest.id,
-      reloadedRequest.approverId,
-      reloadedRequest.notificationRecipients || [],
-      {
-        requesterName: reloadedRequest.user.username,
-        approverName: reloadedRequest.approver.username,
-        startDate: reloadedRequest.startDate,
-        endDate: reloadedRequest.endDate,
-        leaveRequestId: reloadedRequest.id,
-        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${reloadedRequest.id}`,
-      },
-    );
 
     this.logger.log(`Leave request ${reloadedRequest.id} created by user ${userId} — ${validation.durationDays} days, ${validation.items.length} item(s)`);
     return reloadedRequest;
@@ -580,6 +586,7 @@ export class LeaveRequestsService {
     await queryRunner.startTransaction();
 
     let updatedEntity: LeaveRequest;
+    let emailIds: number[] = [];
 
     try {
       const leaveRequestRepo = queryRunner.manager.getRepository(LeaveRequest);
@@ -677,6 +684,26 @@ export class LeaveRequestsService {
         }
       }
 
+      // Load notification recipients inside transaction (may have just been updated)
+      const txRecipients = await recipientRepo.find({
+        where: { requestId },
+        relations: ['user'],
+      });
+
+      // Enqueue email notification INSIDE the transaction (transactional outbox)
+      emailIds = await this.notificationsService.enqueueLeaveRequestUpdatedNotification(
+        requestId,
+        leaveRequest.approverId,
+        txRecipients,
+        {
+          requesterName: leaveRequest.user.username,
+          startDate: dto.startDate,
+          endDate: dto.endDate,
+          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${requestId}`,
+        },
+        queryRunner.manager,
+      );
+
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -686,23 +713,14 @@ export class LeaveRequestsService {
       await queryRunner.release();
     }
 
+    // Post-commit: trigger immediate send (fire and forget)
+    this.notificationsService.triggerImmediateSend(emailIds);
+
     // Reload with full relations
     const updatedRequest = await this.leaveRequestRepository.findOneOrFail({
       where: { id: requestId },
       relations: ['user', 'notificationRecipients', 'notificationRecipients.user', 'items', 'items.leaveType'],
     });
-
-    await this.notificationsService.enqueueLeaveRequestUpdatedNotification(
-      updatedRequest.id,
-      updatedRequest.approverId,
-      updatedRequest.notificationRecipients || [],
-      {
-        requesterName: updatedRequest.user.username,
-        startDate: updatedRequest.startDate,
-        endDate: updatedRequest.endDate,
-        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${updatedRequest.id}`,
-      },
-    );
 
     this.logger.log(`[updateLeaveRequest] Successfully updated request ${requestId} — version: ${updatedEntity.version}`);
     return updatedRequest;
@@ -748,6 +766,7 @@ export class LeaveRequestsService {
     await queryRunner.startTransaction();
 
     let updated: LeaveRequest;
+    let emailIds: number[] = [];
     try {
       // Update status
       leaveRequest.status = LeaveRequestStatus.APPROVED;
@@ -761,6 +780,27 @@ export class LeaveRequestsService {
         queryRunner.manager,
       );
 
+      // Load recipients and enqueue email INSIDE the transaction (transactional outbox)
+      const recipients = await queryRunner.manager.getRepository(LeaveRequestNotificationRecipient).find({
+        where: { requestId: leaveRequest.id },
+        relations: ['user'],
+      });
+
+      emailIds = await this.notificationsService.enqueueLeaveRequestApprovedNotification(
+        leaveRequest.id,
+        leaveRequest.userId,
+        recipients,
+        {
+          requesterName: leaveRequest.user.username,
+          approverName: leaveRequest.approver.username,
+          startDate: leaveRequest.startDate,
+          endDate: leaveRequest.endDate,
+          approvedAt: leaveRequest.approvedAt.toISOString(),
+          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
+        },
+        queryRunner.manager,
+      );
+
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -770,24 +810,8 @@ export class LeaveRequestsService {
       await queryRunner.release();
     }
 
-    const recipients = await this.notificationRecipientRepository.find({
-      where: { requestId: leaveRequest.id },
-      relations: ['user'],
-    });
-
-    await this.notificationsService.enqueueLeaveRequestApprovedNotification(
-      leaveRequest.id,
-      leaveRequest.userId,
-      recipients,
-      {
-        requesterName: leaveRequest.user.username,
-        approverName: leaveRequest.approver.username,
-        startDate: leaveRequest.startDate,
-        endDate: leaveRequest.endDate,
-        approvedAt: leaveRequest.approvedAt.toISOString(),
-        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
-      },
-    );
+    // Post-commit: trigger immediate send (fire and forget)
+    this.notificationsService.triggerImmediateSend(emailIds);
 
     this.logger.log(`Leave request ${requestId} approved by user ${approverId}`);
     return updated;
@@ -845,6 +869,7 @@ export class LeaveRequestsService {
     await queryRunner.startTransaction();
 
     let updated: LeaveRequest;
+    let emailIds: number[] = [];
     try {
       leaveRequest.status = LeaveRequestStatus.REJECTED;
       leaveRequest.rejectedAt = new Date();
@@ -858,6 +883,23 @@ export class LeaveRequestsService {
         queryRunner.manager,
       );
 
+      // Enqueue email notification INSIDE the transaction (transactional outbox)
+      emailIds = await this.notificationsService.enqueueLeaveRequestRejectedNotification(
+        leaveRequest.id,
+        leaveRequest.userId,
+        rejectRecipients,
+        {
+          requesterName: leaveRequest.user.username,
+          approverName: leaveRequest.approver.username,
+          startDate: leaveRequest.startDate,
+          endDate: leaveRequest.endDate,
+          rejectedAt: leaveRequest.rejectedAt.toISOString(),
+          rejectedReason: leaveRequest.rejectedReason,
+          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
+        },
+        queryRunner.manager,
+      );
+
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -867,20 +909,8 @@ export class LeaveRequestsService {
       await queryRunner.release();
     }
 
-    await this.notificationsService.enqueueLeaveRequestRejectedNotification(
-      leaveRequest.id,
-      leaveRequest.userId,
-      rejectRecipients,
-      {
-        requesterName: leaveRequest.user.username,
-        approverName: leaveRequest.approver.username,
-        startDate: leaveRequest.startDate,
-        endDate: leaveRequest.endDate,
-        rejectedAt: leaveRequest.rejectedAt.toISOString(),
-        rejectedReason: leaveRequest.rejectedReason,
-        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
-      },
-    );
+    // Post-commit: trigger immediate send (fire and forget)
+    this.notificationsService.triggerImmediateSend(emailIds);
 
     this.logger.log(`Leave request ${requestId} rejected by user ${approverId} (reserves released)`);
     return updated;
@@ -920,6 +950,7 @@ export class LeaveRequestsService {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
+    let emailIds: number[] = [];
     try {
       leaveRequest.status = LeaveRequestStatus.CANCELLED;
       leaveRequest.cancelledAt = new Date();
@@ -928,7 +959,7 @@ export class LeaveRequestsService {
 
       if (wasApproved) {
         // After approve → CREDIT REFUND (reverses APPROVAL debits)
-   
+
         await this.leaveBalanceService.refundBalanceForCancellation(
           leaveRequest.userId,
           leaveRequest.id,
@@ -944,6 +975,22 @@ export class LeaveRequestsService {
         );
       }
 
+      // Enqueue email notification INSIDE the transaction (transactional outbox)
+      // Uses pre-loaded cancelRecipients since notification_recipients were deleted above
+      emailIds = await this.notificationsService.enqueueLeaveRequestCancelledNotification(
+        leaveRequest.id,
+        leaveRequest.approverId,
+        cancelRecipients,
+        {
+          requesterName: leaveRequest.user.username,
+          startDate: leaveRequest.startDate,
+          endDate: leaveRequest.endDate,
+          cancelledAt: leaveRequest.cancelledAt.toISOString(),
+          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
+        },
+        queryRunner.manager,
+      );
+
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -953,18 +1000,8 @@ export class LeaveRequestsService {
       await queryRunner.release();
     }
 
-    await this.notificationsService.enqueueLeaveRequestCancelledNotification(
-      leaveRequest.id,
-      leaveRequest.approverId,
-      cancelRecipients,
-      {
-        requesterName: leaveRequest.user.username,
-        startDate: leaveRequest.startDate,
-        endDate: leaveRequest.endDate,
-        cancelledAt: leaveRequest.cancelledAt.toISOString(),
-        dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
-      },
-    );
+    // Post-commit: trigger immediate send (fire and forget)
+    this.notificationsService.triggerImmediateSend(emailIds);
 
     this.logger.log(`Leave request ${requestId} cancelled by user ${userId}${wasApproved ? ' (balance refunded)' : ' (reserves released)'}`);
     return leaveRequest;

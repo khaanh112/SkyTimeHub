@@ -1,6 +1,6 @@
 import { Injectable, HttpStatus, Logger } from '@nestjs/common';
 import { User } from '@entities/users.entity';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -18,6 +18,7 @@ export class UsersService {
     @InjectRepository(User)
     private usersRepository: Repository<User>,
     private notificationsService: NotificationsService,
+    private dataSource: DataSource,
   ) {}
 
 
@@ -90,17 +91,41 @@ export class UsersService {
     };
 
     try {
-      const newUser = this.usersRepository.create(userData);
-      const savedUser = await this.usersRepository.save(newUser);
-      // Enqueue activation email with correct format
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const activationLink = `${frontendUrl}/auth/activate?token=${activationToken}`;
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
 
-      await this.notificationsService.enqueueActivationEmail(
-        savedUser.id,
-        activationToken,
-        activationLink,
-      );
+      let savedUser: User;
+      let emailIds: number[] = [];
+
+      try {
+        const newUser = this.usersRepository.create(userData);
+        savedUser = await queryRunner.manager.save(newUser);
+
+        // Enqueue activation email with correct format
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const activationLink = `${frontendUrl}/auth/activate?token=${activationToken}`;
+
+        // Enqueue INSIDE transaction (transactional outbox)
+        emailIds = await this.notificationsService.enqueueActivationEmail(
+          savedUser.id,
+          activationToken,
+          activationLink,
+          queryRunner.manager,
+        );
+
+        await queryRunner.commitTransaction();
+      } catch (error) {
+        if (queryRunner.isTransactionActive) {
+          await queryRunner.rollbackTransaction();
+        }
+        throw error;
+      } finally {
+        await queryRunner.release();
+      }
+
+      // Post-commit: trigger immediate send (fire and forget)
+      this.notificationsService.triggerImmediateSend(emailIds);
 
       this.logger.log(
         `User created: ${savedUser.email}, status: ${savedUser.status}, activation email queued`,

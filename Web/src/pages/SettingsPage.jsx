@@ -16,6 +16,7 @@ const DEFAULT_HOLIDAYS = [
   { name: 'International New Year', startDate: '', endDate: '', compensatoryDate: '' },
   { name: 'Lunar New Year (Tet Holiday)', startDate: '', endDate: '', compensatoryDate: '' },
   { name: 'Hung Kings Commemoration', startDate: '', endDate: '', compensatoryDate: '' },
+  { name: 'Vietnamese Cultural Day', startDate: '', endDate: '', compensatoryDate: '' },
   { name: 'Victory Day & Labor Day', startDate: '', endDate: '', compensatoryDate: '' },
   { name: 'National Day', startDate: '', endDate: '', compensatoryDate: '' },
 ];

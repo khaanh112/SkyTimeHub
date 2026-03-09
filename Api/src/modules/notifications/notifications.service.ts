@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import * as nodemailer from 'nodemailer';
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
@@ -27,10 +27,20 @@ export class NotificationsService implements OnModuleDestroy {
   }
 
   /**
+   * Fire-and-forget: trigger immediate send for a list of email IDs.
+   * Call this AFTER the transaction that inserted the emails has committed.
+   */
+  triggerImmediateSend(emailIds: number[]): void {
+    for (const id of emailIds) {
+      setImmediate(() => this.trySendImmediately(id));
+    }
+  }
+
+  /**
    * Try to send email immediately after enqueuing (fire and forget)
    * If fails, cronjob will retry later
    */
-  private async trySendImmediately(emailId: number): Promise<void> {
+  async trySendImmediately(emailId: number): Promise<void> {
     try {
       // Load email with user relation
       const email = await this.emailQueueRepository.findOne({
@@ -293,27 +303,36 @@ export class NotificationsService implements OnModuleDestroy {
   }
 
   /**
-   * Enqueue activation email
+   * Enqueue activation email.
+   * @param manager - If provided, uses this EntityManager (inside a transaction).
+   *                  Caller is responsible for calling triggerImmediateSend() after commit.
+   *                  If omitted, saves directly and fires immediate send.
+   * @returns array of queued email IDs
    */
   async enqueueActivationEmail(
     userId: number,
     activationToken: string,
     activationLink: string,
-  ): Promise<void> {
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager
+      ? manager.getRepository(EmailQueue)
+      : this.emailQueueRepository;
+
     const idempotencyKey = `activation-${userId}-${activationToken}`;
 
     // Check if already exists
-    const existing = await this.emailQueueRepository.findOne({
+    const existing = await repo.findOne({
       where: { idempotencyKey },
     });
 
     if (existing) {
       this.logger.debug(`Activation email already queued for user ${userId}`);
-      return;
+      return [];
     }
 
     // Create new email queue entry
-    const emailQueue = this.emailQueueRepository.create({
+    const emailQueue = repo.create({
       recipientUserId: userId,
       type: EmailType.ACTIVATION,
       referenceKind: EmailReferenceKind.INVITE,
@@ -329,15 +348,21 @@ export class NotificationsService implements OnModuleDestroy {
       nextRetryAt: new Date(),
     });
 
-    const savedEmail = await this.emailQueueRepository.save(emailQueue);
+    const savedEmail = await repo.save(emailQueue);
     this.logger.log(`✅ Activation email queued for user ${userId}`);
 
-    // Try to send immediately (fire and forget)
-    setImmediate(() => this.trySendImmediately(savedEmail.id));
+    if (!manager) {
+      // No transaction context — fire immediate send directly
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
   }
 
   /**
-   * Enqueue leave request notification (for approver + HR/CC)
+   * Enqueue leave request notification (for approver + HR/CC).
+   * @param manager - If provided, uses this EntityManager (inside a transaction).
+   * @returns array of queued email IDs
    */
   async enqueueLeaveRequestCreatedNotification(
     leaveRequestId: number,
@@ -351,10 +376,15 @@ export class NotificationsService implements OnModuleDestroy {
       leaveRequestId: number;
       dashboardLink: string;
     },
-  ): Promise<void> {
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager
+      ? manager.getRepository(EmailQueue)
+      : this.emailQueueRepository;
+
     const idempotencyKey = `leave-req-${leaveRequestId}-${recipientUserId}`;
 
-    const existing = await this.emailQueueRepository.findOne({
+    const existing = await repo.findOne({
       where: { idempotencyKey },
     });
 
@@ -362,10 +392,10 @@ export class NotificationsService implements OnModuleDestroy {
       this.logger.debug(
         `Leave request notification already queued for request ${leaveRequestId}, user ${recipientUserId}`,
       );
-      return;
+      return [];
     }
 
-    const emailQueue = this.emailQueueRepository.create({
+    const emailQueue = repo.create({
       recipientUserId,
       type: EmailType.LEAVE_REQUEST_SUBMITTED,
       referenceKind: EmailReferenceKind.LEAVE_REQUEST,
@@ -378,17 +408,22 @@ export class NotificationsService implements OnModuleDestroy {
       nextRetryAt: new Date(),
     });
 
-    const savedEmail = await this.emailQueueRepository.save(emailQueue);
+    const savedEmail = await repo.save(emailQueue);
     this.logger.log(
       `✅ Leave request notification queued for request ${leaveRequestId}, user ${recipientUserId}`,
     );
 
-    // Try to send immediately (fire and forget)
-    setImmediate(() => this.trySendImmediately(savedEmail.id));
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
   }
 
   /**
-   * Enqueue leave request approved notification
+   * Enqueue leave request approved notification.
+   * @param manager - If provided, uses this EntityManager (inside a transaction).
+   * @returns array of queued email IDs
    */
   async enqueueLeaveRequestApprovedNotification(
     leaveRequestId: number,
@@ -402,18 +437,23 @@ export class NotificationsService implements OnModuleDestroy {
       approvedAt: string;
       dashboardLink: string;
     },
-  ): Promise<void> {
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager
+      ? manager.getRepository(EmailQueue)
+      : this.emailQueueRepository;
+
     const idempotencyKey = `leave-approved-${leaveRequestId}-${recipientUserId}`;
 
-    const existing = await this.emailQueueRepository.findOne({
+    const existing = await repo.findOne({
       where: { idempotencyKey },
     });
 
     if (existing) {
-      return;
+      return [];
     }
 
-    const emailQueue = this.emailQueueRepository.create({
+    const emailQueue = repo.create({
       recipientUserId: recipientUserId,
       type: EmailType.LEAVE_REQUEST_APPROVED,
       referenceKind: EmailReferenceKind.LEAVE_REQUEST,
@@ -426,26 +466,33 @@ export class NotificationsService implements OnModuleDestroy {
       nextRetryAt: new Date(),
     });
 
-    const savedEmail = await this.emailQueueRepository.save(emailQueue);
+    const savedEmail = await repo.save(emailQueue);
+    const emailIds: number[] = [savedEmail.id];
 
-    // Try to send immediately (fire and forget)
-    setImmediate(() => this.trySendImmediately(savedEmail.id));
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
 
     for (const recipient of recipients) {
       if (recipient.userId !== recipientUserId) {
-        await this.enqueueLeaveRequestApprovedNotification(
+        const childIds = await this.enqueueLeaveRequestApprovedNotification(
           leaveRequestId,
           recipient.userId,
           recipients,
           context,
+          manager,
         );
+        emailIds.push(...childIds);
       }
     }
     this.logger.log(`✅ Leave request approved notification queued for request ${leaveRequestId}`);
+    return emailIds;
   }
 
   /**
-   * Enqueue leave request rejected notification (requester + recipients)
+   * Enqueue leave request rejected notification (requester + recipients).
+   * @param manager - If provided, uses this EntityManager (inside a transaction).
+   * @returns array of queued email IDs
    */
   async enqueueLeaveRequestRejectedNotification(
     leaveRequestId: number,
@@ -460,18 +507,23 @@ export class NotificationsService implements OnModuleDestroy {
       rejectedReason: string;
       dashboardLink: string;
     },
-  ): Promise<void> {
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager
+      ? manager.getRepository(EmailQueue)
+      : this.emailQueueRepository;
+
     const idempotencyKey = `leave-rejected-${leaveRequestId}-${recipientUserId}`;
 
-    const existing = await this.emailQueueRepository.findOne({
+    const existing = await repo.findOne({
       where: { idempotencyKey },
     });
 
     if (existing) {
-      return;
+      return [];
     }
 
-    const emailQueue = this.emailQueueRepository.create({
+    const emailQueue = repo.create({
       recipientUserId: recipientUserId,
       type: EmailType.LEAVE_REQUEST_REJECTED,
       referenceKind: EmailReferenceKind.LEAVE_REQUEST,
@@ -484,27 +536,34 @@ export class NotificationsService implements OnModuleDestroy {
       nextRetryAt: new Date(),
     });
 
-    const savedEmail = await this.emailQueueRepository.save(emailQueue);
+    const savedEmail = await repo.save(emailQueue);
+    const emailIds: number[] = [savedEmail.id];
 
-    // Try to send immediately (fire and forget)
-    setImmediate(() => this.trySendImmediately(savedEmail.id));
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
 
     // Also notify recipients (HR, CC)
     for (const recipient of recipients) {
       if (recipient.userId !== recipientUserId) {
-        await this.enqueueLeaveRequestRejectedNotification(
+        const childIds = await this.enqueueLeaveRequestRejectedNotification(
           leaveRequestId,
           recipient.userId,
           recipients,
           context,
+          manager,
         );
+        emailIds.push(...childIds);
       }
     }
     this.logger.log(`✅ Leave request rejected notification queued for request ${leaveRequestId}`);
+    return emailIds;
   }
 
   /**
-   * Enqueue leave request updated notification (approver + recipients)
+   * Enqueue leave request updated notification (approver + recipients).
+   * @param manager - If provided, uses this EntityManager (inside a transaction).
+   * @returns array of queued email IDs
    */
   async enqueueLeaveRequestUpdatedNotification(
     leaveRequestId: number,
@@ -516,10 +575,15 @@ export class NotificationsService implements OnModuleDestroy {
       endDate: string;
       dashboardLink: string;
     },
-  ): Promise<void> {
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager
+      ? manager.getRepository(EmailQueue)
+      : this.emailQueueRepository;
+
     const idempotencyKey = `leave-updated-${leaveRequestId}-${recipientUserId}-${Date.now()}`;
 
-    const emailQueue = this.emailQueueRepository.create({
+    const emailQueue = repo.create({
       recipientUserId: recipientUserId,
       type: EmailType.LEAVE_REQUEST_UPDATED,
       referenceKind: EmailReferenceKind.LEAVE_REQUEST,
@@ -532,27 +596,34 @@ export class NotificationsService implements OnModuleDestroy {
       nextRetryAt: new Date(),
     });
 
-    const savedEmail = await this.emailQueueRepository.save(emailQueue);
+    const savedEmail = await repo.save(emailQueue);
+    const emailIds: number[] = [savedEmail.id];
 
-    // Try to send immediately (fire and forget)
-    setImmediate(() => this.trySendImmediately(savedEmail.id));
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
 
     // Also notify recipients (HR, CC)
     for (const recipient of recipients) {
       if (recipient.userId !== recipientUserId) {
-        await this.enqueueLeaveRequestUpdatedNotification(
+        const childIds = await this.enqueueLeaveRequestUpdatedNotification(
           leaveRequestId,
           recipient.userId,
           recipients,
           context,
+          manager,
         );
+        emailIds.push(...childIds);
       }
     }
     this.logger.log(`✅ Leave request updated notification queued for request ${leaveRequestId}`);
+    return emailIds;
   }
 
   /**
-   * Enqueue leave request cancelled notification (requester + recipients)
+   * Enqueue leave request cancelled notification (requester + recipients).
+   * @param manager - If provided, uses this EntityManager (inside a transaction).
+   * @returns array of queued email IDs
    */
   async enqueueLeaveRequestCancelledNotification(
     leaveRequestId: number,
@@ -565,10 +636,15 @@ export class NotificationsService implements OnModuleDestroy {
       cancelledAt: string;
       dashboardLink: string;
     },
-  ): Promise<void> {
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager
+      ? manager.getRepository(EmailQueue)
+      : this.emailQueueRepository;
+
     const idempotencyKey = `leave-cancelled-${leaveRequestId}-${recipientUserId}-${Date.now()}`;
 
-    const emailQueue = this.emailQueueRepository.create({
+    const emailQueue = repo.create({
       recipientUserId: recipientUserId,
       type: EmailType.LEAVE_REQUEST_CANCELLED,
       referenceKind: EmailReferenceKind.LEAVE_REQUEST,
@@ -581,22 +657,27 @@ export class NotificationsService implements OnModuleDestroy {
       nextRetryAt: new Date(),
     });
 
-    const savedEmail = await this.emailQueueRepository.save(emailQueue);
+    const savedEmail = await repo.save(emailQueue);
+    const emailIds: number[] = [savedEmail.id];
 
-    // Try to send immediately (fire and forget)
-    setImmediate(() => this.trySendImmediately(savedEmail.id));
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
 
     // Also notify recipients (HR, CC)
     for (const recipient of recipients) {
       if (recipient.userId !== recipientUserId) {
-        await this.enqueueLeaveRequestCancelledNotification(
+        const childIds = await this.enqueueLeaveRequestCancelledNotification(
           leaveRequestId,
           recipient.userId,
           recipients,
           context,
+          manager,
         );
+        emailIds.push(...childIds);
       }
     }
     this.logger.log(`✅ Leave request cancelled notification queued for request ${leaveRequestId}`);
+    return emailIds;
   }
 }
