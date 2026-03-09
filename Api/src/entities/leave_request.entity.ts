@@ -22,7 +22,6 @@ import { LeaveType } from './leave-type.entity';
 import { LeaveRequestItem } from './leave-request-item.entity';
 import { LeaveRequestAttachment } from './leave-request-attachment.entity';
 
-
 @Entity('leave_requests')
 @Index('idx_leave_requests_user_status', ['userId', 'status'])
 @Index('idx_leave_requests_approver_status', ['approverId', 'status'])
@@ -73,7 +72,11 @@ export class LeaveRequest {
   @Column({ type: 'date', name: 'end_date' })
   endDate: string;
 
-  @ApiProperty({ enum: LeaveSession, example: LeaveSession.AM, description: 'Start session (AM/PM)' })
+  @ApiProperty({
+    enum: LeaveSession,
+    example: LeaveSession.AM,
+    description: 'Start session (AM/PM)',
+  })
   @Column({ name: 'start_session', type: 'enum', enum: LeaveSession })
   startSession: LeaveSession;
 
@@ -111,7 +114,10 @@ export class LeaveRequest {
   @Column({ name: 'number_of_children', type: 'int', nullable: true })
   numberOfChildren: number | null;
 
-  @ApiPropertyOptional({ enum: ChildbirthMethod, description: 'Childbirth method (for parental leave)' })
+  @ApiPropertyOptional({
+    enum: ChildbirthMethod,
+    description: 'Childbirth method (for parental leave)',
+  })
   @Column({ name: 'childbirth_method', type: 'enum', enum: ChildbirthMethod, nullable: true })
   childbirthMethod: ChildbirthMethod | null;
 
@@ -176,7 +182,6 @@ export class LeaveRequest {
   @Exclude()
   @OneToMany(() => LeaveRequestAttachment, (att) => att.leaveRequest, { cascade: true })
   attachments: LeaveRequestAttachment[];
-
 
   // ── Timestamps ────────────────────────────────────────────
   @ApiProperty({ description: 'Creation timestamp' })

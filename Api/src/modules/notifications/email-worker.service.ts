@@ -98,7 +98,7 @@ export class EmailWorkerService implements OnModuleInit {
    * Main cron job - runs every 30 seconds to retry failed emails and recover stuck ones
    * Most emails are sent immediately, this cronjob only handles retries and recovery
    */
-  @Cron(CronExpression.EVERY_30_SECONDS)
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async processEmailQueue() {
     this.logger.debug('Starting email queue processing (retry handler)...');
 

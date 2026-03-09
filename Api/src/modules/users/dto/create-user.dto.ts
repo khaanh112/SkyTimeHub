@@ -15,26 +15,26 @@ import { UserGender } from '@common/enums/user-genders';
 import { ContractType } from '@common/enums/contract-type.enum';
 
 export class CreateUserDto {
-
-  @ApiPropertyOptional({ example: 'SG100', description: 'Employee ID (auto-generated if not provided)', maxLength: 20 })
+  @ApiPropertyOptional({
+    example: 'SG100',
+    description: 'Employee ID (auto-generated if not provided)',
+    maxLength: 20,
+  })
   @IsOptional()
   @IsString()
   @Length(1, 20)
   employeeId?: string;
-
 
   @ApiProperty({ example: 'user@example.com', description: 'User email address', required: true })
   @IsEmail()
   @IsDefined({ message: 'Email is required' })
   email: string;
 
-
   @ApiProperty({ example: 'johndoe', description: 'Username', required: true })
   @IsDefined({ message: 'Username is required' })
   @IsNotEmpty({ message: 'Username is required' })
   @IsString()
   username: string;
-
 
   @ApiProperty({
     enum: UserGender,
@@ -45,7 +45,6 @@ export class CreateUserDto {
   @IsDefined({ message: 'Gender is required' })
   @IsEnum(UserGender)
   gender: UserGender;
-
 
   @ApiPropertyOptional({ enum: UserRole, example: UserRole.EMPLOYEE, description: 'User role' })
   @IsOptional()
@@ -112,7 +111,11 @@ export class CreateUserDto {
   @Length(1, 255)
   address?: string;
 
-  @ApiPropertyOptional({ enum: ContractType, example: ContractType.OFFICIAL, description: 'Contract type' })
+  @ApiPropertyOptional({
+    enum: ContractType,
+    example: ContractType.OFFICIAL,
+    description: 'Contract type',
+  })
   @IsOptional()
   @IsEnum(ContractType)
   contractType?: ContractType;

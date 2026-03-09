@@ -1,5 +1,4 @@
 import { Injectable, Logger, HttpStatus } from '@nestjs/common';
-import { User } from '@entities/users.entity';
 import { UsersService } from '@modules/users/users.service';
 import { TokenService } from './token.service';
 import { RefreshTokenService } from './refresh-token.service';
@@ -20,7 +19,6 @@ export class AuthService {
     private refreshTokenService: RefreshTokenService,
     private zohoAuthService: ZohoAuthService,
   ) {}
-
 
   async validateUserFromZoho(zohoProfile: ZohoProfileDto): Promise<LoginResponseDto> {
     try {
@@ -44,7 +42,15 @@ export class AuthService {
 
       // Find or create user by email
       let user = await this.usersService.getUserByEmail(email);
-
+      if(!user) {
+        this.logger.log(`No user found with email ${email}, creating new user`);
+        throw new AppException(
+          ErrorCode.USER_NOT_FOUND,
+          'User not found. Please contact HR to create an account.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      
       if (user.status !== UserStatus.ACTIVE) {
         this.logger.warn(`User account not active: ${user.id}, status: ${user.status}`);
 
@@ -176,7 +182,6 @@ export class AuthService {
     this.logger.log(`User logged out successfully: ${userId}`);
   }
 
-  
   /**
    * Activate user account via activation token
    * Used when user clicks activation link from invitation email

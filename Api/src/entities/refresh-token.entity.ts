@@ -15,7 +15,7 @@ export class RefreshToken {
   id: number;
 
   @Column({ name: 'token_hash' })
-  token: string;  
+  token: string;
 
   @Column({ name: 'user_id' })
   userId: number;

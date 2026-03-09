@@ -5,4 +5,4 @@ export * from './login-email.dto';
 export * from './zoho-profile.dto';
 export * from './activate-account.dto';
 export * from './resend-activation-email.dto';
-export * from './authenticated-user.dto';
+export * from '../../../common/interfaces/authenticated-user.dto';

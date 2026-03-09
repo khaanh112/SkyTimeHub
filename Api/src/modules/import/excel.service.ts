@@ -53,7 +53,12 @@ export class ExcelService {
       const id = this.departmentMap.get(normalized)!;
       // Find the original name
       for (const [key, val] of this.departmentMap.entries()) {
-        if (val === id && Object.values(DepartmentEnum).map(v => v.toUpperCase()).includes(key)) {
+        if (
+          val === id &&
+          Object.values(DepartmentEnum)
+            .map((v) => v.toUpperCase())
+            .includes(key)
+        ) {
           return { id, name: key };
         }
       }
@@ -64,7 +69,12 @@ export class ExcelService {
     const numId = Number(value.trim());
     if (!isNaN(numId) && Number.isInteger(numId) && numId > 0) {
       for (const [key, val] of this.departmentMap.entries()) {
-        if (val === numId && Object.values(DepartmentEnum).map(v => v.toUpperCase()).includes(key)) {
+        if (
+          val === numId &&
+          Object.values(DepartmentEnum)
+            .map((v) => v.toUpperCase())
+            .includes(key)
+        ) {
           return { id: numId, name: key };
         }
       }
@@ -232,7 +242,9 @@ export class ExcelService {
           if (!genderRaw) {
             errors.push('Gender is required');
           } else if (!gender) {
-            errors.push(`Invalid gender "${genderRaw}". Must be one of: ${Object.values(UserGender).join(', ')} (or: M, F, Nam, Nữ)`);
+            errors.push(
+              `Invalid gender "${genderRaw}". Must be one of: ${Object.values(UserGender).join(', ')} (or: M, F, Nam, Nữ)`,
+            );
           }
 
           // Validate optional fields with null safety
@@ -241,7 +253,9 @@ export class ExcelService {
             const roleStr = String(rowData.role).trim();
             normalizedRole = this.normalizeRole(roleStr);
             if (!normalizedRole) {
-              errors.push(`Invalid role "${roleStr}". Must be one of: ${Object.values(UserRole).join(', ')}`);
+              errors.push(
+                `Invalid role "${roleStr}". Must be one of: ${Object.values(UserRole).join(', ')}`,
+              );
             }
           }
 
@@ -254,12 +268,14 @@ export class ExcelService {
 
           // Resolve department: support both "department" (name) and "departmentId" columns
           let resolvedDepartment: { id: number; name: string } | null = null;
-          const deptNameRaw = rowData.department !== null && rowData.department !== undefined
-            ? String(rowData.department).trim()
-            : '';
-          const deptIdRaw = rowData.departmentId !== null && rowData.departmentId !== undefined
-            ? String(rowData.departmentId).trim()
-            : '';
+          const deptNameRaw =
+            rowData.department !== null && rowData.department !== undefined
+              ? String(rowData.department).trim()
+              : '';
+          const deptIdRaw =
+            rowData.departmentId !== null && rowData.departmentId !== undefined
+              ? String(rowData.departmentId).trim()
+              : '';
 
           if (deptNameRaw) {
             // Resolve by department name
@@ -350,7 +366,9 @@ export class ExcelService {
             const ctStr = String(rowData.contractType).trim();
             normalizedContractType = this.normalizeContractType(ctStr);
             if (!normalizedContractType) {
-              errors.push(`Invalid contract type "${ctStr}". Must be one of: ${Object.values(ContractType).join(', ')}`);
+              errors.push(
+                `Invalid contract type "${ctStr}". Must be one of: ${Object.values(ContractType).join(', ')}`,
+              );
             }
           }
 
@@ -533,7 +551,7 @@ export class ExcelService {
             phoneNumber: row.phoneNumber || undefined,
             dateOfBirth: row.dateOfBirth ? new Date(row.dateOfBirth) : undefined,
             address: row.address || undefined,
-            contractType: row.contractType as ContractType || undefined,
+            contractType: (row.contractType as ContractType) || undefined,
             status: UserStatus.PENDING, // All imported users auto-set to pending
           };
 
@@ -582,7 +600,10 @@ export class ExcelService {
    */
   private normalizeContractType(value: string): string | null {
     if (!value) return null;
-    const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '_');
     const validTypes = Object.values(ContractType);
     if (validTypes.includes(normalized as ContractType)) {
       return normalized;
@@ -627,7 +648,7 @@ export class ExcelService {
       m: UserGender.MALE,
       f: UserGender.FEMALE,
       nam: UserGender.MALE,
-      'nữ': UserGender.FEMALE,
+      nữ: UserGender.FEMALE,
       nu: UserGender.FEMALE,
     };
     return genderAliases[normalized] || null;

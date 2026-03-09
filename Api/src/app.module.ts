@@ -18,6 +18,7 @@ import { TransformInterceptor } from '@/common/interceptors/transform.intercepto
 import { SettingsModule } from '@modules/settings/settings.module';
 import { DepartmentModule } from '@modules/department/department.module';
 import { UserProfileModule } from '@modules/user-profile/user-profile.module';
+import { OtManagementsModule } from '@modules/ot-managements/ot-managements.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { UserProfileModule } from '@modules/user-profile/user-profile.module';
     SettingsModule,
     DepartmentModule,
     UserProfileModule,
+    OtManagementsModule,
   ],
   controllers: [AppController],
   providers: [

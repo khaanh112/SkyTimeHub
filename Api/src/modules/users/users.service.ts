@@ -21,11 +21,9 @@ export class UsersService {
     private dataSource: DataSource,
   ) {}
 
-
   async getUsers(): Promise<User[]> {
     return await this.usersRepository.find({});
   }
-
 
   async getUser(id: number): Promise<User> {
     const user = await this.usersRepository.findOne({
@@ -37,20 +35,17 @@ export class UsersService {
     return user;
   }
 
-
   async getUserByEmail(email: string): Promise<User | null> {
     return await this.usersRepository.findOne({
       where: { email },
     });
   }
 
-
   async findByEmployeeId(employeeId: string): Promise<User | null> {
     return await this.usersRepository.findOne({
       where: { employeeId },
     });
   }
-
 
   async createUser(user: CreateUserDto): Promise<User> {
     // Check if email already exists
@@ -174,13 +169,12 @@ export class UsersService {
     this.logger.log('Updating user status to ACTIVE and clearing activation token...');
     user.status = UserStatus.ACTIVE;
     user.activatedAt = new Date();
-    user.activationToken = null;
+    user.activationToken = ""; // Clear token after activation
 
     const savedUser = await this.usersRepository.save(user);
     this.logger.log(`   - Activated At: ${savedUser.activatedAt}`);
     return savedUser;
   }
-
 
   async deactivateAccount(userId: number): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
@@ -195,10 +189,9 @@ export class UsersService {
       );
     }
     user.status = UserStatus.INACTIVE;
-    user.activationToken = null;
+    user.activationToken = ""; // Clear token after deactivation
     return await this.usersRepository.save(user);
   }
-
 
   async reactivateAccount(userId: number): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
@@ -225,12 +218,16 @@ export class UsersService {
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) {
       // Return generic message to avoid email enumeration
-      return { message: 'If the email exists and account is pending, an activation email will be sent.' };
+      return {
+        message: 'If the email exists and account is pending, an activation email will be sent.',
+      };
     }
 
     // 2. Check PENDING status
     if (user.status !== UserStatus.PENDING) {
-      return { message: 'If the email exists and account is pending, an activation email will be sent.' };
+      return {
+        message: 'If the email exists and account is pending, an activation email will be sent.',
+      };
     }
 
     // 3. Rate limit: check last activation email sent within 5 minutes
@@ -265,6 +262,4 @@ export class UsersService {
     this.logger.log(`Activation email resent for user: ${user.email}`);
     return { message: 'Email kích hoạt đã được gửi. Vui lòng kiểm tra hộp thư.' };
   }
-
-  
 }

@@ -38,7 +38,9 @@ export class CompBalanceTransaction {
   @Column({ name: 'source_type', type: 'enum', enum: CompTxSource })
   sourceType: CompTxSource;
 
-  @ApiPropertyOptional({ description: 'Source record ID (comp_work_request.id, leave_request.id…)' })
+  @ApiPropertyOptional({
+    description: 'Source record ID (comp_work_request.id, leave_request.id…)',
+  })
   @Column({ name: 'source_id', type: 'bigint', nullable: true })
   sourceId: number | null;
 

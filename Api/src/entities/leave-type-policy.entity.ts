@@ -26,7 +26,10 @@ export class LeaveTypePolicy {
   @Column({ name: 'effective_from', type: 'date' })
   effectiveFrom: string;
 
-  @ApiPropertyOptional({ example: '2026-12-31', description: 'Policy effective until (null = open)' })
+  @ApiPropertyOptional({
+    example: '2026-12-31',
+    description: 'Policy effective until (null = open)',
+  })
   @Column({ name: 'effective_to', type: 'date', nullable: true })
   effectiveTo: string | null;
 
@@ -46,7 +49,10 @@ export class LeaveTypePolicy {
   @Column({ name: 'annual_limit_days', type: 'numeric', precision: 7, scale: 2, nullable: true })
   annualLimitDays: number | null;
 
-  @ApiPropertyOptional({ example: false, description: 'Auto-calculate end date from start + max days' })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Auto-calculate end date from start + max days',
+  })
   @Column({ name: 'auto_calculate_end_date', type: 'boolean', default: false })
   autoCalculateEndDate: boolean;
 

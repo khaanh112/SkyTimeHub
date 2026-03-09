@@ -1,12 +1,4 @@
-import {
-  IsOptional,
-  IsEnum,
-  IsString,
-  IsInt,
-  Min,
-  Max,
-  IsDateString,
-} from 'class-validator';
+import { IsOptional, IsEnum, IsString, IsInt, Min, Max, IsDateString } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { LeaveRequestStatus } from '@/common/enums/request_status';

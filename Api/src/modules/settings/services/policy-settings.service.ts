@@ -36,10 +36,22 @@ export class PolicySettingsService {
     const map = new Map(rows.map((r) => [r.key, r.value]));
 
     return {
-      maxOtHoursPerDay: this.toNumber(map.get('max_ot_hours_per_day'), OT_POLICY_DEFAULTS.maxOtHoursPerDay),
-      maxOtHoursPerDayHoliday: this.toNumber(map.get('max_ot_hours_per_day_holiday'), OT_POLICY_DEFAULTS.maxOtHoursPerDayHoliday),
-      maxOtHoursPerMonth: this.toNumber(map.get('max_ot_hours_per_month'), OT_POLICY_DEFAULTS.maxOtHoursPerMonth),
-      maxOtHoursPerYear: this.toNumber(map.get('max_ot_hours_per_year'), OT_POLICY_DEFAULTS.maxOtHoursPerYear),
+      maxOtHoursPerDay: this.toNumber(
+        map.get('max_ot_hours_per_day'),
+        OT_POLICY_DEFAULTS.maxOtHoursPerDay,
+      ),
+      maxOtHoursPerDayHoliday: this.toNumber(
+        map.get('max_ot_hours_per_day_holiday'),
+        OT_POLICY_DEFAULTS.maxOtHoursPerDayHoliday,
+      ),
+      maxOtHoursPerMonth: this.toNumber(
+        map.get('max_ot_hours_per_month'),
+        OT_POLICY_DEFAULTS.maxOtHoursPerMonth,
+      ),
+      maxOtHoursPerYear: this.toNumber(
+        map.get('max_ot_hours_per_year'),
+        OT_POLICY_DEFAULTS.maxOtHoursPerYear,
+      ),
     };
   }
 
@@ -47,10 +59,26 @@ export class PolicySettingsService {
     this.logger.log('Saving OT policy settings');
 
     const entries: { key: string; value: string; description: string }[] = [
-      { key: 'max_ot_hours_per_day', value: String(dto.maxOtHoursPerDay), description: 'Max OT hours per day (regular days)' },
-      { key: 'max_ot_hours_per_day_holiday', value: String(dto.maxOtHoursPerDayHoliday), description: 'Max OT hours per day (rest days & holidays)' },
-      { key: 'max_ot_hours_per_month', value: String(dto.maxOtHoursPerMonth), description: 'Max OT hours per month' },
-      { key: 'max_ot_hours_per_year', value: String(dto.maxOtHoursPerYear), description: 'Max OT hours per year' },
+      {
+        key: 'max_ot_hours_per_day',
+        value: String(dto.maxOtHoursPerDay),
+        description: 'Max OT hours per day (regular days)',
+      },
+      {
+        key: 'max_ot_hours_per_day_holiday',
+        value: String(dto.maxOtHoursPerDayHoliday),
+        description: 'Max OT hours per day (rest days & holidays)',
+      },
+      {
+        key: 'max_ot_hours_per_month',
+        value: String(dto.maxOtHoursPerMonth),
+        description: 'Max OT hours per month',
+      },
+      {
+        key: 'max_ot_hours_per_year',
+        value: String(dto.maxOtHoursPerYear),
+        description: 'Max OT hours per year',
+      },
     ];
 
     await this.upsertSettings(CATEGORY_OT, entries);
@@ -64,7 +92,10 @@ export class PolicySettingsService {
     const map = new Map(rows.map((r) => [r.key, r.value]));
 
     return {
-      minCompLeaveDurationHours: this.toNumber(map.get('min_comp_leave_duration_hours'), LEAVE_POLICY_DEFAULTS.minCompLeaveDurationHours),
+      minCompLeaveDurationHours: this.toNumber(
+        map.get('min_comp_leave_duration_hours'),
+        LEAVE_POLICY_DEFAULTS.minCompLeaveDurationHours,
+      ),
     };
   }
 
@@ -72,7 +103,11 @@ export class PolicySettingsService {
     this.logger.log('Saving leave policy settings');
 
     const entries: { key: string; value: string; description: string }[] = [
-      { key: 'min_comp_leave_duration_hours', value: String(dto.minCompLeaveDurationHours), description: 'Min compensatory leave duration per request (hours)' },
+      {
+        key: 'min_comp_leave_duration_hours',
+        value: String(dto.minCompLeaveDurationHours),
+        description: 'Min compensatory leave duration per request (hours)',
+      },
     ];
 
     await this.upsertSettings(CATEGORY_LEAVE, entries);

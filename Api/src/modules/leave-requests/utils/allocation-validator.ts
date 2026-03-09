@@ -21,17 +21,15 @@ export interface AllocationEntry {
  *
  * @throws Error with a descriptive "BUG:" prefix if a duplicate is found.
  */
-export function validateAllocationsNoDuplicateBucket(
-  allocations: AllocationEntry[],
-): void {
+export function validateAllocationsNoDuplicateBucket(allocations: AllocationEntry[]): void {
   const seen = new Set<string>();
   for (const a of allocations) {
     const key = `${a.leaveTypeId}-${a.year}-${a.month}`;
     if (seen.has(key)) {
       throw new Error(
         `BUG: duplicate allocation bucket detected — ` +
-        `leaveTypeId=${a.leaveTypeId}, year=${a.year}, month=${a.month}. ` +
-        `Each (leaveTypeId, year, month) must be unique within a request.`,
+          `leaveTypeId=${a.leaveTypeId}, year=${a.year}, month=${a.month}. ` +
+          `Each (leaveTypeId, year, month) must be unique within a request.`,
       );
     }
     seen.add(key);
@@ -56,8 +54,8 @@ export function assertAllocationSum(
   if (Math.abs(rounded - expectedRounded) > 0.01) {
     throw new Error(
       `BUG: allocations sum mismatch — ` +
-      `sum=${rounded}, expected=${expectedRounded}. ` +
-      `The allocation logic produced an inconsistent total.`,
+        `sum=${rounded}, expected=${expectedRounded}. ` +
+        `The allocation logic produced an inconsistent total.`,
     );
   }
 }

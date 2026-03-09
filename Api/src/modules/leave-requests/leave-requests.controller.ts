@@ -37,6 +37,8 @@ import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { LeaveRequestListResponseDto } from './dto/leave-request-list.dto';
 import { Roles } from '../authorization';
 import { BalanceSummaryQueryDto } from './dto/balance-summary-query.dto';
+import { AuthenticatedRequest } from '@/common/interfaces/authenticated-user.interface';
+import { UserRole } from '@/common';
 
 @ApiTags('Leave Requests')
 @ApiBearerAuth()
@@ -64,14 +66,28 @@ export class LeaveRequestsController {
         startDate: { type: 'string', example: '2026-03-01' },
         startSession: { type: 'string', enum: ['AM', 'PM'], example: 'AM' },
         numberOfChildren: { type: 'number', example: 1, description: 'For parental leave' },
-        childbirthMethod: { type: 'string', enum: ['natural', 'c_section'], description: 'For parental leave' },
+        childbirthMethod: {
+          type: 'string',
+          enum: ['natural', 'c_section'],
+          description: 'For parental leave',
+        },
       },
     },
   })
-  @ApiResponse({ status: 200, description: 'Suggested end date returned (or null if not applicable).' })
+  @ApiResponse({
+    status: 200,
+    description: 'Suggested end date returned (or null if not applicable).',
+  })
   async suggestEndDate(
-    @Request() req,
-    @Body() body: { leaveTypeId: number; startDate: string; startSession: string; numberOfChildren?: number; childbirthMethod?: string },
+    @Request() req: AuthenticatedRequest,
+    @Body()
+    body: {
+      leaveTypeId: number;
+      startDate: string;
+      startSession: string;
+      numberOfChildren?: number;
+      childbirthMethod?: string;
+    },
   ) {
     const result = await this.leaveBalanceService.suggestEndDate(
       body.leaveTypeId,
@@ -96,7 +112,7 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 201, description: 'Leave request created successfully.' })
   @ApiResponse({ status: 400, description: 'Invalid input data or no approver assigned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async create(@Request() req, @Body() createDto: CreateLeaveRequestDto) {
+  async create(@Request() req: AuthenticatedRequest, @Body() createDto: CreateLeaveRequestDto) {
     console.log(
       '[LeaveRequestsController] create called for user:',
       req.user?.id,
@@ -118,23 +134,31 @@ export class LeaveRequestsController {
     summary: 'List leave requests (personal or management view)',
     description:
       'Returns a paginated, filtered list of leave requests. ' +
-      'view=personal returns the authenticated user\'s own requests. ' +
+      "view=personal returns the authenticated user's own requests. " +
       'view=management returns team/all requests (requires HR, Admin, Dept Leader, or Approver role).',
   })
-  @ApiResponse({ status: 200, description: 'Paginated leave request list.', type: LeaveRequestListResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated leave request list.',
+    type: LeaveRequestListResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Not authorized for management view.' })
   async findAll(
-    @Request() req,
+    @Request() req: AuthenticatedRequest,
     @Query() query: ListLeaveRequestsQueryDto,
   ): Promise<LeaveRequestListResponseDto> {
-    this.logger.log(`[findAll] userId=${req.user?.id} role=${req.user?.role} query=${JSON.stringify(query)}`);
+    this.logger.log(
+      `[findAll] userId=${req.user?.id} role=${req.user?.role} query=${JSON.stringify(query)}`,
+    );
     try {
       const result = await this.leaveRequestsService.findLeaveRequests(
         { id: req.user.id, role: req.user.role },
         query,
       );
-      this.logger.log(`[findAll] OK – returned ${result?.data?.length ?? 0} items (total=${result?.page?.total})`);
+      this.logger.log(
+        `[findAll] OK – returned ${result?.data?.length ?? 0} items (total=${result?.page?.total})`,
+      );
       return result;
     } catch (error) {
       this.logger.error(`[findAll] ERROR userId=${req.user?.id}`, error?.stack ?? error);
@@ -145,10 +169,11 @@ export class LeaveRequestsController {
   @Get('leave-types')
   @ApiOperation({
     summary: 'Get available leave types grouped by category',
-    description: 'Returns all active, non-system leave types with their category info. Used by create/edit forms. Filters by user contract type eligibility.',
+    description:
+      'Returns all active, non-system leave types with their category info. Used by create/edit forms. Filters by user contract type eligibility.',
   })
   @ApiResponse({ status: 200, description: 'Leave types retrieved successfully.' })
-  async getLeaveTypes(@Request() req) {
+  async getLeaveTypes(@Request() req: AuthenticatedRequest) {
     return this.leaveRequestsService.getLeaveTypes(req.user.id);
   }
 
@@ -160,59 +185,38 @@ export class LeaveRequestsController {
       'Returns credit, debit and remaining balance for each leave type. If month is provided, returns balance up to that month (monthly accrual cap applied).',
   })
   @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
-  async getBalanceSummary(@Request() req, @Query() q: BalanceSummaryQueryDto) {
+  async getBalanceSummary(@Request() req: AuthenticatedRequest, @Query() q: BalanceSummaryQueryDto) {
     const year = q.year ?? new Date().getFullYear();
     const month = q.month ?? new Date().getMonth() + 1;
 
     return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, month, year);
   }
 
-  //sai logic
-  @Get('balance-summary/:userId')
-  @ApiOperation({
-    summary: 'Get leave balance summary for a specific user (HR/Approver only)',
-    description: 'Returns credit, debit and remaining balance for each leave type for a specific employee. Used in management view.',
-  })
-  @ApiParam({ name: 'userId', description: 'Target user ID', type: 'number' })
-  @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
-  @ApiResponse({ status: 403, description: 'Not authorized to view this user balance.' })
-  async getUserBalanceSummary(
-    @Request() req,
-    @Param('userId', ParseIntPipe) userId: number,
-  ) {
-    // Only HR or the user's approver can view balance
-    if (req.user.role !== 'hr' && req.user.role !== 'admin') {
-      // Check if current user is an approver - allow any approver/manager to view
-      if (req.user.role !== 'manager') {
-        throw new ForbiddenException('Not authorized to view this user balance');
-      }
-    }
-    const month = new Date().getMonth() + 1;
-    const year = new Date().getFullYear();
-    return this.leaveBalanceService.getEmployeeBalanceSummary(userId, month, year);
-  }
+  
 
   // thủ công chưa cronjob
   @Post('admin/initialize-balance')
   @ApiOperation({
     summary: 'Initialize yearly paid leave balance for all active employees (HR only)',
-    description: 'Creates ACCRUAL CREDIT transactions for all active employees who do not yet have one for the specified year. Default: 12 days/year.',
+    description:
+      'Creates ACCRUAL CREDIT transactions for all active employees who do not yet have one for the specified year. Default: 12 days/year.',
   })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
         year: { type: 'number', example: 2026, description: 'Year to initialize' },
-        annualDays: { type: 'number', example: 12, description: 'Annual paid leave days (default: 12)' },
+        annualDays: {
+          type: 'number',
+          example: 12,
+          description: 'Annual paid leave days (default: 12)',
+        },
       },
     },
   })
   @ApiResponse({ status: 201, description: 'Balance initialized.' })
   @ApiResponse({ status: 403, description: 'Only HR can perform this action.' })
-  async initializeBalance(
-    @Request() req,
-    @Body() body: { year?: number; annualDays?: number },
-  ) {
+  async initializeBalance(@Request() req: AuthenticatedRequest, @Body() body: { year?: number; annualDays?: number }) {
     if (req.user.role !== 'hr') {
       throw new ForbiddenException('Only HR can initialize balances');
     }
@@ -221,14 +225,17 @@ export class LeaveRequestsController {
     return this.leaveBalanceService.initializeYearlyBalance(year, annualDays);
   }
 
-
   @Get(':id')
   @ApiOperation({
     summary: 'Get leave request by ID',
     description: 'Retrieve detailed information about a specific leave request.',
   })
   @ApiParam({ name: 'id', description: 'Leave request ID', type: 'number' })
-  @ApiResponse({ status: 200, description: 'Leave request retrieved successfully.', type: LeaveRequestDetailsDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Leave request retrieved successfully.',
+    type: LeaveRequestDetailsDto,
+  })
   @ApiResponse({ status: 404, description: 'Leave request not found.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async findOne(@Param('id', ParseIntPipe) id: number): Promise<LeaveRequestDetailsDto> {
@@ -267,7 +274,7 @@ export class LeaveRequestsController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateDto: UpdateLeaveRequestDto,
-    @Request() req,
+    @Request() req: AuthenticatedRequest,
   ) {
     console.log(
       '[LeaveRequestsController] update called for request:',
@@ -305,7 +312,7 @@ export class LeaveRequestsController {
   })
   async approve(
     @Param('id', ParseIntPipe) id: number,
-    @Request() req,
+    @Request() req: AuthenticatedRequest,
     @Body() dto: ApproveLeaveRequestDto,
   ) {
     return this.leaveRequestsService.approveLeaveRequest(id, req.user.id, dto.version);
@@ -329,7 +336,7 @@ export class LeaveRequestsController {
   })
   async reject(
     @Param('id', ParseIntPipe) id: number,
-    @Request() req,
+    @Request() req: AuthenticatedRequest,
     @Body() dto: RejectLeaveRequestDto,
   ) {
     return this.leaveRequestsService.rejectLeaveRequest(
@@ -350,7 +357,7 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 400, description: 'Request cannot be cancelled (invalid status).' })
   @ApiResponse({ status: 403, description: 'Not authorized to cancel this request.' })
   @ApiResponse({ status: 404, description: 'Leave request not found.' })
-  async cancel(@Param('id', ParseIntPipe) id: number, @Request() req) {
+  async cancel(@Param('id', ParseIntPipe) id: number, @Request() req: AuthenticatedRequest  ) {
     return this.leaveRequestsService.cancelLeaveRequest(id, req.user.id);
   }
 
@@ -359,7 +366,8 @@ export class LeaveRequestsController {
   @Post('attachments/upload')
   @ApiOperation({
     summary: 'Upload a PDF attachment (Social leave proof)',
-    description: 'Uploads a PDF file to MinIO and returns an attachmentId. Pass this ID when creating a Social leave request. Only PDF, max 10 MB, 1 file.',
+    description:
+      'Uploads a PDF file to MinIO and returns an attachmentId. Pass this ID when creating a Social leave request. Only PDF, max 10 MB, 1 file.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -372,10 +380,7 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 201, description: 'File uploaded successfully.' })
   @ApiResponse({ status: 400, description: 'Invalid file type or size.' })
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
-  async uploadAttachment(
-    @UploadedFile() file: Express.Multer.File,
-    @Request() req,
-  ) {
+  async uploadAttachment(@UploadedFile() file: Express.Multer.File, @Request() req: AuthenticatedRequest) {
     if (!file) {
       throw new BadRequestException('No file provided');
     }
@@ -385,7 +390,8 @@ export class LeaveRequestsController {
   @Get('attachments/:attachmentId/url')
   @ApiOperation({
     summary: 'Get a presigned download URL for an attachment',
-    description: 'Returns a short-lived presigned URL (1 hour) for viewing or downloading the PDF attachment.',
+    description:
+      'Returns a short-lived presigned URL (1 hour) for viewing or downloading the PDF attachment.',
   })
   @ApiParam({ name: 'attachmentId', type: 'number' })
   @ApiResponse({ status: 200, description: 'Presigned URL returned.' })
@@ -393,9 +399,8 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 404, description: 'Attachment not found.' })
   async getAttachmentUrl(
     @Param('attachmentId', ParseIntPipe) attachmentId: number,
-    @Request() req,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.leaveRequestsService.getAttachmentUrl(attachmentId, req.user.id, req.user.role);
   }
 }
-

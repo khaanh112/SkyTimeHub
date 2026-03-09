@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -31,10 +32,7 @@ import {
   LeaveRequestListResponseDto,
   LeaveRequestPermissionsDto,
 } from './dto/leave-request-list.dto';
-import {
-  ListLeaveRequestsQueryDto,
-  LeaveRequestView,
-} from './dto/list-leave-requests-query.dto';
+import { ListLeaveRequestsQueryDto, LeaveRequestView } from './dto/list-leave-requests-query.dto';
 import { AppException, ErrorCode } from '@/common';
 import { Department } from '@entities/departments.entity';
 import { buildDateTime, buildDurationLabel } from './utils/formatter';
@@ -156,7 +154,12 @@ export class LeaveRequestsService {
     });
 
     const saved = await this.attachmentRepository.save(attachment);
-    return { attachmentId: saved.id, originalFilename: saved.originalFilename, sizeBytes: saved.sizeBytes };
+
+    return {
+      attachmentId: saved.id,
+      originalFilename: file.originalname,
+      sizeBytes: file.size ,
+    };
   }
 
   /**
@@ -208,29 +211,41 @@ export class LeaveRequestsService {
    * Create a new leave request
    */
   async createLeaveRequest(userId: number, dto: CreateLeaveRequestDto): Promise<LeaveRequest> {
-    this.logger.log(`[createLeaveRequest] User ${userId} creating leave request: ${JSON.stringify(dto)}`);
+    this.logger.log(
+      `[createLeaveRequest] User ${userId} creating leave request: ${JSON.stringify(dto)}`,
+    );
 
-    //  Basic validation 
+    //  Basic validation
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
 
     if (endDate < startDate) {
       throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
-    
-    //  Approver lookup 
+
+    //  Approver lookup
     const userApprover = await this.userApproverRepository.findOne({
       where: { userId, active: true },
       relations: ['approver'],
     });
 
     if (!userApprover) {
-      throw new AppException(ErrorCode.INVALID_INPUT, 'No active approver assigned to this user', 400);
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        'No active approver assigned to this user',
+        400,
+      );
     }
-    
 
     const requester = await this.userRepository.findOne({ where: { id: userId } });
 
+    if(!requester) {
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        'User not found. Please contact HR to create an account.',
+        HttpStatus.NOT_FOUND,
+      );
+    }
     const leaveTypeId = dto.leaveTypeId ?? DefaultLeaveType.PAID_LEAVE;
 
     // ── Official Employee eligibility check ──
@@ -242,10 +257,7 @@ export class LeaveRequestsService {
       throw new AppException(ErrorCode.INVALID_INPUT, 'Leave type not found or inactive', 400);
     }
     const categoryCode = requestedLeaveType.category?.code;
-    const officialOnlyCategories = [
-      LeaveCategoryEnum.COMPENSATORY,
-      LeaveCategoryEnum.SOCIAL,
-    ];
+    const officialOnlyCategories = [LeaveCategoryEnum.COMPENSATORY, LeaveCategoryEnum.SOCIAL];
     if (
       officialOnlyCategories.includes(categoryCode as LeaveCategoryEnum) &&
       requester.contractType !== ContractType.OFFICIAL
@@ -259,16 +271,30 @@ export class LeaveRequestsService {
 
     // CC validation
     if (dto.ccUserIds?.includes(userId)) {
-      throw new AppException(ErrorCode.INVALID_INPUT, 'You cannot CC yourself on your own leave request', 400);
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        'You cannot CC yourself on your own leave request',
+        400,
+      );
     }
     if (dto.ccUserIds?.includes(userApprover.approverId)) {
-      throw new AppException(ErrorCode.INVALID_INPUT, 'Approver is automatically notified and should not be in CC list', 400);
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        'Approver is automatically notified and should not be in CC list',
+        400,
+      );
     }
-    if (dto.ccUserIds?.length > 0) {
-      const hrUsers = await this.userRepository.find({ where: { role: UserRole.HR, status: UserStatus.ACTIVE } });
+    if (dto.ccUserIds && dto.ccUserIds?.length > 0) {
+      const hrUsers = await this.userRepository.find({
+        where: { role: UserRole.HR, status: UserStatus.ACTIVE },
+      });
       const hrUserIds = hrUsers.map((hr) => hr.id);
       if (dto.ccUserIds.some((id) => hrUserIds.includes(id))) {
-        throw new AppException(ErrorCode.INVALID_INPUT, 'HR users are automatically notified and should not be in CC list', 400);
+        throw new AppException(
+          ErrorCode.INVALID_INPUT,
+          'HR users are automatically notified and should not be in CC list',
+          400,
+        );
       }
     }
 
@@ -277,7 +303,7 @@ export class LeaveRequestsService {
 
     // Logic complex, too big function, double call validateandprepare, n+1 problem, race condition?, missmatch leave items and balance: không lưu unpaid leave balance
 
-  // Preview warning and real saved data can be different, need checking version before submit
+    // Preview warning and real saved data can be different, need checking version before submit
     // ── Pre-flight validation (outside transaction, for warnings) ─
     const preValidation = await this.leaveBalanceService.validateAndPrepare(
       userId,
@@ -297,7 +323,12 @@ export class LeaveRequestsService {
     if (preValidation.warnings.length > 0 && !dto.confirmDespiteWarning) {
       throw new AppException(
         ErrorCode.INVALID_INPUT,
-        JSON.stringify({ requiresConfirmation: true, warnings: preValidation.warnings, durationDays: preValidation.durationDays, items: preValidation.items }),
+        JSON.stringify({
+          requiresConfirmation: true,
+          warnings: preValidation.warnings,
+          durationDays: preValidation.durationDays,
+          items: preValidation.items,
+        }),
         400,
       );
     }
@@ -350,13 +381,14 @@ export class LeaveRequestsService {
 
       // Save leave request items with per-month allocation
       // P1-5: guard against duplicate (leaveTypeId, year, month) before save
-      const allocationsToSave = validation.monthlyAllocations.length > 0
-        ? validation.monthlyAllocations
-        : validation.items.map((item) => ({
-            ...item,
-            year: new Date(dto.startDate).getFullYear(),
-            month: new Date(dto.startDate).getMonth() + 1,
-          }));
+      const allocationsToSave =
+        validation.monthlyAllocations.length > 0
+          ? validation.monthlyAllocations
+          : validation.items.map((item) => ({
+              ...item,
+              year: new Date(dto.startDate).getFullYear(),
+              month: new Date(dto.startDate).getMonth() + 1,
+            }));
       validateAllocationsNoDuplicateBucket(allocationsToSave);
 
       if (validation.monthlyAllocations.length > 0) {
@@ -388,7 +420,6 @@ export class LeaveRequestsService {
         await queryRunner.manager.save(items);
       }
 
-
       // Add notification recipients
       const recipients: LeaveRequestNotificationRecipient[] = [];
 
@@ -409,7 +440,7 @@ export class LeaveRequestsService {
       }
 
       // CC recipients (user-selected)
-      if (dto.ccUserIds?.length > 0) {
+      if (dto.ccUserIds && dto.ccUserIds.length > 0) {
         for (const ccUserId of dto.ccUserIds) {
           recipients.push(
             this.notificationRecipientRepository.create({
@@ -469,10 +500,9 @@ export class LeaveRequestsService {
       relations: ['items', 'items.leaveType', 'user', 'approver', 'notificationRecipients'],
     });
 
-    this.logger.log(`Leave request ${reloadedRequest.id} created by user ${userId} — ${validation.durationDays} days, ${validation.items.length} item(s)`);
-    return reloadedRequest;
+    
+    return reloadedRequest || savedRequest;
   }
-
 
   /**
    * Update leave request with optimistic locking
@@ -493,7 +523,6 @@ export class LeaveRequestsService {
       throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
 
-
     // ── Find & authorise ─────────────────────────────────────
     const leaveRequest = await this.leaveRequestRepository.findOne({
       where: { id: requestId, userId },
@@ -511,16 +540,30 @@ export class LeaveRequestsService {
 
     // ── CC validation ────────────────────────────────────────
     if (dto.ccUserIds?.includes(userId)) {
-      throw new AppException(ErrorCode.INVALID_INPUT, 'You cannot CC yourself on your own leave request', 400);
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        'You cannot CC yourself on your own leave request',
+        400,
+      );
     }
     if (dto.ccUserIds?.includes(leaveRequest.approverId)) {
-      throw new AppException(ErrorCode.INVALID_INPUT, 'Approver is automatically notified and should not be in CC list', 400);
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        'Approver is automatically notified and should not be in CC list',
+        400,
+      );
     }
-    if (dto.ccUserIds?.length > 0) {
-      const hrUsers = await this.userRepository.find({ where: { role: UserRole.HR, status: UserStatus.ACTIVE } });
+    if ( dto.ccUserIds && dto.ccUserIds?.length > 0) {
+      const hrUsers = await this.userRepository.find({
+        where: { role: UserRole.HR, status: UserStatus.ACTIVE },
+      });
       const hrUserIds = hrUsers.map((hr) => hr.id);
       if (dto.ccUserIds.some((id) => hrUserIds.includes(id))) {
-        throw new AppException(ErrorCode.INVALID_INPUT, 'HR users are automatically notified and should not be in CC list', 400);
+        throw new AppException(
+          ErrorCode.INVALID_INPUT,
+          'HR users are automatically notified and should not be in CC list',
+          400,
+        );
       }
     }
 
@@ -535,10 +578,7 @@ export class LeaveRequestsService {
       throw new AppException(ErrorCode.INVALID_INPUT, 'Leave type not found or inactive', 400);
     }
     const updateCategoryCode = requestedLeaveTypeUpdate.category?.code;
-    const officialOnlyCats = [
-      LeaveCategoryEnum.COMPENSATORY,
-      LeaveCategoryEnum.SOCIAL,
-    ];
+    const officialOnlyCats = [LeaveCategoryEnum.COMPENSATORY, LeaveCategoryEnum.SOCIAL];
     if (
       officialOnlyCats.includes(updateCategoryCode as LeaveCategoryEnum) &&
       leaveRequest.user?.contractType !== ContractType.OFFICIAL
@@ -551,7 +591,14 @@ export class LeaveRequestsService {
     }
 
     // ── Overlap check (exclude current request) ─────────────
-    await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession, requestId);
+    await this.checkOverlap(
+      userId,
+      dto.startDate,
+      dto.startSession,
+      dto.endDate,
+      dto.endSession,
+      requestId,
+    );
 
     // ── Pre-flight validation (outside transaction, for warnings) ─
     const preValidation = await this.leaveBalanceService.validateAndPrepare(
@@ -571,7 +618,12 @@ export class LeaveRequestsService {
     if (preValidation.warnings.length > 0 && !dto.confirmDespiteWarning) {
       throw new AppException(
         ErrorCode.INVALID_INPUT,
-        JSON.stringify({ requiresConfirmation: true, warnings: preValidation.warnings, durationDays: preValidation.durationDays, items: preValidation.items }),
+        JSON.stringify({
+          requiresConfirmation: true,
+          warnings: preValidation.warnings,
+          durationDays: preValidation.durationDays,
+          items: preValidation.items,
+        }),
         400,
       );
     }
@@ -671,7 +723,7 @@ export class LeaveRequestsService {
       if (isCCUpdated) {
         await recipientRepo.delete({ requestId, type: RecipientType.CC });
 
-        if (dto.ccUserIds.length > 0) {
+        if (dto.ccUserIds && dto.ccUserIds.length > 0) {
           const newRecipients = dto.ccUserIds.map((ccUserId) =>
             recipientRepo.create({ requestId, userId: ccUserId, type: RecipientType.CC }),
           );
@@ -707,7 +759,10 @@ export class LeaveRequestsService {
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`[updateLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`, error.stack);
+      this.logger.error(
+        `[updateLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     } finally {
       await queryRunner.release();
@@ -719,14 +774,20 @@ export class LeaveRequestsService {
     // Reload with full relations
     const updatedRequest = await this.leaveRequestRepository.findOneOrFail({
       where: { id: requestId },
-      relations: ['user', 'notificationRecipients', 'notificationRecipients.user', 'items', 'items.leaveType'],
+      relations: [
+        'user',
+        'notificationRecipients',
+        'notificationRecipients.user',
+        'items',
+        'items.leaveType',
+      ],
     });
 
-    this.logger.log(`[updateLeaveRequest] Successfully updated request ${requestId} — version: ${updatedEntity.version}`);
+    this.logger.log(
+      `[updateLeaveRequest] Successfully updated request ${requestId} — version: ${updatedEntity.version}`,
+    );
     return updatedRequest;
   }
-
- 
 
   /**
    * Approve leave request with optimistic locking
@@ -781,10 +842,12 @@ export class LeaveRequestsService {
       );
 
       // Load recipients and enqueue email INSIDE the transaction (transactional outbox)
-      const recipients = await queryRunner.manager.getRepository(LeaveRequestNotificationRecipient).find({
-        where: { requestId: leaveRequest.id },
-        relations: ['user'],
-      });
+      const recipients = await queryRunner.manager
+        .getRepository(LeaveRequestNotificationRecipient)
+        .find({
+          where: { requestId: leaveRequest.id },
+          relations: ['user'],
+        });
 
       emailIds = await this.notificationsService.enqueueLeaveRequestApprovedNotification(
         leaveRequest.id,
@@ -804,7 +867,10 @@ export class LeaveRequestsService {
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`[approveLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`, error.stack);
+      this.logger.error(
+        `[approveLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     } finally {
       await queryRunner.release();
@@ -903,7 +969,10 @@ export class LeaveRequestsService {
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`[rejectLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`, error.stack);
+      this.logger.error(
+        `[rejectLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     } finally {
       await queryRunner.release();
@@ -912,7 +981,9 @@ export class LeaveRequestsService {
     // Post-commit: trigger immediate send (fire and forget)
     this.notificationsService.triggerImmediateSend(emailIds);
 
-    this.logger.log(`Leave request ${requestId} rejected by user ${approverId} (reserves released)`);
+    this.logger.log(
+      `Leave request ${requestId} rejected by user ${approverId} (reserves released)`,
+    );
     return updated;
   }
 
@@ -955,7 +1026,9 @@ export class LeaveRequestsService {
       leaveRequest.status = LeaveRequestStatus.CANCELLED;
       leaveRequest.cancelledAt = new Date();
       await queryRunner.manager.save(leaveRequest);
-      await queryRunner.manager.delete(LeaveRequestNotificationRecipient, { requestId: leaveRequest.id });
+      await queryRunner.manager.delete(LeaveRequestNotificationRecipient, {
+        requestId: leaveRequest.id,
+      });
 
       if (wasApproved) {
         // After approve → CREDIT REFUND (reverses APPROVAL debits)
@@ -994,7 +1067,10 @@ export class LeaveRequestsService {
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`[cancelLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`, error.stack);
+      this.logger.error(
+        `[cancelLeaveRequest] Transaction failed for request ${requestId}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     } finally {
       await queryRunner.release();
@@ -1003,7 +1079,9 @@ export class LeaveRequestsService {
     // Post-commit: trigger immediate send (fire and forget)
     this.notificationsService.triggerImmediateSend(emailIds);
 
-    this.logger.log(`Leave request ${requestId} cancelled by user ${userId}${wasApproved ? ' (balance refunded)' : ' (reserves released)'}`);
+    this.logger.log(
+      `Leave request ${requestId} cancelled by user ${userId}${wasApproved ? ' (balance refunded)' : ' (reserves released)'}`,
+    );
     return leaveRequest;
   }
 
@@ -1020,7 +1098,10 @@ export class LeaveRequestsService {
     // Determine if user is official
     let isOfficialEmployee = true; // default for backward compat
     if (userId) {
-      const user = await this.userRepository.findOne({ where: { id: userId }, select: ['id', 'contractType'] });
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        select: ['id', 'contractType'],
+      });
       isOfficialEmployee = user?.contractType === ContractType.OFFICIAL;
     }
 
@@ -1088,184 +1169,188 @@ export class LeaveRequestsService {
     currentUser: { id: number; role: UserRole },
     query: ListLeaveRequestsQueryDto,
   ): Promise<LeaveRequestListResponseDto> {
-    this.logger.log(`[findLeaveRequests] START userId=${currentUser.id} role=${currentUser.role} query=${JSON.stringify(query)}`);
+    this.logger.log(
+      `[findLeaveRequests] START userId=${currentUser.id} role=${currentUser.role} query=${JSON.stringify(query)}`,
+    );
     try {
-    const {
-      view = LeaveRequestView.PERSONAL,
-      page = 1,
-      pageSize = 10,
-      status,
-      leaveType,
-      from,
-      to,
-      q,
-      sort = '-startTime',
-    } = query;
+      const {
+        view = LeaveRequestView.PERSONAL,
+        page = 1,
+        pageSize = 10,
+        status,
+        leaveType,
+        from,
+        to,
+        q,
+        sort = '-startTime',
+      } = query;
 
-    // ── Authorization ──────────────────────────────────────────
-    if (view === LeaveRequestView.MANAGEMENT) {
-      const allowed = await this.canAccessManagementView(currentUser);
-      if (!allowed) {
-        throw new ForbiddenException('You do not have permission to access management view');
+      // ── Authorization ──────────────────────────────────────────
+      if (view === LeaveRequestView.MANAGEMENT) {
+        const allowed = await this.canAccessManagementView(currentUser);
+        if (!allowed) {
+          throw new AppException(
+            ErrorCode.FORBIDDEN,
+            'You do not have access to the management view',
+            403,
+          );
+        }
       }
-    }
 
-    // ── QueryBuilder ───────────────────────────────────────────
-    const qb = this.leaveRequestRepository
-      .createQueryBuilder('lr')
-      .leftJoinAndSelect('lr.items', 'item')
-      .leftJoinAndSelect('item.leaveType', 'itemType')
-      .leftJoinAndSelect('lr.approver', 'approver')
-      .leftJoinAndSelect('lr.user', 'employee');
+      // ── QueryBuilder ───────────────────────────────────────────
+      const qb = this.leaveRequestRepository
+        .createQueryBuilder('lr')
+        .leftJoinAndSelect('lr.items', 'item')
+        .leftJoinAndSelect('item.leaveType', 'itemType')
+        .leftJoinAndSelect('lr.approver', 'approver')
+        .leftJoinAndSelect('lr.user', 'employee');
 
-    // ── View scoping ───────────────────────────────────────────
-    if (view === LeaveRequestView.PERSONAL) {
-      qb.andWhere('lr.user_id = :userId', { userId: currentUser.id });
-    } else {
-      // management view
-      if (
-        currentUser.role !== UserRole.ADMIN &&
-        currentUser.role !== UserRole.HR
-      ) {
-        // Department leader / approver: only their assigned requests
-        qb.andWhere('lr.approver_id = :approverId', {
-          approverId: currentUser.id,
-        });
+      // ── View scoping ───────────────────────────────────────────
+      if (view === LeaveRequestView.PERSONAL) {
+        qb.andWhere('lr.user_id = :userId', { userId: currentUser.id });
+      } else {
+        // management view
+        if (currentUser.role !== UserRole.ADMIN && currentUser.role !== UserRole.HR) {
+          // Department leader / approver: only their assigned requests
+          qb.andWhere('lr.approver_id = :approverId', {
+            approverId: currentUser.id,
+          });
+        }
+        // Admin / HR: no extra filter → see all
       }
-      // Admin / HR: no extra filter → see all
-    }
 
-    // ── Status filter ──────────────────────────────────────────
-    if (status?.length) {
-      qb.andWhere('lr.status IN (:...statuses)', { statuses: status });
-    }
+      // ── Status filter ──────────────────────────────────────────
+      if (status?.length) {
+        qb.andWhere('lr.status IN (:...statuses)', { statuses: status });
+      }
 
-    // ── Leave type filter (by items) ───────────────────────────
-    if (leaveType?.length) {
-      // Request must have at least one item whose leaveTypeId is in the list
-      qb.andWhere(
-        `lr.id IN (
+      // ── Leave type filter (by items) ───────────────────────────
+      if (leaveType?.length) {
+        // Request must have at least one item whose leaveTypeId is in the list
+        qb.andWhere(
+          `lr.id IN (
           SELECT lri.leave_request_id
           FROM leave_request_items lri
           WHERE lri.leave_type_id IN (:...leaveTypeIds)
         )`,
-        { leaveTypeIds: leaveType },
-      );
-    }
+          { leaveTypeIds: leaveType },
+        );
+      }
 
-    // ── Date range filter ──────────────────────────────────────
-    if (from) {
-      qb.andWhere('lr.end_date >= :from', { from });
-    }
-    if (to) {
-      qb.andWhere('lr.start_date <= :to', { to });
-    }
+      // ── Date range filter ──────────────────────────────────────
+      if (from) {
+        qb.andWhere('lr.end_date >= :from', { from });
+      }
+      if (to) {
+        qb.andWhere('lr.start_date <= :to', { to });
+      }
 
-    // ── Search ─────────────────────────────────────────────────
-    if (q?.trim()) {
-      const search = `%${q.trim()}%`;
-      if (view === LeaveRequestView.MANAGEMENT) {
-        // Search by code (ID), reason, or employee name
-        qb.andWhere(
-          `(
+      // ── Search ─────────────────────────────────────────────────
+      if (q?.trim()) {
+        const search = `%${q.trim()}%`;
+        if (view === LeaveRequestView.MANAGEMENT) {
+          // Search by code (ID), reason, or employee name
+          qb.andWhere(
+            `(
             CAST(lr.id AS TEXT) ILIKE :search
             OR lr.reason ILIKE :search
             OR employee.username ILIKE :search
           )`,
-          { search },
-        );
-      } else {
-        // Personal view: search by code (ID) or reason
-        qb.andWhere(
-          `(
+            { search },
+          );
+        } else {
+          // Personal view: search by code (ID) or reason
+          qb.andWhere(
+            `(
             CAST(lr.id AS TEXT) ILIKE :search
             OR lr.reason ILIKE :search
           )`,
-          { search },
-        );
+            { search },
+          );
+        }
       }
-    }
 
-    // ── Sort ───────────────────────────────────────────────────
-    // NOTE: QueryBuilder orderBy requires entity property names (camelCase),
-    // NOT database column names (snake_case).
-    const sortMapping: Record<string, string> = {
-      startTime: 'lr.startDate',
-      createdAt: 'lr.createdAt',
-      status: 'lr.status',
-      endTime: 'lr.endDate',
-    };
-
-    let sortField = 'lr.startDate';
-    let sortOrder: 'ASC' | 'DESC' = 'DESC';
-
-    if (sort) {
-      const desc = sort.startsWith('-');
-      const field = desc ? sort.slice(1) : sort;
-      sortField = sortMapping[field] ?? 'lr.startDate';
-      sortOrder = desc ? 'DESC' : 'ASC';
-    }
-    qb.orderBy(sortField, sortOrder);
-    // Secondary sort by id for stable pagination
-    qb.addOrderBy('lr.id', 'DESC');
-
-    // ── Count total (before pagination) ────────────────────────
-    const total = await qb.getCount();
-
-    // ── Pagination ─────────────────────────────────────────────
-    qb.skip((page - 1) * pageSize).take(pageSize);
-
-    const leaveRequests = await qb.getMany();
-
-    // ── Map to DTOs ────────────────────────────────────────────
-    const now = new Date();
-    const isManagement = view === LeaveRequestView.MANAGEMENT;
-
-    const data: LeaveRequestListItemDto[] = leaveRequests.map((lr) => {
-      // Collect distinct leave type names from items
-      const leaveTypeNames = [
-        ...new Set(
-          (lr.items ?? [])
-            .map((item) => item.leaveType?.name)
-            .filter(Boolean) as string[],
-        ),
-      ];
-
-      // Build human-readable start/end time
-      const startTime = buildDateTime(lr.startDate, lr.startSession, 'start');
-      const endTime = buildDateTime(lr.endDate, lr.endSession, 'end');
-
-      // Duration label
-      const durationLabel = buildDurationLabel(lr.durationDays);
-
-      // Permissions
-      const permissions = this.computePermissions(lr, now);
-
-      return {
-        id: lr.id,
-        code: `LV-${String(lr.id).padStart(3, '0')}`,
-        leaveTypes: leaveTypeNames,
-        startTime,
-        endTime,
-        durationLabel,
-        approverName: lr.approver?.username ?? '',
-        ...(isManagement ? { employeeName: lr.user?.username ?? '' } : {}),
-        status: lr.status,
-        rejectedReason: lr.rejectedReason ?? null,
-        version: lr.version,
-        permissions,
+      // ── Sort ───────────────────────────────────────────────────
+      // NOTE: QueryBuilder orderBy requires entity property names (camelCase),
+      // NOT database column names (snake_case).
+      const sortMapping: Record<string, string> = {
+        startTime: 'lr.startDate',
+        createdAt: 'lr.createdAt',
+        status: 'lr.status',
+        endTime: 'lr.endDate',
       };
-    });
 
-    const response = {
-      success: true as const,
-      data,
-      page: { page, pageSize, total },
-    };
-    this.logger.log(`[findLeaveRequests] OK – returned ${data.length} items, total=${total}`);
-    return response;
+      let sortField = 'lr.startDate';
+      let sortOrder: 'ASC' | 'DESC' = 'DESC';
+
+      if (sort) {
+        const desc = sort.startsWith('-');
+        const field = desc ? sort.slice(1) : sort;
+        sortField = sortMapping[field] ?? 'lr.startDate';
+        sortOrder = desc ? 'DESC' : 'ASC';
+      }
+      qb.orderBy(sortField, sortOrder);
+      // Secondary sort by id for stable pagination
+      qb.addOrderBy('lr.id', 'DESC');
+
+      // ── Count total (before pagination) ────────────────────────
+      const total = await qb.getCount();
+
+      // ── Pagination ─────────────────────────────────────────────
+      qb.skip((page - 1) * pageSize).take(pageSize);
+
+      const leaveRequests = await qb.getMany();
+
+      // ── Map to DTOs ────────────────────────────────────────────
+      const now = new Date();
+      const isManagement = view === LeaveRequestView.MANAGEMENT;
+
+      const data: LeaveRequestListItemDto[] = leaveRequests.map((lr) => {
+        // Collect distinct leave type names from items
+        const leaveTypeNames = [
+          ...new Set(
+            (lr.items ?? []).map((item) => item.leaveType?.name).filter(Boolean) as string[],
+          ),
+        ];
+
+        // Build human-readable start/end time
+        const startTime = buildDateTime(lr.startDate, lr.startSession, 'start');
+        const endTime = buildDateTime(lr.endDate, lr.endSession, 'end');
+
+        // Duration label
+        const durationLabel = buildDurationLabel(lr.durationDays);
+
+        // Permissions
+        const permissions = this.computePermissions(lr, now);
+
+        return {
+          id: lr.id,
+          code: `LV-${String(lr.id).padStart(3, '0')}`,
+          leaveTypes: leaveTypeNames,
+          startTime,
+          endTime,
+          durationLabel,
+          approverName: lr.approver?.username ?? '',
+          ...(isManagement ? { employeeName: lr.user?.username ?? '' } : {}),
+          status: lr.status,
+          rejectedReason: lr.rejectedReason ?? null,
+          version: lr.version,
+          permissions,
+        };
+      });
+
+      const response = {
+        success: true as const,
+        data,
+        page: { page, pageSize, total },
+      };
+      this.logger.log(`[findLeaveRequests] OK – returned ${data.length} items, total=${total}`);
+      return response;
     } catch (error) {
-      this.logger.error(`[findLeaveRequests] ERROR userId=${currentUser.id}`, error?.stack ?? error);
+      this.logger.error(
+        `[findLeaveRequests] ERROR userId=${currentUser.id}`,
+        error?.stack ?? error,
+      );
       throw error;
     }
   }
@@ -1277,10 +1362,7 @@ export class LeaveRequestsService {
    * Admin / HR: always.
    * Others: must be a department leader or active approver.
    */
-  private async canAccessManagementView(user: {
-    id: number;
-    role: UserRole;
-  }): Promise<boolean> {
+  private async canAccessManagementView(user: { id: number; role: UserRole }): Promise<boolean> {
     if (user.role === UserRole.ADMIN || user.role === UserRole.HR) {
       return true;
     }
@@ -1302,50 +1384,46 @@ export class LeaveRequestsService {
     return isApprover > 0;
   }
 
- /**
-     * Compute per-row action permissions based on status and whether
-     * the leave start date is in the future.
-     */
-    private computePermissions(
-      lr: LeaveRequest,
-      now: Date,
-    ): LeaveRequestPermissionsDto {
-      const isFuture = new Date(lr.startDate + 'T00:00:00') > now;
-  
-      switch (lr.status) {
-        case LeaveRequestStatus.PENDING:
-          return {
-            canViewDetail: true,
-            canUpdate: isFuture,
-            canCancel: isFuture,
-          };
-        case LeaveRequestStatus.APPROVED:
-          return {
-            canViewDetail: true,
-            canUpdate: false,
-            canCancel: isFuture,
-          };
-        case LeaveRequestStatus.REJECTED:
-          return {
-            canViewDetail: true,
-            canUpdate: false,
-            canCancel: false,
-          };
-        case LeaveRequestStatus.CANCELLED:
-          return {
-            canViewDetail: true,
-            canUpdate: false,
-            canCancel: false,
-          };
-        default:
-          return {
-            canViewDetail: true,
-            canUpdate: false,
-            canCancel: false,
-          };
-      }
-    }
+  /**
+   * Compute per-row action permissions based on status and whether
+   * the leave start date is in the future.
+   */
+  private computePermissions(lr: LeaveRequest, now: Date): LeaveRequestPermissionsDto {
+    const isFuture = new Date(lr.startDate + 'T00:00:00') > now;
 
+    switch (lr.status) {
+      case LeaveRequestStatus.PENDING:
+        return {
+          canViewDetail: true,
+          canUpdate: isFuture,
+          canCancel: isFuture,
+        };
+      case LeaveRequestStatus.APPROVED:
+        return {
+          canViewDetail: true,
+          canUpdate: false,
+          canCancel: isFuture,
+        };
+      case LeaveRequestStatus.REJECTED:
+        return {
+          canViewDetail: true,
+          canUpdate: false,
+          canCancel: false,
+        };
+      case LeaveRequestStatus.CANCELLED:
+        return {
+          canViewDetail: true,
+          canUpdate: false,
+          canCancel: false,
+        };
+      default:
+        return {
+          canViewDetail: true,
+          canUpdate: false,
+          canCancel: false,
+        };
+    }
+  }
 
   /**
    * Find one leave request by ID.
@@ -1355,123 +1433,123 @@ export class LeaveRequestsService {
   async findOne(id: number): Promise<LeaveRequestDetailsDto> {
     this.logger.log(`[findOne] START id=${id}`);
     try {
-    const lr = await this.leaveRequestRepository.findOne({
-      where: { id },
-      relations: [
-        'user',
-        'user.department',
-        'approver',
-        'approver.department',
-        'notificationRecipients',
-        'notificationRecipients.user',
-        'items',
-        'items.leaveType',
-        'requestedLeaveType',
-        'requestedLeaveType.category',
-        'attachments',
-      ],
-    });
+      const lr = await this.leaveRequestRepository.findOne({
+        where: { id },
+        relations: [
+          'user',
+          'user.department',
+          'approver',
+          'approver.department',
+          'notificationRecipients',
+          'notificationRecipients.user',
+          'items',
+          'items.leaveType',
+          'requestedLeaveType',
+          'requestedLeaveType.category',
+          'attachments',
+        ],
+      });
 
-    if (!lr) {
-      throw new NotFoundException('Leave request not found');
-    }
+      if (!lr) {
+        throw new NotFoundException('Leave request not found');
+      }
 
-    // ── Map to DTO ───────────────────────────────────────────
-    const ccRecipients = (lr.notificationRecipients ?? [])
-      .filter((r) => r.type === RecipientType.CC && r.user)
-      .map((r) => ({ id: r.user.id, username: r.user.username, email: r.user.email }));
+      // ── Map to DTO ───────────────────────────────────────────
+      const ccRecipients = (lr.notificationRecipients ?? [])
+        .filter((r) => r.type === RecipientType.CC && r.user)
+        .map((r) => ({ id: r.user.id, username: r.user.username, email: r.user.email }));
 
-    const dto: LeaveRequestDetailsDto = {
-      id: lr.id,
-      status: lr.status,
-      version: lr.version,
+      const dto: LeaveRequestDetailsDto = {
+        id: lr.id,
+        status: lr.status,
+        version: lr.version,
 
-      // People
-      userId: lr.userId,
-      requester: {
-        id: lr.user.id,
-        employeeId: lr.user.employeeId,
-        username: lr.user.username,
-        email: lr.user.email,
-        department: lr.user.department?.name ?? null,
-      },
-      approverId: lr.approverId,
-      approver: {
-        id: lr.approver.id,
-        employeeId: lr.approver.employeeId,
-        username: lr.approver.username,
-        email: lr.approver.email,
-        department: lr.approver.department?.name ?? null,
-      },
+        // People
+        userId: lr.userId,
+        requester: {
+          id: lr.user.id,
+          employeeId: lr.user.employeeId,
+          username: lr.user.username,
+          email: lr.user.email,
+          department: lr.user.department?.name ?? null,
+        },
+        approverId: lr.approverId,
+        approver: {
+          id: lr.approver.id,
+          employeeId: lr.approver.employeeId,
+          username: lr.approver.username,
+          email: lr.approver.email,
+          department: lr.approver.department?.name ?? null,
+        },
 
-      // Leave type
-      requestedLeaveType: lr.requestedLeaveType
-        ? {
-            id: lr.requestedLeaveType.id,
-            code: lr.requestedLeaveType.code,
-            name: lr.requestedLeaveType.name,
-            category: lr.requestedLeaveType.category
-              ? {
-                  id: lr.requestedLeaveType.category.id,
-                  code: lr.requestedLeaveType.category.code,
-                  name: lr.requestedLeaveType.category.name,
-                }
-              : null,
-          }
-        : null,
+        // Leave type
+        requestedLeaveType: lr.requestedLeaveType
+          ? {
+              id: lr.requestedLeaveType.id,
+              code: lr.requestedLeaveType.code,
+              name: lr.requestedLeaveType.name,
+              category: lr.requestedLeaveType.category
+                ? {
+                    id: lr.requestedLeaveType.category.id,
+                    code: lr.requestedLeaveType.category.code,
+                    name: lr.requestedLeaveType.category.name,
+                  }
+                : null,
+            }
+          : null,
 
-      // Date & session
-      startDate: lr.startDate,
-      endDate: lr.endDate,
-      startSession: lr.startSession,
-      endSession: lr.endSession,
-      durationDays: lr.durationDays,
+        // Date & session
+        startDate: lr.startDate,
+        endDate: lr.endDate,
+        startSession: lr.startSession,
+        endSession: lr.endSession,
+        durationDays: lr.durationDays,
 
-      // Parental leave
-      numberOfChildren: lr.numberOfChildren,
-      childbirthMethod: lr.childbirthMethod,
+        // Parental leave
+        numberOfChildren: lr.numberOfChildren,
+        childbirthMethod: lr.childbirthMethod,
 
-      // Content
-      reason: lr.reason,
-      workSolution: lr.workSolution ?? null,
+        // Content
+        reason: lr.reason,
+        workSolution: lr.workSolution ?? null,
 
-      // Items breakdown
-      items: (lr.items ?? []).map((item) => ({
-        leaveTypeId: Number(item.leaveTypeId),
-        leaveTypeName: item.leaveType?.name ?? 'Unknown',
-        leaveTypeCode: item.leaveType?.code ?? '',
-        amountDays: Number(item.amountDays),
-        periodYear: item.periodYear,
-        periodMonth: item.periodMonth,
-        note: item.note,
-      })),
+        // Items breakdown
+        items: (lr.items ?? []).map((item) => ({
+          leaveTypeId: Number(item.leaveTypeId),
+          leaveTypeName: item.leaveType?.name ?? 'Unknown',
+          leaveTypeCode: item.leaveType?.code ?? '',
+          amountDays: Number(item.amountDays),
+          periodYear: item.periodYear,
+          periodMonth: item.periodMonth,
+          note: item.note,
+        })),
 
-      // CC
-      ccUserIds: ccRecipients.map((r) => r.id),
-      ccRecipients,
+        // CC
+        ccUserIds: ccRecipients.map((r) => r.id),
+        ccRecipients,
 
-      // Status workflow
-      rejectedReason: lr.rejectedReason ?? null,
-      rejectedAt: lr.rejectedAt ?? null,
-      approvedAt: lr.approvedAt ?? null,
-      cancelledAt: lr.cancelledAt ?? null,
+        // Status workflow
+        rejectedReason: lr.rejectedReason ?? null,
+        rejectedAt: lr.rejectedAt ?? null,
+        approvedAt: lr.approvedAt ?? null,
+        cancelledAt: lr.cancelledAt ?? null,
 
-      // Timestamps
-      createdAt: lr.createdAt,
-      updatedAt: lr.updatedAt,
+        // Timestamps
+        createdAt: lr.createdAt,
+        updatedAt: lr.updatedAt,
 
-      // Attachment (Social benefits proof document)
-      attachment: lr.attachments?.[0]
-        ? {
-            id: Number(lr.attachments[0].id),
-            originalFilename: lr.attachments[0].originalFilename,
-            sizeBytes: lr.attachments[0].sizeBytes ? Number(lr.attachments[0].sizeBytes) : null,
-          }
-        : null,
-    };
+        // Attachment (Social benefits proof document)
+        attachment: lr.attachments?.[0]
+          ? {
+              id: Number(lr.attachments[0].id),
+              originalFilename: lr.attachments[0].originalFilename,
+              sizeBytes: lr.attachments[0].sizeBytes ? Number(lr.attachments[0].sizeBytes) : null,
+            }
+          : null,
+      };
 
-    this.logger.log(`[findOne] OK – id=${id} status=${dto.status}`);
-    return dto;
+      this.logger.log(`[findOne] OK – id=${id} status=${dto.status}`);
+      return dto;
     } catch (error) {
       this.logger.error(`[findOne] ERROR id=${id}`, error?.stack ?? error);
       throw error;

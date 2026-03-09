@@ -8,10 +8,7 @@ import { UserProfileService } from './user-profile.service';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([User, UserApprover, Department]),
-    NotificationsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([User, UserApprover, Department]), NotificationsModule],
   controllers: [UserProfileController],
   providers: [UserProfileService],
   exports: [UserProfileService],

@@ -9,9 +9,7 @@ export type AppAbility = PureAbility<[Action, Subjects]>;
 @Injectable()
 export class CaslAbilityFactory {
   createForUser(user: User) {
-    const { can, build } = new AbilityBuilder<AppAbility>(
-      PureAbility as AbilityClass<AppAbility>,
-    );
+    const { can, build } = new AbilityBuilder<AppAbility>(PureAbility as AbilityClass<AppAbility>);
 
     // =====================================================
     // CONFIGURE YOUR PERMISSIONS HERE

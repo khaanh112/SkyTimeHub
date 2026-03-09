@@ -219,7 +219,7 @@ export class NotificationsService implements OnModuleDestroy {
 
     // Retry logic for transient errors (timeout, connection reset)
     const maxRetries = 2;
-    let lastError: Error;
+    let lastError: Error = new Error('Unknown error');
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -315,9 +315,7 @@ export class NotificationsService implements OnModuleDestroy {
     activationLink: string,
     manager?: EntityManager,
   ): Promise<number[]> {
-    const repo = manager
-      ? manager.getRepository(EmailQueue)
-      : this.emailQueueRepository;
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
 
     const idempotencyKey = `activation-${userId}-${activationToken}`;
 
@@ -378,9 +376,7 @@ export class NotificationsService implements OnModuleDestroy {
     },
     manager?: EntityManager,
   ): Promise<number[]> {
-    const repo = manager
-      ? manager.getRepository(EmailQueue)
-      : this.emailQueueRepository;
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
 
     const idempotencyKey = `leave-req-${leaveRequestId}-${recipientUserId}`;
 
@@ -439,9 +435,7 @@ export class NotificationsService implements OnModuleDestroy {
     },
     manager?: EntityManager,
   ): Promise<number[]> {
-    const repo = manager
-      ? manager.getRepository(EmailQueue)
-      : this.emailQueueRepository;
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
 
     const idempotencyKey = `leave-approved-${leaveRequestId}-${recipientUserId}`;
 
@@ -509,9 +503,7 @@ export class NotificationsService implements OnModuleDestroy {
     },
     manager?: EntityManager,
   ): Promise<number[]> {
-    const repo = manager
-      ? manager.getRepository(EmailQueue)
-      : this.emailQueueRepository;
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
 
     const idempotencyKey = `leave-rejected-${leaveRequestId}-${recipientUserId}`;
 
@@ -577,9 +569,7 @@ export class NotificationsService implements OnModuleDestroy {
     },
     manager?: EntityManager,
   ): Promise<number[]> {
-    const repo = manager
-      ? manager.getRepository(EmailQueue)
-      : this.emailQueueRepository;
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
 
     const idempotencyKey = `leave-updated-${leaveRequestId}-${recipientUserId}-${Date.now()}`;
 
@@ -638,9 +628,7 @@ export class NotificationsService implements OnModuleDestroy {
     },
     manager?: EntityManager,
   ): Promise<number[]> {
-    const repo = manager
-      ? manager.getRepository(EmailQueue)
-      : this.emailQueueRepository;
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
 
     const idempotencyKey = `leave-cancelled-${leaveRequestId}-${recipientUserId}-${Date.now()}`;
 

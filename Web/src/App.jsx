@@ -18,6 +18,9 @@ import {
   EditLeaveRequestPage,
   SettingsPage,
   OTManagementPage,
+  CreateOtPlanPage,
+  EditOtPlanPage,
+  OtPlanDetailPage,
 } from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
 
@@ -178,6 +181,30 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <OTManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ot-management/create"
+        element={
+          <ProtectedRoute>
+            <CreateOtPlanPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ot-management/:id/edit"
+        element={
+          <ProtectedRoute>
+            <EditOtPlanPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ot-management/:id"
+        element={
+          <ProtectedRoute>
+            <OtPlanDetailPage />
           </ProtectedRoute>
         }
       />

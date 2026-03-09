@@ -77,7 +77,11 @@ export class User {
   @Column({ type: 'varchar', length: 255, nullable: true })
   address: string;
 
-  @ApiPropertyOptional({ enum: ContractType, example: ContractType.OFFICIAL, description: 'Contract type' })
+  @ApiPropertyOptional({
+    enum: ContractType,
+    example: ContractType.OFFICIAL,
+    description: 'Contract type',
+  })
   @Column({ name: 'contract_type', type: 'enum', enum: ContractType, nullable: true })
   contractType: ContractType;
 

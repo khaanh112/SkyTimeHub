@@ -13,7 +13,12 @@ import { LeaveRequest } from './leave_request.entity';
 import { LeaveType } from './leave-type.entity';
 
 @Entity('leave_request_items')
-@Unique('uq_lri_request_type_period', ['leaveRequestId', 'leaveTypeId', 'periodYear', 'periodMonth'])
+@Unique('uq_lri_request_type_period', [
+  'leaveRequestId',
+  'leaveTypeId',
+  'periodYear',
+  'periodMonth',
+])
 @Index('idx_lri_request_id', ['leaveRequestId'])
 @Index('idx_lri_period', ['periodYear', 'periodMonth'])
 export class LeaveRequestItem {

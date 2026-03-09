@@ -15,7 +15,11 @@ import { UserGender } from '@common/enums/user-genders';
 import { ContractType } from '@common/enums/contract-type.enum';
 
 export class CreateUserProfileDto {
-  @ApiPropertyOptional({ example: 'SG100', description: 'Employee ID (auto-generated if not provided)', maxLength: 20 })
+  @ApiPropertyOptional({
+    example: 'SG100',
+    description: 'Employee ID (auto-generated if not provided)',
+    maxLength: 20,
+  })
   @IsOptional()
   @IsString()
   @Length(1, 20)
@@ -46,18 +50,32 @@ export class CreateUserProfileDto {
   @IsNumber()
   departmentId?: number | null;
 
-  @ApiPropertyOptional({ example: 'Software Engineer', description: 'Job position', maxLength: 100 })
+  @ApiPropertyOptional({
+    example: 'Software Engineer',
+    description: 'Job position',
+    maxLength: 100,
+  })
   @IsOptional()
   @IsString()
   @Length(1, 100)
   position?: string;
 
-  @ApiPropertyOptional({ example: '2024-01-01', description: 'Join date', type: String, format: 'date' })
+  @ApiPropertyOptional({
+    example: '2024-01-01',
+    description: 'Join date',
+    type: String,
+    format: 'date',
+  })
   @IsOptional()
   @IsDateString()
   joinDate?: Date;
 
-  @ApiPropertyOptional({ example: '2024-01-01', description: 'Official contract date', type: String, format: 'date' })
+  @ApiPropertyOptional({
+    example: '2024-01-01',
+    description: 'Official contract date',
+    type: String,
+    format: 'date',
+  })
   @IsOptional()
   @IsDateString()
   officialContractDate?: Date;
@@ -68,7 +86,12 @@ export class CreateUserProfileDto {
   @Length(1, 20)
   phoneNumber?: string;
 
-  @ApiPropertyOptional({ example: '1995-06-15', description: 'Date of birth', type: String, format: 'date' })
+  @ApiPropertyOptional({
+    example: '1995-06-15',
+    description: 'Date of birth',
+    type: String,
+    format: 'date',
+  })
   @IsOptional()
   @IsDateString()
   dateOfBirth?: Date;
@@ -79,7 +102,11 @@ export class CreateUserProfileDto {
   @Length(1, 255)
   address?: string;
 
-  @ApiPropertyOptional({ enum: ContractType, example: ContractType.OFFICIAL, description: 'Contract type' })
+  @ApiPropertyOptional({
+    enum: ContractType,
+    example: ContractType.OFFICIAL,
+    description: 'Contract type',
+  })
   @IsOptional()
   @IsEnum(ContractType)
   contractType?: ContractType;

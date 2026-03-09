@@ -10,7 +10,10 @@ export class BalanceSummaryQueryDto {
   @Min(2000)
   year?: number;
 
-  @ApiPropertyOptional({ example: 3, description: 'Month 1-12 (optional). If omitted, returns full-year summary.' })
+  @ApiPropertyOptional({
+    example: 3,
+    description: 'Month 1-12 (optional). If omitted, returns full-year summary.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

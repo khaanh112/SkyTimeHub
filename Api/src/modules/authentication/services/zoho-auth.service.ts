@@ -21,13 +21,11 @@ export class ZohoAuthService {
   ) {}
 
   async validateAndLogin(zohoProfile: ZohoProfileDto): Promise<LoginResponseDto> {
-    
     this.logger.log(`Validating login for email: ${zohoProfile.email}`);
 
     const user = await this.findCreatedUser(zohoProfile);
     this.logger.log(`User found and validated - ID: ${user.id}, Email: ${user.email}`);
 
-    
     const tokens = await this.tokenService.generateTokens(user);
     this.logger.log('Tokens generated successfully');
 
@@ -71,7 +69,7 @@ export class ZohoAuthService {
 
     this.logger.log(`✓ User found in database`);
     this.logger.log(`   - Email: ${user.email}`);
-  
+
     // User must activate account before logging in
     if (user.activationToken) {
       this.logger.error(`❌ Account not activated yet`);
@@ -93,7 +91,7 @@ export class ZohoAuthService {
         HttpStatus.UNAUTHORIZED,
       );
     }
-    
+
     this.logger.log('--- All validation checks passed ---');
 
     return user;

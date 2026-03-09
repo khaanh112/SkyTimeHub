@@ -57,7 +57,10 @@ export class OtBalanceTransaction {
   @Column({ name: 'period_month', type: 'int', nullable: false })
   periodMonth: number;
 
-  @ApiPropertyOptional({ example: '2026-03-15', description: 'Period date (for daily limit check)' })
+  @ApiPropertyOptional({
+    example: '2026-03-15',
+    description: 'Period date (for daily limit check)',
+  })
   @Column({ name: 'period_date', type: 'date', nullable: true })
   periodDate: string | null;
 

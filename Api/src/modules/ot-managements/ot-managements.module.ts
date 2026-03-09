@@ -1,0 +1,32 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { OtManagementsController } from './ot-managements.controller';
+import { OtManagementsService } from './ot-managements.service';
+import { OtBalanceService } from './ot-balance.service';
+import { OtPlan } from '@/entities/ot-plan.entity';
+import { OtPlanEmployee } from '@/entities/ot-plan-employee.entity';
+import { OtCheckin } from '@/entities/ot-checkin.entity';
+import { OtBalanceTransaction } from '@/entities/ot-balance-transaction.entity';
+import { User } from '@/entities/users.entity';
+import { Department } from '@/entities/departments.entity';
+import { CalendarOverride } from '@/entities/calendar-override.entity';
+import { SystemSetting } from '@/entities/system-setting.entity';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([
+      OtPlan,
+      OtPlanEmployee,
+      OtCheckin,
+      OtBalanceTransaction,
+      User,
+      Department,
+      CalendarOverride,
+      SystemSetting,
+    ]),
+  ],
+  controllers: [OtManagementsController],
+  providers: [OtManagementsService, OtBalanceService],
+  exports: [OtManagementsService, OtBalanceService],
+})
+export class OtManagementsModule {}

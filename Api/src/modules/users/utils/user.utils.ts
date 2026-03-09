@@ -13,10 +13,7 @@ export async function generateEmployeeId(usersRepository: Repository<User>): Pro
   const latestUser = await usersRepository
     .createQueryBuilder('user')
     .where('user.employee_id LIKE :prefix', { prefix: `${prefix}%` })
-    .orderBy(
-      `CAST(SUBSTRING(user.employee_id FROM ${prefix.length + 1}) AS INTEGER)`,
-      'DESC',
-    )
+    .orderBy(`CAST(SUBSTRING(user.employee_id FROM ${prefix.length + 1}) AS INTEGER)`, 'DESC')
     .getOne();
 
   let nextNumber = 1;

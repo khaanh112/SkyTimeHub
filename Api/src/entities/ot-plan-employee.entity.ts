@@ -10,7 +10,7 @@ import {
   Check,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { OtDayType } from '@/common/enums/ot-day-type.enum';
 import { OtTimeType } from '@/common/enums/ot-time-type.enum';
 import { User } from './users.entity';

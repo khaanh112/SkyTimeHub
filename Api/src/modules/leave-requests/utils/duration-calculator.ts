@@ -142,8 +142,6 @@ export async function calculateLeaveDuration(
   startSession: LeaveSession,
   endSession: LeaveSession,
 ): Promise<DurationResult> {
-
-  
   // Load calendar overrides for the date range
   const overrides = await calendarRepo
     .createQueryBuilder('co')
@@ -305,7 +303,7 @@ export async function autoCalculateEndDate(
  */
 export async function splitLeaveDaysByMonth(
   leaveTypeId: number,
-//// isparentalLeave: boolean,
+  //// isparentalLeave: boolean,
   //isFemale: boolean,
   calendarRepo: Repository<CalendarOverride>,
   startDate: string,
@@ -313,8 +311,6 @@ export async function splitLeaveDaysByMonth(
   startSession: LeaveSession,
   endSession: LeaveSession,
 ): Promise<MonthlyDuration[]> {
-
-  
   // Load calendar overrides for the date range
   const overrides = await calendarRepo
     .createQueryBuilder('co')

@@ -49,7 +49,6 @@ export class AuthController {
   @ApiOperation({ summary: 'Zoho OAuth callback' })
   @ApiResponse({ status: 302, description: 'Redirects to frontend with tokens' })
   async zohoCallback(@Req() req: any, @Res() res: Response) {
-    
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
 
     // Handle OAuth errors from Zoho (e.g., user denied access)
@@ -105,9 +104,10 @@ export class AuthController {
       );
 
       // Pass email for ACCOUNT_NOT_ACTIVATED so frontend can offer resend
-      const emailParam = errorCode === ErrorCode.ACCOUNT_NOT_ACTIVATED && req.user?.email
-        ? `&email=${encodeURIComponent(req.user.email)}`
-        : '';
+      const emailParam =
+        errorCode === ErrorCode.ACCOUNT_NOT_ACTIVATED && req.user?.email
+          ? `&email=${encodeURIComponent(req.user.email)}`
+          : '';
       const redirectUrl = `${frontendUrl}/auth/callback?error=${errorCode}&message=${errorMessage}${emailParam}`;
 
       this.logger.log(`Redirecting to frontend with error: ${errorCode}`);
@@ -166,7 +166,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'Current user profile retrieved successfully.' })
-  async getCurrentUser(@CurrentUser() user: AuthenticatedUser, @Req() req) {
+  async getCurrentUser(@CurrentUser() user: AuthenticatedUser, @Req() req: any) {
     this.logger.log(`Get current user endpoint called`);
     this.logger.log(`CurrentUser decorator returned: ${JSON.stringify(user)}`);
     this.logger.log(`Request user object: ${JSON.stringify(req.user)}`);

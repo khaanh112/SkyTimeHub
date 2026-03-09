@@ -24,7 +24,6 @@ export class UserListItemDto {
   contractType: ContractType;
 }
 
-
 export class PageMetaDto {
   @ApiProperty({ example: 1 })
   page: number;

@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Param,
-  Body,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from '@entities/users.entity';
 import { UserRole } from '@/common/enums/roles.enum';
@@ -25,9 +18,14 @@ export class UserProfileController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get current user profile',
-    description: 'Returns the full profile of the currently authenticated user, including department name and approver name.',
+    description:
+      'Returns the full profile of the currently authenticated user, including department name and approver name.',
   })
-  @ApiResponse({ status: 200, description: 'User profile retrieved successfully.', type: UserViewProfileDto })
+  @ApiResponse({
+    status: 200,
+    description: 'User profile retrieved successfully.',
+    type: UserViewProfileDto,
+  })
   async getMyProfile(@CurrentUser('id') userId: number): Promise<UserViewProfileDto> {
     return this.userProfileService.getUserProfile(userId);
   }

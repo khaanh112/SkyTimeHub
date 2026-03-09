@@ -66,7 +66,10 @@ export class OtPlan {
   approver: User;
 
   // ── Duration (computed sum) ────────────────────────────────
-  @ApiProperty({ example: 480, description: 'Total duration in minutes (sum of all employee rows)' })
+  @ApiProperty({
+    example: 480,
+    description: 'Total duration in minutes (sum of all employee rows)',
+  })
   @Column({ name: 'total_duration_minutes', type: 'int', nullable: false, default: 0 })
   totalDurationMinutes: number;
 

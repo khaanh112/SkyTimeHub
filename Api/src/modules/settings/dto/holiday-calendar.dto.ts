@@ -51,4 +51,4 @@ export class SaveHolidayCalendarDto {
   @Type(() => HolidayItemDto)
   holidays: HolidayItemDto[];
 }
-``
+

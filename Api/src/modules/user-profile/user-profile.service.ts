@@ -39,11 +39,7 @@ export class UserProfileService {
     });
 
     if (!user) {
-      throw new AppException(
-        ErrorCode.USER_NOT_FOUND,
-        'User not found',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
     }
 
     const userApprover = await this.userApproverRepository.findOne({
@@ -180,9 +176,7 @@ export class UserProfileService {
           activationToken,
           activationLink,
         );
-        this.logger.log(
-          `User created: ${savedUser.email}, activation email queued`,
-        );
+        this.logger.log(`User created: ${savedUser.email}, activation email queued`);
       } catch (emailError) {
         this.logger.warn(
           `User created but failed to queue activation email: ${emailError.message}`,
@@ -220,11 +214,7 @@ export class UserProfileService {
         where: { id: userId },
       });
       if (!existingUser) {
-        throw new AppException(
-          ErrorCode.USER_NOT_FOUND,
-          'User not found',
-          HttpStatus.NOT_FOUND,
-        );
+        throw new AppException(ErrorCode.USER_NOT_FOUND, 'User not found', HttpStatus.NOT_FOUND);
       }
 
       const oldDepartmentId = existingUser.departmentId;
@@ -268,10 +258,7 @@ export class UserProfileService {
       }
 
       // If user changed departments, remove them as leader of the old department
-      if (
-        oldDepartmentId &&
-        oldDepartmentId !== savedUser.departmentId
-      ) {
+      if (oldDepartmentId && oldDepartmentId !== savedUser.departmentId) {
         const oldDepartment = await queryRunner.manager.findOne(Department, {
           where: { id: oldDepartmentId },
         });

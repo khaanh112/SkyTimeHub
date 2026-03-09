@@ -55,7 +55,6 @@ export class UpdateLeaveRequestDto {
   @Length(5, 500)
   reason: string;
 
-
   @ApiPropertyOptional({
     description: 'Work solution/handover plan for leave',
     example: 'Handover to John, OT compensation',
@@ -64,7 +63,6 @@ export class UpdateLeaveRequestDto {
   @IsString()
   @Length(0, 1000)
   workSolution?: string;
-
 
   @ApiPropertyOptional({
     description: 'Array of user IDs to CC on notifications',
@@ -75,7 +73,6 @@ export class UpdateLeaveRequestDto {
   @IsArray()
   @IsInt({ each: true })
   ccUserIds?: number[];
-
 
   @ApiPropertyOptional({
     description: 'Number of children (for parental leave)',
@@ -103,7 +100,7 @@ export class UpdateLeaveRequestDto {
   @IsBoolean()
   confirmDespiteWarning?: boolean;
 
-   @ApiPropertyOptional({
+  @ApiPropertyOptional({
     description: 'Attachment ID returned from upload endpoint (Social leave only)',
     example: 1,
   })
@@ -111,5 +108,4 @@ export class UpdateLeaveRequestDto {
   @IsInt()
   @Type(() => Number)
   attachmentId?: number;
-  
 }
