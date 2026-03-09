@@ -1,7 +1,7 @@
 import { IsString, Length, IsNumber, IsEmail, IsEnum, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { UserRole } from '@common/enums/roles.enum';
+import { UserRole } from '@/common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
 
 export class UserResponseDto {

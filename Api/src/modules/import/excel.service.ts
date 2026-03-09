@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
-import { UserRole } from '@common/enums/roles.enum';
+import { UserRole } from '@/common/enums/roles.enum';
 import { ImportExecuteResult, ImportUserRow } from '../users/dto/import-user.dto';
 import { ImportPreviewResult } from '../users/dto/import-user.dto';
 import { UsersService } from '../users/users.service';

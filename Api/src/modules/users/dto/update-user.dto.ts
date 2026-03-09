@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsString, IsOptional, IsDateString, Length } from 'class-validator';
-import { UserRole } from '@common/enums/roles.enum';
+import { UserRole } from '@/common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { UserGender } from '@common/enums/user-genders';
 import { ContractType } from '@common/enums/contract-type.enum';

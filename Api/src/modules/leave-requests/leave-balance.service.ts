@@ -20,6 +20,7 @@ import { BalanceTxSource } from '@/common/enums/balance-tx-source.enum';
 import { validateAllocationsNoDuplicateBucket, assertAllocationSum } from './utils/allocation-validator';
 import { LeaveCategory } from '@/common/enums/leave-category.enum';
 import { BALANCE_TYPE_CODES } from '@/common/enums/balance_leavetype.enum';
+import { ContractType } from '@/common/enums/contract-type.enum';
 
 export interface BalanceInfo {
   leaveTypeId: number;
@@ -403,7 +404,6 @@ export class LeaveBalanceService {
         `Minimum leave duration for ${leaveType.name} is ${policy.minDurationDays} days`,
       );
     }
-    console.log(`Calculated duration: ${durationDays} days (parental entitlement: ${parentalEntitlementDays} days, excess working days: ${excessWorkingDays} days)`);
 
     // ── Step 2: Build items with conversion logic ───────────
     const items: ConversionItem[] = [];
@@ -844,7 +844,36 @@ export class LeaveBalanceService {
     }
 
     // 2d. All other categories (COMPENSATORY, etc.)
+    //     For COMPENSATORY: validate balance is sufficient (non-negative constraint)
     else {
+      if (categoryCode === LeaveCategory.COMPENSATORY) {
+        // Check compensatory balance: total entitlement credits - net debits
+        const entitlementResult = await (manager
+          ? manager.getRepository(LeaveBalanceTransaction)
+          : this.balanceTxRepo)
+          .createQueryBuilder('tx')
+          .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
+          .where('tx.employee_id = :employeeId', { employeeId })
+          .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: leaveType.id })
+          .andWhere('tx.period_year = :year', { year: startyear })
+          .andWhere("tx.direction = 'CREDIT'")
+          .andWhere("tx.source_type NOT IN ('RELEASE', 'REFUND')")
+          .getRawOne();
+        const entitlementCredit = parseFloat(entitlementResult?.total ?? '0');
+
+        const usedDays = await this.getUsedDays(
+          employeeId, leaveType.id, startyear, excludeRequestId, manager,
+        );
+        const compBalance = Math.max(entitlementCredit - usedDays, 0);
+
+        if (remainingDays > compBalance) {
+          throw new Error(
+            `Insufficient compensatory leave balance. Available: ${compBalance} day(s), requested: ${remainingDays} day(s). ` +
+            `You must accumulate OT hours before requesting compensatory leave.`,
+          );
+        }
+      }
+
       items.push({
         leaveTypeId: leaveType.id,
         leaveTypeCode: leaveType.code,
@@ -908,7 +937,6 @@ export class LeaveBalanceService {
 
       // Track remaining working-day capacity in each month bucket
       const capacities = buckets.map((b) => b.durationDays);
-      console.log(capacities);
       for (const item of items) {
         let remaining = item.amountDays;
 
@@ -1368,8 +1396,33 @@ export class LeaveBalanceService {
   // ═══════════════════════════════════════════════════════════════════
 
   /**
-   * Initialize yearly paid leave balance for all active employees.
+   * Calculate seniority bonus days per year.
+   * +1 additional annual leave day for every 5 full years of continuous service.
+   *
+   * @param officialContractDate  The date the employee became official
+   * @param year                  The target year to calculate bonus for
+   * @returns Number of bonus days (0, 1, 2, etc.)
+   */
+  private calculateSeniorityBonus(officialContractDate: Date | null | undefined, year: number): number {
+    if (!officialContractDate) return 0;
+    const contractDate = new Date(officialContractDate);
+    const targetDate = new Date(`${year}-01-01T00:00:00`);
+    const yearsOfService = targetDate.getFullYear() - contractDate.getFullYear();
+    // Only count full completed years at the start of the target year
+    if (yearsOfService < 5) return 0;
+    return Math.floor(yearsOfService / 5);
+  }
+
+  /**
+   * Initialize yearly paid leave balance for all active official employees.
    * Creates per-month CREDIT MONTHLY_ACCRUAL transactions.
+   *
+   * Proration rule for employees who joined during the year:
+   *  - Joined before the 15th → earns leave for that month
+   *  - Joined on or after the 15th → does NOT earn leave for that month
+   *
+   * Seniority bonus: +1 day/year for every 5 full years of continuous service
+   * (based on officialContractDate).
    */
   async initializeYearlyBalance(
     year: number,
@@ -1383,13 +1436,13 @@ export class LeaveBalanceService {
     }
 
     const policy = await this.getActivePolicy(paidType.id, `${year}-01-01`);
-    const monthlyRate = policy?.monthlyLimitDays
+    const baseMonthlyRate = policy?.monthlyLimitDays
       ? Number(policy.monthlyLimitDays)
       : annualDays / 12;
 
     const activeUsers = await this.userRepo.find({
-      where: { status: UserStatus.ACTIVE },
-      select: ['id'],
+      where: { status: UserStatus.ACTIVE, contractType: ContractType.OFFICIAL },
+      select: ['id', 'joinDate', 'officialContractDate'],
     });
 
     if (activeUsers.length === 0) {
@@ -1411,7 +1464,25 @@ export class LeaveBalanceService {
     if (toCredit.length > 0) {
       const transactions: Partial<LeaveBalanceTransaction>[] = [];
       for (const user of toCredit) {
-        for (let m = 1; m <= 12; m++) {
+        // Calculate seniority bonus
+        const seniorityBonus = this.calculateSeniorityBonus(user.officialContractDate, year);
+        const monthlyRate = baseMonthlyRate + seniorityBonus / 12;
+
+        // Determine start month based on join date proration
+        let startMonth = 1;
+        if (user.joinDate) {
+          const joinDate = new Date(user.joinDate);
+          const joinYear = joinDate.getFullYear();
+          if (joinYear === year) {
+            const joinDay = joinDate.getDate();
+            const joinMonth = joinDate.getMonth() + 1;
+            startMonth = joinDay < 15 ? joinMonth : joinMonth + 1;
+          } else if (joinYear > year) {
+            continue; // Skip employees who haven't joined yet
+          }
+        }
+
+        for (let m = startMonth; m <= 12; m++) {
           transactions.push({
             employeeId: user.id,
             leaveTypeId: paidType.id,
@@ -1421,17 +1492,18 @@ export class LeaveBalanceService {
             amountDays: monthlyRate,
             sourceType: BalanceTxSource.MONTHLY_ACCRUAL,
             sourceId: null,
-            note: `Paid leave accrual ${year}/${String(m).padStart(2, '0')} (${monthlyRate} day)`,
+            note: `Paid leave accrual ${year}/${String(m).padStart(2, '0')} (${monthlyRate} day${seniorityBonus > 0 ? `, incl. seniority +${seniorityBonus}d/yr` : ''})`,
           });
         }
       }
-      await this.balanceTxRepo.save(transactions);
+      if (transactions.length > 0) {
+        await this.balanceTxRepo.save(transactions);
+      }
     }
 
     this.logger.log(
-      `[initializeYearlyBalance] Year ${year}: credited ${toCredit.length} employees ` +
-      `(${toCredit.length * 12} monthly transactions), skipped ${existingIds.size}, ` +
-      `total active ${activeUsers.length}`,
+      `[initializeYearlyBalance] Year ${year}: credited ${toCredit.length} employees, ` +
+      `skipped ${existingIds.size}, total active official ${activeUsers.length}`,
     );
 
     return {
@@ -1444,9 +1516,13 @@ export class LeaveBalanceService {
   /**
    * Run monthly accrual for a specific month (called by cron on 1st of each month).
    *
-   * Creates CREDIT MONTHLY_ACCRUAL for each active employee that doesn't
-   * already have one for (year, month, PAID). Partial unique index guarantees
-   * idempotency at DB level.
+   * Creates CREDIT MONTHLY_ACCRUAL for each active official employee that doesn't
+   * already have one for (year, month, PAID).
+   *
+   * Applies join-date proration: employees who joined on or after the 15th of
+   * this month do NOT earn leave for this month.
+   *
+   * Includes seniority bonus in the monthly rate.
    */
   async runMonthlyAccrual(
     year: number,
@@ -1458,13 +1534,13 @@ export class LeaveBalanceService {
     if (!paidType) throw new Error('PAID leave type not found');
 
     const policy = await this.getActivePolicy(paidType.id, `${year}-01-01`);
-    const monthlyRate = policy?.monthlyLimitDays
+    const baseMonthlyRate = policy?.monthlyLimitDays
       ? Number(policy.monthlyLimitDays)
       : 1;
 
     const activeUsers = await this.userRepo.find({
-      where: { status: UserStatus.ACTIVE },
-      select: ['id'],
+      where: { status: UserStatus.ACTIVE, contractType: ContractType.OFFICIAL },
+      select: ['id', 'joinDate', 'officialContractDate'],
     });
 
     const existing = await this.balanceTxRepo
@@ -1477,20 +1553,38 @@ export class LeaveBalanceService {
       .getRawMany();
 
     const existingIds = new Set(existing.map((r) => Number(r.employeeId)));
-    const toCredit = activeUsers.filter((u) => !existingIds.has(u.id));
+
+    // Filter: not already credited AND eligible for this month per join-date proration
+    const toCredit = activeUsers.filter((u) => {
+      if (existingIds.has(u.id)) return false;
+      if (u.joinDate) {
+        const joinDate = new Date(u.joinDate);
+        const joinYear = joinDate.getFullYear();
+        const joinMonth = joinDate.getMonth() + 1;
+        const joinDay = joinDate.getDate();
+
+        if (joinYear > year || (joinYear === year && joinMonth > month)) return false;
+        if (joinYear === year && joinMonth === month && joinDay >= 15) return false;
+      }
+      return true;
+    });
 
     if (toCredit.length > 0) {
-      const transactions: Partial<LeaveBalanceTransaction>[] = toCredit.map((user) => ({
-        employeeId: user.id,
-        leaveTypeId: paidType.id,
-        periodYear: year,
-        periodMonth: month,
-        direction: BalanceTxDirection.CREDIT,
-        amountDays: monthlyRate,
-        sourceType: BalanceTxSource.MONTHLY_ACCRUAL,
-        sourceId: null,
-        note: `Paid leave accrual ${year}/${String(month).padStart(2, '0')} (${monthlyRate} day)`,
-      }));
+      const transactions: Partial<LeaveBalanceTransaction>[] = toCredit.map((user) => {
+        const seniorityBonus = this.calculateSeniorityBonus(user.officialContractDate, year);
+        const monthlyRate = baseMonthlyRate + seniorityBonus / 12;
+        return {
+          employeeId: user.id,
+          leaveTypeId: paidType.id,
+          periodYear: year,
+          periodMonth: month,
+          direction: BalanceTxDirection.CREDIT,
+          amountDays: monthlyRate,
+          sourceType: BalanceTxSource.MONTHLY_ACCRUAL,
+          sourceId: null,
+          note: `Paid leave accrual ${year}/${String(month).padStart(2, '0')} (${monthlyRate} day${seniorityBonus > 0 ? `, incl. seniority +${seniorityBonus}d/yr` : ''})`,
+        };
+      });
       await this.balanceTxRepo.save(transactions);
     }
 
@@ -1503,6 +1597,10 @@ export class LeaveBalanceService {
 
   /**
    * Initialize balance for a single employee (e.g. on activation).
+   *
+   * Proration rule:
+   *  - Joined before the 15th of a month → earns leave for that month
+   *  - Joined on or after the 15th → does NOT earn leave for that month
    */
   async initializeBalanceForEmployee(
     employeeId: number,
@@ -1530,11 +1628,45 @@ export class LeaveBalanceService {
     }
 
     const policy = await this.getActivePolicy(paidType.id, `${year}-01-01`);
-    const monthlyRate = policy?.monthlyLimitDays
+    const baseMonthlyRate = policy?.monthlyLimitDays
       ? Number(policy.monthlyLimitDays)
       : annualDays / 12;
 
-    const startMonth = new Date().getMonth() + 1;
+    // Determine start month based on join date proration rule
+    const employee = await this.userRepo.findOne({ where: { id: employeeId } });
+
+    // Calculate seniority bonus
+    const seniorityBonus = this.calculateSeniorityBonus(employee?.officialContractDate, year);
+    const monthlyRate = baseMonthlyRate + seniorityBonus / 12;
+    let startMonth: number;
+
+    if (employee?.joinDate) {
+      const joinDate = new Date(employee.joinDate);
+      const joinYear = joinDate.getFullYear();
+      const joinMonth = joinDate.getMonth() + 1; // 1-12
+      const joinDay = joinDate.getDate();
+
+      if (joinYear > year) {
+        // Employee joins after this year — no accrual
+        return { credited: false, days: 0, months: 0 };
+      } else if (joinYear < year) {
+        // Employee joined before this year — full year accrual
+        startMonth = 1;
+      } else {
+        // Joined same year — prorate based on join day
+        // Before 15th → earns leave for that month
+        // On or after 15th → does NOT earn leave for that month
+        startMonth = joinDay < 15 ? joinMonth : joinMonth + 1;
+      }
+    } else {
+      // Fallback: use current month if no join date
+      startMonth = new Date().getMonth() + 1;
+    }
+
+    if (startMonth > 12) {
+      return { credited: false, days: 0, months: 0 };
+    }
+
     const transactions: Partial<LeaveBalanceTransaction>[] = [];
 
     for (let m = startMonth; m <= 12; m++) {

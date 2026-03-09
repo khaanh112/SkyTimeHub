@@ -21,7 +21,7 @@ import { LeaveRequestNotificationRecipient } from './leave-request-notification-
 import { LeaveType } from './leave-type.entity';
 import { LeaveRequestItem } from './leave-request-item.entity';
 import { LeaveRequestAttachment } from './leave-request-attachment.entity';
-import { CompWorkRequest } from './comp-work-request.entity';
+
 
 @Entity('leave_requests')
 @Index('idx_leave_requests_user_status', ['userId', 'status'])
@@ -177,10 +177,6 @@ export class LeaveRequest {
   @OneToMany(() => LeaveRequestAttachment, (att) => att.leaveRequest, { cascade: true })
   attachments: LeaveRequestAttachment[];
 
-  /** Compensatory working plans linked to this leave */
-  @Exclude()
-  @OneToMany(() => CompWorkRequest, (cw) => cw.leaveRequest)
-  compWorkRequests: CompWorkRequest[];
 
   // ── Timestamps ────────────────────────────────────────────
   @ApiProperty({ description: 'Creation timestamp' })

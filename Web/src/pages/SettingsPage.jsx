@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Save, X, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { LoadingSpinner } from '../components';
 import holidayCalendarService from '../services/holidayCalendarService';
+import settingsService from '../services/settingsService';
 
 const TABS = [
   { key: 'leave-policy', label: 'Leave Policy' },
@@ -18,6 +19,10 @@ const DEFAULT_HOLIDAYS = [
   { name: 'Victory Day & Labor Day', startDate: '', endDate: '', compensatoryDate: '' },
   { name: 'National Day', startDate: '', endDate: '', compensatoryDate: '' },
 ];
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Main Settings Page
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const SettingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -52,19 +57,263 @@ const SettingsPage = () => {
 
       {/* Tab Content */}
       {activeTab === 'holiday-calendar' && <HolidayCalendarTab />}
-      {activeTab === 'leave-policy' && (
-        <div className="text-gray-500 text-center py-16">
-          Leave Policy configuration coming soon.
-        </div>
-      )}
-      {activeTab === 'ot-policy' && (
-        <div className="text-gray-500 text-center py-16">
-          OT Policy configuration coming soon.
-        </div>
-      )}
+      {activeTab === 'leave-policy' && <LeavePolicyTab />}
+      {activeTab === 'ot-policy' && <OtPolicyTab />}
     </div>
   );
 };
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Leave Policy Tab
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const LeavePolicyTab = () => {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [minCompLeaveDurationHours, setMinCompLeaveDurationHours] = useState(4);
+  const [original, setOriginal] = useState(4);
+
+  const fetchPolicy = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await settingsService.getLeavePolicy();
+      const val = data.minCompLeaveDurationHours ?? 4;
+      setMinCompLeaveDurationHours(val);
+      setOriginal(val);
+    } catch {
+      // defaults remain
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPolicy();
+  }, [fetchPolicy]);
+
+  const handleSave = async () => {
+    if (minCompLeaveDurationHours < 0) {
+      toast.error('Value must be 0 or greater.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const data = await settingsService.saveLeavePolicy({ minCompLeaveDurationHours });
+      const val = data.minCompLeaveDurationHours ?? minCompLeaveDurationHours;
+      setMinCompLeaveDurationHours(val);
+      setOriginal(val);
+      toast.success('Leave policy saved successfully!');
+    } catch {
+      // error toast handled by interceptor
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setMinCompLeaveDurationHours(original);
+  };
+
+  const hasChanges = minCompLeaveDurationHours !== original;
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-6">Compensatory Leave Configuration</h2>
+
+        <div className="max-w-md">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Min Duration per Request
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={minCompLeaveDurationHours}
+              onChange={(e) => setMinCompLeaveDurationHours(Number(e.target.value))}
+              className="border border-gray-300 rounded-lg px-4 py-2.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <span className="text-sm text-gray-500">Hours</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex justify-end space-x-3 mt-6">
+        <button
+          onClick={handleCancel}
+          disabled={!hasChanges}
+          className="px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving || !hasChanges}
+          className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? (
+            <span className="flex items-center gap-2">
+              <LoadingSpinner size="sm" />
+              Saving...
+            </span>
+          ) : (
+            'Save Changes'
+          )}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// OT Policy Tab
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const OT_POLICY_FIELDS = [
+  { key: 'maxOtHoursPerDay', label: 'Max OT Hours / Day (Regular)', unit: 'Hours' },
+  { key: 'maxOtHoursPerDayHoliday', label: 'Max OT Hours / Day (Rest Days & Holidays)', unit: 'Hours' },
+  { key: 'maxOtHoursPerMonth', label: 'Max OT Hours / Month', unit: 'Hours' },
+  { key: 'maxOtHoursPerYear', label: 'Max OT Hours / Year', unit: 'Hours' },
+];
+
+const OT_DEFAULTS = {
+  maxOtHoursPerDay: 4,
+  maxOtHoursPerDayHoliday: 8,
+  maxOtHoursPerMonth: 40,
+  maxOtHoursPerYear: 200,
+};
+
+const OtPolicyTab = () => {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [policy, setPolicy] = useState({ ...OT_DEFAULTS });
+  const [original, setOriginal] = useState({ ...OT_DEFAULTS });
+
+  const fetchPolicy = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await settingsService.getOtPolicy();
+      const merged = { ...OT_DEFAULTS, ...data };
+      setPolicy(merged);
+      setOriginal(merged);
+    } catch {
+      // defaults remain
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPolicy();
+  }, [fetchPolicy]);
+
+  const handleChange = (key, value) => {
+    setPolicy((prev) => ({ ...prev, [key]: Number(value) }));
+  };
+
+  const handleSave = async () => {
+    for (const f of OT_POLICY_FIELDS) {
+      if (policy[f.key] < 0) {
+        toast.error(`${f.label} must be 0 or greater.`);
+        return;
+      }
+    }
+    setSaving(true);
+    try {
+      const data = await settingsService.saveOtPolicy(policy);
+      const merged = { ...OT_DEFAULTS, ...data };
+      setPolicy(merged);
+      setOriginal(merged);
+      toast.success('OT policy saved successfully!');
+    } catch {
+      // error toast handled by interceptor
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setPolicy({ ...original });
+  };
+
+  const hasChanges = OT_POLICY_FIELDS.some((f) => policy[f.key] !== original[f.key]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-6">Overtime Limits Configuration</h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+          {OT_POLICY_FIELDS.map((field) => (
+            <div key={field.key}>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {field.label}
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={policy[field.key]}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  className="border border-gray-300 rounded-lg px-4 py-2.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <span className="text-sm text-gray-500">{field.unit}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex justify-end space-x-3 mt-6">
+        <button
+          onClick={handleCancel}
+          disabled={!hasChanges}
+          className="px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving || !hasChanges}
+          className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? (
+            <span className="flex items-center gap-2">
+              <LoadingSpinner size="sm" />
+              Saving...
+            </span>
+          ) : (
+            'Save Changes'
+          )}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Holiday Calendar Tab
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const HolidayCalendarTab = () => {
   const currentYear = new Date().getFullYear();
@@ -75,12 +324,40 @@ const HolidayCalendarTab = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const [isSaved, setIsSaved] = useState(false);
 
-  // Year options: current year ± 5
+  // Year options: current year +/- 5
   const yearOptions = [];
   for (let y = currentYear - 5; y <= currentYear + 5; y++) {
     yearOptions.push(y);
   }
+
+  const mergeHolidays = (serverHolidays) => {
+    const merged = DEFAULT_HOLIDAYS.map((defaultH) => {
+      const found = serverHolidays.find((h) => h.name === defaultH.name);
+      if (found) {
+        return {
+          name: found.name,
+          startDate: found.startDate || '',
+          endDate: found.endDate || '',
+          compensatoryDate: found.compensatoryDate || '',
+        };
+      }
+      return { ...defaultH };
+    });
+
+    const defaultNames = DEFAULT_HOLIDAYS.map((h) => h.name);
+    const extras = serverHolidays
+      .filter((h) => !defaultNames.includes(h.name))
+      .map((h) => ({
+        name: h.name,
+        startDate: h.startDate || '',
+        endDate: h.endDate || '',
+        compensatoryDate: h.compensatoryDate || '',
+      }));
+
+    return [...merged, ...extras];
+  };
 
   const fetchHolidays = useCallback(async () => {
     setLoading(true);
@@ -88,46 +365,26 @@ const HolidayCalendarTab = () => {
     try {
       const data = await holidayCalendarService.getHolidays(selectedYear);
       if (data.holidays && data.holidays.length > 0) {
-        // Merge fetched holidays with defaults to preserve order
-        const merged = DEFAULT_HOLIDAYS.map((defaultH) => {
-          const found = data.holidays.find((h) => h.name === defaultH.name);
-          if (found) {
-            return {
-              name: found.name,
-              startDate: found.startDate || '',
-              endDate: found.endDate || '',
-              compensatoryDate: found.compensatoryDate || '',
-            };
-          }
-          return { ...defaultH };
-        });
-
-        // Add any extra holidays not in defaults
-        const defaultNames = DEFAULT_HOLIDAYS.map((h) => h.name);
-        const extras = data.holidays
-          .filter((h) => !defaultNames.includes(h.name))
-          .map((h) => ({
-            name: h.name,
-            startDate: h.startDate || '',
-            endDate: h.endDate || '',
-            compensatoryDate: h.compensatoryDate || '',
-          }));
-
-        const allHolidays = [...merged, ...extras];
+        const allHolidays = mergeHolidays(data.holidays);
         setHolidays(allHolidays);
         setOriginalHolidays(JSON.parse(JSON.stringify(allHolidays)));
         setTotalDays(data.totalDays || 0);
+        // Data exists in DB -> already saved -> read-only
+        const hasData = allHolidays.some((h) => h.startDate && h.endDate);
+        setIsSaved(hasData);
       } else {
         const defaults = DEFAULT_HOLIDAYS.map((h) => ({ ...h }));
         setHolidays(defaults);
         setOriginalHolidays(JSON.parse(JSON.stringify(defaults)));
         setTotalDays(0);
+        setIsSaved(false);
       }
     } catch {
       const defaults = DEFAULT_HOLIDAYS.map((h) => ({ ...h }));
       setHolidays(defaults);
       setOriginalHolidays(JSON.parse(JSON.stringify(defaults)));
       setTotalDays(0);
+      setIsSaved(false);
     } finally {
       setLoading(false);
     }
@@ -153,6 +410,7 @@ const HolidayCalendarTab = () => {
   }, []);
 
   const handleDateChange = (index, field, value) => {
+    if (isSaved) return; // read-only after save
     const updated = [...holidays];
     updated[index] = { ...updated[index], [field]: value };
     setHolidays(updated);
@@ -161,7 +419,6 @@ const HolidayCalendarTab = () => {
     // Clear error for this field
     const newErrors = { ...errors };
     delete newErrors[`${index}-${field}`];
-    // Clear cross-field errors when either start/end changes
     if (field === 'startDate' || field === 'endDate') {
       delete newErrors[`${index}-dateRange`];
     }
@@ -170,25 +427,18 @@ const HolidayCalendarTab = () => {
 
   const validate = () => {
     const newErrors = {};
-    const filledHolidays = holidays.filter((h) => h.startDate || h.endDate);
 
+    // All holidays must have start & end dates (required)
     for (let i = 0; i < holidays.length; i++) {
       const h = holidays[i];
-      const hasAnyDate = h.startDate || h.endDate;
 
-      if (!hasAnyDate) continue; // Skip completely empty rows
-
-      // Start date required if end date is filled
-      if (!h.startDate && h.endDate) {
+      if (!h.startDate) {
         newErrors[`${i}-startDate`] = 'Start date is required';
       }
-
-      // End date required if start date is filled
-      if (h.startDate && !h.endDate) {
+      if (!h.endDate) {
         newErrors[`${i}-endDate`] = 'End date is required';
       }
 
-      // End date >= start date
       if (h.startDate && h.endDate) {
         const start = new Date(h.startDate);
         const end = new Date(h.endDate);
@@ -203,7 +453,6 @@ const HolidayCalendarTab = () => {
           newErrors[`${i}-dateRange`] = 'End date cannot be earlier than start date';
         }
 
-        // Validate year matches
         if (!isNaN(start.getTime()) && start.getFullYear() !== selectedYear) {
           newErrors[`${i}-startDate`] = `Date must be in year ${selectedYear}`;
         }
@@ -212,7 +461,7 @@ const HolidayCalendarTab = () => {
         }
       }
 
-      // Validate compensatory date is on a weekend
+      // Compensatory date validation (optional field)
       if (h.compensatoryDate) {
         const compDate = new Date(h.compensatoryDate);
         if (isNaN(compDate.getTime())) {
@@ -229,24 +478,22 @@ const HolidayCalendarTab = () => {
       }
     }
 
-    // Check for duplicate holidays with overlapping date ranges
-    for (let i = 0; i < filledHolidays.length; i++) {
-      for (let j = i + 1; j < filledHolidays.length; j++) {
-        const a = filledHolidays[i];
-        const b = filledHolidays[j];
-        if (a.startDate && a.endDate && b.startDate && b.endDate) {
-          const aStart = new Date(a.startDate);
-          const aEnd = new Date(a.endDate);
-          const bStart = new Date(b.startDate);
-          const bEnd = new Date(b.endDate);
+    // Check for overlapping date ranges
+    const filled = holidays.filter((h) => h.startDate && h.endDate);
+    for (let i = 0; i < filled.length; i++) {
+      for (let j = i + 1; j < filled.length; j++) {
+        const a = filled[i];
+        const b = filled[j];
+        const aStart = new Date(a.startDate);
+        const aEnd = new Date(a.endDate);
+        const bStart = new Date(b.startDate);
+        const bEnd = new Date(b.endDate);
 
-          // Check for overlapping date ranges
-          if (aStart <= bEnd && bStart <= aEnd) {
-            const idxA = holidays.indexOf(a);
-            const idxB = holidays.indexOf(b);
-            newErrors[`${idxA}-dateRange`] = `Overlapping dates with "${b.name}"`;
-            newErrors[`${idxB}-dateRange`] = `Overlapping dates with "${a.name}"`;
-          }
+        if (aStart <= bEnd && bStart <= aEnd) {
+          const idxA = holidays.indexOf(a);
+          const idxB = holidays.indexOf(b);
+          newErrors[`${idxA}-dateRange`] = `Overlapping dates with "${b.name}"`;
+          newErrors[`${idxB}-dateRange`] = `Overlapping dates with "${a.name}"`;
         }
       }
     }
@@ -256,55 +503,30 @@ const HolidayCalendarTab = () => {
   };
 
   const handleSave = async () => {
+    if (isSaved) return;
     if (!validate()) {
       toast.error('Please fix the validation errors before saving.');
       return;
     }
 
-    // Only send holidays that have dates filled in
-    const holidaysToSave = holidays
-      .filter((h) => h.startDate && h.endDate)
-      .map((h) => ({
-        name: h.name,
-        startDate: h.startDate,
-        endDate: h.endDate,
-        ...(h.compensatoryDate ? { compensatoryDate: h.compensatoryDate } : {}),
-      }));
+    const holidaysToSave = holidays.map((h) => ({
+      name: h.name,
+      startDate: h.startDate,
+      endDate: h.endDate,
+      ...(h.compensatoryDate ? { compensatoryDate: h.compensatoryDate } : {}),
+    }));
 
     setSaving(true);
     try {
       const data = await holidayCalendarService.saveHolidays(selectedYear, holidaysToSave);
       toast.success('Holiday calendar saved successfully!');
 
-      // Update state with response
       if (data.holidays) {
-        const merged = DEFAULT_HOLIDAYS.map((defaultH) => {
-          const found = data.holidays.find((h) => h.name === defaultH.name);
-          if (found) {
-            return {
-              name: found.name,
-              startDate: found.startDate || '',
-              endDate: found.endDate || '',
-              compensatoryDate: found.compensatoryDate || '',
-            };
-          }
-          return { ...defaultH };
-        });
-
-        const defaultNames = DEFAULT_HOLIDAYS.map((h) => h.name);
-        const extras = data.holidays
-          .filter((h) => !defaultNames.includes(h.name))
-          .map((h) => ({
-            name: h.name,
-            startDate: h.startDate || '',
-            endDate: h.endDate || '',
-            compensatoryDate: h.compensatoryDate || '',
-          }));
-
-        const allHolidays = [...merged, ...extras];
+        const allHolidays = mergeHolidays(data.holidays);
         setHolidays(allHolidays);
         setOriginalHolidays(JSON.parse(JSON.stringify(allHolidays)));
         setTotalDays(data.totalDays || 0);
+        setIsSaved(true);
       }
     } catch {
       // Error toast is handled by the API interceptor
@@ -317,12 +539,6 @@ const HolidayCalendarTab = () => {
     setHolidays(JSON.parse(JSON.stringify(originalHolidays)));
     setTotalDays(calculateTotalDays(originalHolidays));
     setErrors({});
-  };
-
-  const formatDateForInput = (dateStr) => {
-    if (!dateStr) return '';
-    // Convert YYYY-MM-DD to YYYY-MM-DD (already the correct format for input[type=date])
-    return dateStr;
   };
 
   if (loading) {
@@ -356,6 +572,12 @@ const HolidayCalendarTab = () => {
         </div>
       </div>
 
+      {isSaved && (
+        <div className="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+          Holiday calendar for {selectedYear} has been saved. Dates cannot be modified.
+        </div>
+      )}
+
       {/* Holiday table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -386,14 +608,17 @@ const HolidayCalendarTab = () => {
                     <div>
                       <input
                         type="date"
-                        value={formatDateForInput(holiday.startDate)}
+                        value={holiday.startDate}
                         onChange={(e) => handleDateChange(index, 'startDate', e.target.value)}
+                        disabled={isSaved}
                         min={`${selectedYear}-01-01`}
                         max={`${selectedYear}-12-31`}
                         className={`border rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                          errors[`${index}-startDate`]
-                            ? 'border-red-400 bg-red-50'
-                            : 'border-gray-300'
+                          isSaved
+                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                            : errors[`${index}-startDate`]
+                              ? 'border-red-400 bg-red-50'
+                              : 'border-gray-300'
                         }`}
                       />
                       {errors[`${index}-startDate`] && (
@@ -408,14 +633,17 @@ const HolidayCalendarTab = () => {
                     <div>
                       <input
                         type="date"
-                        value={formatDateForInput(holiday.endDate)}
+                        value={holiday.endDate}
                         onChange={(e) => handleDateChange(index, 'endDate', e.target.value)}
+                        disabled={isSaved}
                         min={holiday.startDate || `${selectedYear}-01-01`}
                         max={`${selectedYear}-12-31`}
                         className={`border rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                          errors[`${index}-endDate`] || errors[`${index}-dateRange`]
-                            ? 'border-red-400 bg-red-50'
-                            : 'border-gray-300'
+                          isSaved
+                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                            : errors[`${index}-endDate`] || errors[`${index}-dateRange`]
+                              ? 'border-red-400 bg-red-50'
+                              : 'border-gray-300'
                         }`}
                       />
                       {errors[`${index}-endDate`] && (
@@ -436,16 +664,17 @@ const HolidayCalendarTab = () => {
                     <div>
                       <input
                         type="date"
-                        value={formatDateForInput(holiday.compensatoryDate)}
-                        onChange={(e) =>
-                          handleDateChange(index, 'compensatoryDate', e.target.value)
-                        }
+                        value={holiday.compensatoryDate}
+                        onChange={(e) => handleDateChange(index, 'compensatoryDate', e.target.value)}
+                        disabled={isSaved}
                         min={`${selectedYear}-01-01`}
                         max={`${selectedYear}-12-31`}
                         className={`border rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                          errors[`${index}-compensatoryDate`]
-                            ? 'border-red-400 bg-red-50'
-                            : 'border-gray-300'
+                          isSaved
+                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                            : errors[`${index}-compensatoryDate`]
+                              ? 'border-red-400 bg-red-50'
+                              : 'border-gray-300'
                         }`}
                       />
                       {errors[`${index}-compensatoryDate`] && (
@@ -463,29 +692,31 @@ const HolidayCalendarTab = () => {
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex justify-end space-x-3 mt-6">
-        <button
-          onClick={handleCancel}
-          className="px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saving ? (
-            <>
-              <LoadingSpinner size="sm" />
-              Saving...
-            </>
-          ) : (
-            'Save Changes'
-          )}
-        </button>
-      </div>
+      {/* Action buttons — hidden when already saved */}
+      {!isSaved && (
+        <div className="flex justify-end space-x-3 mt-6">
+          <button
+            onClick={handleCancel}
+            className="px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? (
+              <span className="flex items-center gap-2">
+                <LoadingSpinner size="sm" />
+                Saving...
+              </span>
+            ) : (
+              'Save Changes'
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

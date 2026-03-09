@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from '@entities/users.entity';
-import { UserRole } from '@common/enums/roles.enum';
+import { UserRole } from '@/common/enums/roles.enum';
 import { Roles } from '@modules/authorization/decorators/roles.decorator';
 import { CurrentUser } from '@modules/authentication/decorators/current-user.decorator';
 import { UserProfileService } from './user-profile.service';

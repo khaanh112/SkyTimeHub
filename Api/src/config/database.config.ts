@@ -15,8 +15,12 @@ import { LeaveRequestItem } from '@entities/leave-request-item.entity';
 import { LeaveBalanceTransaction } from '@entities/leave-balance-transaction.entity';
 import { LeaveRequestAttachment } from '@entities/leave-request-attachment.entity';
 import { CalendarOverride } from '@entities/calendar-override.entity';
-import { CompWorkRequest } from '@entities/comp-work-request.entity';
 import { CompBalanceTransaction } from '@entities/comp-balance-transaction.entity';
+import { SystemSetting } from '@entities/system-setting.entity';
+import { OtPlan } from '@entities/ot-plan.entity';
+import { OtPlanEmployee } from '@entities/ot-plan-employee.entity';
+import { OtCheckin } from '@entities/ot-checkin.entity';
+import { OtBalanceTransaction } from '@entities/ot-balance-transaction.entity';
 
 export const getDatabaseConfig = (configService: ConfigService): TypeOrmModuleOptions => ({
   type: 'postgres',
@@ -45,8 +49,14 @@ export const getDatabaseConfig = (configService: ConfigService): TypeOrmModuleOp
     // Calendar
     CalendarOverride,
     // Compensatory
-    CompWorkRequest,
     CompBalanceTransaction,
+    // Settings
+    SystemSetting,
+    // OT Management
+    OtPlan,
+    OtPlanEmployee,
+    OtCheckin,
+    OtBalanceTransaction,
   ],
   synchronize: configService.get('DB_SYNCHRONIZE') === 'true',
   logging: configService.get('DB_LOGGING') === 'true',

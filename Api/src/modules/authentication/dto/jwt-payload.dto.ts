@@ -1,4 +1,4 @@
-import { UserRole } from '@common/enums/roles.enum';
+import { UserRole } from '@/common/enums/roles.enum';
 import { UserGender } from '@common/enums/user-genders';
 
 /**

@@ -5,3 +5,4 @@ export { default as leaveRequestService } from './leaveRequestService';
 export { default as approverService } from './approverService';
 export { default as departmentService } from './departmentService';
 export { default as holidayCalendarService } from './holidayCalendarService';
+export { default as settingsService } from './settingsService';

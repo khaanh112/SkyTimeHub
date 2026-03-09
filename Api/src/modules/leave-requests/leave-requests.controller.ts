@@ -145,11 +145,11 @@ export class LeaveRequestsController {
   @Get('leave-types')
   @ApiOperation({
     summary: 'Get available leave types grouped by category',
-    description: 'Returns all active, non-system leave types with their category info. Used by create/edit forms.',
+    description: 'Returns all active, non-system leave types with their category info. Used by create/edit forms. Filters by user contract type eligibility.',
   })
   @ApiResponse({ status: 200, description: 'Leave types retrieved successfully.' })
-  async getLeaveTypes() {
-    return this.leaveRequestsService.getLeaveTypes();
+  async getLeaveTypes(@Request() req) {
+    return this.leaveRequestsService.getLeaveTypes(req.user.id);
   }
 
   @Get('balance-summary')

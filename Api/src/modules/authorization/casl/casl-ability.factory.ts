@@ -2,7 +2,7 @@ import { AbilityBuilder, AbilityClass, PureAbility } from '@casl/ability';
 import { Action, Subjects } from './casl.types';
 import { Injectable } from '@nestjs/common';
 import { User } from '@entities/users.entity';
-import { UserRole } from '@common/enums/roles.enum';
+import { UserRole } from '@/common/enums/roles.enum';
 
 export type AppAbility = PureAbility<[Action, Subjects]>;
 

@@ -634,6 +634,11 @@ const CreateLeaveRequestPage = () => {
                 </label>
                 {loadingTypes ? (
                   <div className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-400">Loading...</div>
+                ) : leaveCategories.length === 0 ? (
+                  <div className="w-full px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4" />
+                    No leave types available for your contract type. Only official employees can request leave.
+                  </div>
                 ) : (
                   <CustomDropdown
                     value={formData.leaveCategory}

@@ -335,6 +335,10 @@ const EditLeaveRequestPage = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Category <span className="text-red-500">*</span></label>
                 {loadingTypes ? (
                   <div className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-400">Loading...</div>
+                ) : leaveCategories.length === 0 ? (
+                  <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                    No leave types available for your contract type.
+                  </div>
                 ) : (
                   <CustomDropdown value={formData.leaveCategory} options={leaveCategories.map((c) => ({ value: c.code, label: c.name }))} onChange={handleCategoryChange} placeholder="Select category" />
                 )}

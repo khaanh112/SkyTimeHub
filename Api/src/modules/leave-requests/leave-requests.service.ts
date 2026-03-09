@@ -19,7 +19,7 @@ import { LeaveRequestAttachment } from '@entities/leave-request-attachment.entit
 import { StorageService } from '@modules/storage/storage.service';
 import { LeaveRequestStatus } from '@common/enums/request_status';
 import { RecipientType } from '@common/enums/recipient-type.enum';
-import { UserRole } from '@common/enums/roles.enum';
+import { UserRole } from '@/common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { NotificationsService } from '@modules/notifications/notifications.service';
 import { LeaveBalanceService, LeaveValidationResult } from './leave-balance.service';
@@ -40,6 +40,8 @@ import { Department } from '@entities/departments.entity';
 import { buildDateTime, buildDurationLabel } from './utils/formatter';
 import { validateAllocationsNoDuplicateBucket } from './utils/allocation-validator';
 import { DefaultLeaveType } from '@/common/enums/default-leavetype.enum';
+import { ContractType } from '@/common/enums/contract-type.enum';
+import { LeaveCategory as LeaveCategoryEnum } from '@/common/enums/leave-category.enum';
 
 @Injectable()
 export class LeaveRequestsService {
@@ -229,7 +231,33 @@ export class LeaveRequestsService {
 
     const requester = await this.userRepository.findOne({ where: { id: userId } });
 
-    // CC validation 
+    const leaveTypeId = dto.leaveTypeId ?? DefaultLeaveType.PAID_LEAVE;
+
+    // ── Official Employee eligibility check ──
+    const requestedLeaveType = await this.leaveTypeRepository.findOne({
+      where: { id: leaveTypeId },
+      relations: ['category'],
+    });
+    if (!requestedLeaveType) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'Leave type not found or inactive', 400);
+    }
+    const categoryCode = requestedLeaveType.category?.code;
+    const officialOnlyCategories = [
+      LeaveCategoryEnum.COMPENSATORY,
+      LeaveCategoryEnum.SOCIAL,
+    ];
+    if (
+      officialOnlyCategories.includes(categoryCode as LeaveCategoryEnum) &&
+      requester.contractType !== ContractType.OFFICIAL
+    ) {
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        `${requestedLeaveType.name} is only available for official employees.`,
+        400,
+      );
+    }
+
+    // CC validation
     if (dto.ccUserIds?.includes(userId)) {
       throw new AppException(ErrorCode.INVALID_INPUT, 'You cannot CC yourself on your own leave request', 400);
     }
@@ -244,9 +272,7 @@ export class LeaveRequestsService {
       }
     }
 
-    const leaveTypeId = dto.leaveTypeId ?? DefaultLeaveType.PAID_LEAVE; // default to paid leave if not provided
-
-    // ── Overlap check 
+    // ── Overlap check
     await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession);
 
     // Logic complex, too big function, double call validateandprepare, n+1 problem, race condition?, missmatch leave items and balance: không lưu unpaid leave balance
@@ -492,7 +518,31 @@ export class LeaveRequestsService {
       }
     }
 
-    const leaveTypeId = dto.leaveTypeId ?? DefaultLeaveType.PAID_LEAVE ;
+    const leaveTypeId = dto.leaveTypeId ?? DefaultLeaveType.PAID_LEAVE;
+
+    // ── Official Employee eligibility check ──
+    const requestedLeaveTypeUpdate = await this.leaveTypeRepository.findOne({
+      where: { id: leaveTypeId },
+      relations: ['category'],
+    });
+    if (!requestedLeaveTypeUpdate) {
+      throw new AppException(ErrorCode.INVALID_INPUT, 'Leave type not found or inactive', 400);
+    }
+    const updateCategoryCode = requestedLeaveTypeUpdate.category?.code;
+    const officialOnlyCats = [
+      LeaveCategoryEnum.COMPENSATORY,
+      LeaveCategoryEnum.SOCIAL,
+    ];
+    if (
+      officialOnlyCats.includes(updateCategoryCode as LeaveCategoryEnum) &&
+      leaveRequest.user?.contractType !== ContractType.OFFICIAL
+    ) {
+      throw new AppException(
+        ErrorCode.INVALID_INPUT,
+        `${requestedLeaveTypeUpdate.name} is only available for official employees.`,
+        400,
+      );
+    }
 
     // ── Overlap check (exclude current request) ─────────────
     await this.checkOverlap(userId, dto.startDate, dto.startSession, dto.endDate, dto.endSession, requestId);
@@ -924,8 +974,21 @@ export class LeaveRequestsService {
    * Get all active, non-system leave types grouped by category.
    * For categories with intra-category auto-conversion (e.g. ANNUAL: Paid→Unpaid),
    * conversion-target types are hidden and `autoConvert` is set to true.
+   *
+   * Filters by user contract type:
+   *  - Official employees see all categories
+   *  - Non-official (intern/probation) only see POLICY category
    */
-  async getLeaveTypes() {
+  async getLeaveTypes(userId?: number) {
+    // Determine if user is official
+    let isOfficialEmployee = true; // default for backward compat
+    if (userId) {
+      const user = await this.userRepository.findOne({ where: { id: userId }, select: ['id', 'contractType'] });
+      isOfficialEmployee = user?.contractType === ContractType.OFFICIAL;
+    }
+
+    const officialOnlyCategories = ['COMPENSATORY', 'SOCIAL'];
+
     const categories = await this.leaveCategoryRepository.find({
       where: { isActive: true },
       relations: ['leaveTypes'],
@@ -947,7 +1010,12 @@ export class LeaveRequestsService {
 
     const autoTargetIds = new Set(autoTargetRows.map((r) => Number(r.id)));
 
-    return categories.map((cat) => {
+    // Filter categories based on contract type eligibility
+    const eligibleCategories = isOfficialEmployee
+      ? categories
+      : categories.filter((cat) => !officialOnlyCategories.includes(cat.code));
+
+    return eligibleCategories.map((cat) => {
       const allTypes = (cat.leaveTypes || []).filter((lt) => lt.isActive && !lt.isSystem);
       const hasAutoConvert = allTypes.some((lt) => autoTargetIds.has(Number(lt.id)));
       const visibleTypes = hasAutoConvert
