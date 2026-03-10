@@ -6,7 +6,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { AppException } from '@common/exceptions/app.exception';
 import { ErrorCode } from '@common/enums/errror-code.enum';
-import { NotificationsService } from '@modules/notifications/notifications.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { generateEmployeeId, generateActivationToken } from '@/modules/users/utils/user.utils';
 
 @Injectable()

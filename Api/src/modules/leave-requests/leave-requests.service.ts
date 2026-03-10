@@ -22,7 +22,7 @@ import { LeaveRequestStatus } from '@common/enums/request_status';
 import { RecipientType } from '@common/enums/recipient-type.enum';
 import { UserRole } from '@/common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
-import { NotificationsService } from '@modules/notifications/notifications.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { LeaveBalanceService, LeaveValidationResult } from './leave-balance.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';

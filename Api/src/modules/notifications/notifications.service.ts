@@ -166,6 +166,13 @@ export class NotificationsService implements OnModuleDestroy {
       { type: EmailType.LEAVE_REQUEST_REJECTED, file: 'leave-request-rejected.hbs' },
       { type: EmailType.LEAVE_REQUEST_UPDATED, file: 'leave-request-updated.hbs' },
       { type: EmailType.LEAVE_REQUEST_CANCELLED, file: 'leave-request-cancelled.hbs' },
+      { type: EmailType.OT_PLAN_SUBMITTED, file: 'ot-plan-submitted.hbs' },
+      { type: EmailType.OT_PLAN_APPROVED, file: 'ot-plan-approved.hbs' },
+      { type: EmailType.OT_PLAN_REJECTED, file: 'ot-plan-rejected.hbs' },
+      { type: EmailType.OT_PLAN_CANCELLED, file: 'ot-plan-cancelled.hbs' },
+      { type: EmailType.OT_CHECKIN_CONFIRMED, file: 'ot-checkin-confirmed.hbs' },
+      { type: EmailType.OT_CHECKIN_REJECTED, file: 'ot-checkin-rejected.hbs' },
+      { type: EmailType.NONE, file: 'none.hbs' },
     ];
 
     for (const { type, file } of templateFiles) {
@@ -281,6 +288,21 @@ export class NotificationsService implements OnModuleDestroy {
         return `Yêu cầu nghỉ phép đã được cập nhật - ${context.requesterName || 'User'}`;
       case EmailType.LEAVE_REQUEST_CANCELLED:
         return `Yêu cầu nghỉ phép đã bị hủy - ${context.requesterName || 'User'}`;
+      case EmailType.OT_PLAN_SUBMITTED:
+        return `Yêu cầu OT mới từ ${context.requesterName || 'User'}`;
+      case EmailType.OT_PLAN_APPROVED:  
+        return 'Yêu cầu OT đã được phê duyệt';
+      case EmailType.OT_PLAN_REJECTED:
+        return 'Yêu cầu OT bị từ chối';
+      case EmailType.OT_PLAN_CANCELLED:
+        return 'Yêu cầu OT đã bị hủy';
+      case EmailType.OT_CHECKIN_REJECTED:
+        return 'Check-in OT bị từ chối';
+      case EmailType.OT_CHECKIN_CONFIRMED:
+        return 'Check-in OT đã được xác nhận';
+      case EmailType.NONE:
+        return 'Thông báo từ SkyTimeHub';
+
       default:
         return 'Thông báo từ SkyTimeHub';
     }

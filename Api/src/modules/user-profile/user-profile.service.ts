@@ -7,7 +7,7 @@ import { Department } from '@entities/departments.entity';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { AppException } from '@common/exceptions/app.exception';
 import { ErrorCode } from '@common/enums/errror-code.enum';
-import { NotificationsService } from '@modules/notifications/notifications.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { generateActivationToken, generateEmployeeId } from '@modules/users/utils/user.utils';
 import { CreateUserProfileDto } from './dto/create-user-profile.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
