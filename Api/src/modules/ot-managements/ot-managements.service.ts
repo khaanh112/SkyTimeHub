@@ -91,7 +91,7 @@ export class OtManagementsService {
       }
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const savedPlanId = await this.dataSource.transaction(async (manager) => {
       // Create OT Plan
       const plan = manager.create(OtPlan, {
         title: dto.title,
@@ -139,12 +139,14 @@ export class OtManagementsService {
       savedPlan.totalDurationMinutes = totalMinutes;
       await manager.save(OtPlan, savedPlan);
 
-      return this.findOne(savedPlan.id, userId);
+      return savedPlan.id;
     });
+
+    return this.findOne(savedPlanId, userId);
   }
 
   // ─── FIND ALL (LIST) ────────────────────────────────────────
-  async findOtPlans(user: { id: number; role: string }, query: ListOtPlansQueryDto) {
+  async findOtPlans(user: { id: number; role: UserRole }, query: ListOtPlansQueryDto) {
     const { view, page = 1, pageSize = 10, status, from, to, q, sort } = query;
 
     // Step 1: Build a sub-query to find matching plan IDs with filters
@@ -437,7 +439,7 @@ export class OtManagementsService {
     if (plan.version !== dto.version)
       throw new ConflictException('Plan has been modified. Please refresh and try again.');
 
-    return this.dataSource.transaction(async (manager) => {
+    await this.dataSource.transaction(async (manager) => {
       // Delete old employee rows (cascade deletes checkins too)
       await manager.delete(OtPlanEmployee, { otPlanId: id });
 
@@ -491,9 +493,9 @@ export class OtManagementsService {
 
       plan.totalDurationMinutes = totalMinutes;
       await manager.save(OtPlan, plan);
-
-      return this.findOne(id, userId);
     });
+
+    return this.findOne(id, userId);
   }
 
   // ─── APPROVE ────────────────────────────────────────────────
@@ -510,7 +512,7 @@ export class OtManagementsService {
     if (plan.version !== version)
       throw new ConflictException('Plan has been modified. Please refresh.');
 
-    return this.dataSource.transaction(async (manager) => {
+    await this.dataSource.transaction(async (manager) => {
       plan.status = OtPlanStatus.APPROVED;
       plan.approvedAt = new Date();
       await manager.save(OtPlan, plan);
@@ -531,9 +533,9 @@ export class OtManagementsService {
         });
         await manager.save(OtBalanceTransaction, tx);
       }
-
-      return this.findOne(id, userId);
     });
+
+    return this.findOne(id, userId);
   }
 
   // ─── REJECT ─────────────────────────────────────────────────
@@ -567,7 +569,7 @@ export class OtManagementsService {
       throw new BadRequestException('Only pending or approved plans can be cancelled');
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    await this.dataSource.transaction(async (manager) => {
       const wasApproved = plan.status === OtPlanStatus.APPROVED;
 
       plan.status = OtPlanStatus.CANCELLED;
@@ -592,9 +594,9 @@ export class OtManagementsService {
           await manager.save(OtBalanceTransaction, tx);
         }
       }
-
-      return this.findOne(id, userId);
     });
+
+    return this.findOne(id, userId);
   }
 
   // ─── CHECK-IN ───────────────────────────────────────────────
