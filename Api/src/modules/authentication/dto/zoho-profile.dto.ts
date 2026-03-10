@@ -25,26 +25,3 @@ export class ZohoProfileDto {
   @Length(1, 200)
   picture?: string;
 }
-
-/**
- * Interface for raw Zoho API user info response
- */
-export interface ZohoUserInfo {
-  Email: string;
-  First_Name: string;
-  Last_Name: string;
-  picture?: string;
-  ZUID?: string;
-}
-
-/**
- * Interface for processed Zoho profile with tokens
- */
-export interface ZohoProfile {
-  email: string;
-  firstName: string;
-  lastName: string;
-  picture: string;
-  accessToken: string;
-  refreshToken: string;
-}

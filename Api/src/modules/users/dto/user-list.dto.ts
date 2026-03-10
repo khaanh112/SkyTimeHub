@@ -1,7 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@/common/enums/roles.enum';
 import { UserStatus } from '@common/enums/user-status.enum';
-import { UserGender } from '@common/enums/user-genders';
 import { ContractType } from '@common/enums/contract-type.enum';
 
 export class UserListItemDto {

@@ -3,7 +3,6 @@ import { User } from '@entities/users.entity';
 import { Repository, DataSource } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
 import { UserStatus } from '@common/enums/user-status.enum';
 import { AppException } from '@common/exceptions/app.exception';
 import { ErrorCode } from '@common/enums/errror-code.enum';
@@ -169,7 +168,7 @@ export class UsersService {
     this.logger.log('Updating user status to ACTIVE and clearing activation token...');
     user.status = UserStatus.ACTIVE;
     user.activatedAt = new Date();
-    user.activationToken = ""; // Clear token after activation
+    user.activationToken = ''; // Clear token after activation
 
     const savedUser = await this.usersRepository.save(user);
     this.logger.log(`   - Activated At: ${savedUser.activatedAt}`);
@@ -189,7 +188,7 @@ export class UsersService {
       );
     }
     user.status = UserStatus.INACTIVE;
-    user.activationToken = ""; // Clear token after deactivation
+    user.activationToken = ''; // Clear token after deactivation
     return await this.usersRepository.save(user);
   }
 

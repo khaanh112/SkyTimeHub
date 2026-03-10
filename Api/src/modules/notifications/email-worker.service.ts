@@ -305,7 +305,7 @@ export class EmailWorkerService implements OnModuleInit {
   /**
    * Handle email sending failure with retry logic
    */
-  private async handleEmailFailure(email: EmailQueue, error: any) {
+  private async handleEmailFailure(email: EmailQueue, error: Error) {
     const newAttemptCount = email.attemptCount + 1;
     const isMaxAttemptsReached = newAttemptCount >= email.maxAttempts;
 

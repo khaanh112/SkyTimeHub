@@ -9,7 +9,6 @@ import { EmailQueue } from '@entities/email_queue.entity';
 import { EmailType } from '@common/enums/email_type';
 import { EmailReferenceKind } from '@common/enums/email-reference-kind.enum';
 import { EmailStatus } from '@common/enums/email_status';
-import { LeaveRequest } from '@/entities/leave_request.entity';
 import { LeaveRequestNotificationRecipient } from '@/entities/leave-request-notification-recipient.entity';
 
 @Injectable()
@@ -268,7 +267,7 @@ export class NotificationsService implements OnModuleDestroy {
   /**
    * Get email subject based on type and context
    */
-  private getEmailSubject(type: EmailType, context: any): string {
+  private getEmailSubject(type: EmailType, context: Record<string, unknown>): string {
     switch (type) {
       case EmailType.ACTIVATION:
         return 'Kích hoạt tài khoản SkyTimeHub';

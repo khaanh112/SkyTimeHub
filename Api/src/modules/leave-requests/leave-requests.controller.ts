@@ -35,10 +35,10 @@ import { UpdateLeaveRequestDto } from './dto/update-leave-request.dto';
 import { LeaveRequestDetailsDto } from './dto/leave-request-details.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { LeaveRequestListResponseDto } from './dto/leave-request-list.dto';
-import { Roles } from '../authorization';
 import { BalanceSummaryQueryDto } from './dto/balance-summary-query.dto';
-import { AuthenticatedRequest } from '@/common/interfaces/authenticated-user.interface';
-import { UserRole } from '@/common';
+import { AuthenticatedRequest } from '@/common/interfaces/authenticated-request.interface';
+import { LeaveSession } from '@/common/enums/leave-session.enum';
+import { ChildbirthMethod } from '@/common/enums/childbirth-method.enum';
 
 @ApiTags('Leave Requests')
 @ApiBearerAuth()
@@ -92,11 +92,11 @@ export class LeaveRequestsController {
     const result = await this.leaveBalanceService.suggestEndDate(
       body.leaveTypeId,
       body.startDate,
-      body.startSession as any,
+      body.startSession as LeaveSession,
       {
         employeeId: req.user.id,
         numberOfChildren: body.numberOfChildren,
-        childbirthMethod: body.childbirthMethod as any,
+        childbirthMethod: body.childbirthMethod as ChildbirthMethod,
       },
     );
     return result ?? { suggestedEndDate: null, suggestedEndSession: null };
@@ -185,14 +185,15 @@ export class LeaveRequestsController {
       'Returns credit, debit and remaining balance for each leave type. If month is provided, returns balance up to that month (monthly accrual cap applied).',
   })
   @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
-  async getBalanceSummary(@Request() req: AuthenticatedRequest, @Query() q: BalanceSummaryQueryDto) {
+  async getBalanceSummary(
+    @Request() req: AuthenticatedRequest,
+    @Query() q: BalanceSummaryQueryDto,
+  ) {
     const year = q.year ?? new Date().getFullYear();
     const month = q.month ?? new Date().getMonth() + 1;
 
     return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, month, year);
   }
-
-  
 
   // thủ công chưa cronjob
   @Post('admin/initialize-balance')
@@ -216,7 +217,10 @@ export class LeaveRequestsController {
   })
   @ApiResponse({ status: 201, description: 'Balance initialized.' })
   @ApiResponse({ status: 403, description: 'Only HR can perform this action.' })
-  async initializeBalance(@Request() req: AuthenticatedRequest, @Body() body: { year?: number; annualDays?: number }) {
+  async initializeBalance(
+    @Request() req: AuthenticatedRequest,
+    @Body() body: { year?: number; annualDays?: number },
+  ) {
     if (req.user.role !== 'hr') {
       throw new ForbiddenException('Only HR can initialize balances');
     }
@@ -357,7 +361,7 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 400, description: 'Request cannot be cancelled (invalid status).' })
   @ApiResponse({ status: 403, description: 'Not authorized to cancel this request.' })
   @ApiResponse({ status: 404, description: 'Leave request not found.' })
-  async cancel(@Param('id', ParseIntPipe) id: number, @Request() req: AuthenticatedRequest  ) {
+  async cancel(@Param('id', ParseIntPipe) id: number, @Request() req: AuthenticatedRequest) {
     return this.leaveRequestsService.cancelLeaveRequest(id, req.user.id);
   }
 
@@ -380,7 +384,10 @@ export class LeaveRequestsController {
   @ApiResponse({ status: 201, description: 'File uploaded successfully.' })
   @ApiResponse({ status: 400, description: 'Invalid file type or size.' })
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
-  async uploadAttachment(@UploadedFile() file: Express.Multer.File, @Request() req: AuthenticatedRequest) {
+  async uploadAttachment(
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: AuthenticatedRequest,
+  ) {
     if (!file) {
       throw new BadRequestException('No file provided');
     }

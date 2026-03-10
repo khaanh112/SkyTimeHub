@@ -2,18 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback } from 'passport-oauth2';
 import { ConfigService } from '@nestjs/config';
-import { ZohoUserInfo, ZohoProfile } from '../dto';
+import { ZohoProfileInterface } from '@/common/interfaces/zoho-profile.interface';
+import { ZohoUserInfo } from '@/common/interfaces/zoho-user-info.interface';
 
 @Injectable()
 export class ZohoStrategy extends PassportStrategy(Strategy, 'zoho') {
   constructor(private configService: ConfigService) {
-    const clientID = configService.get<string>('ZOHO_CLIENT_ID');
-    const clientSecret = configService.get<string>('ZOHO_CLIENT_SECRET');
-    const callbackURL = configService.get<string>('ZOHO_CALLBACK_URL');
-
-    if (!clientID || !clientSecret || !callbackURL) {
-      throw new Error('Missing required Zoho OAuth configuration');
-    }
+    const clientID = configService.getOrThrow<string>('ZOHO_CLIENT_ID');
+    const clientSecret = configService.getOrThrow<string>('ZOHO_CLIENT_SECRET');
+    const callbackURL = configService.getOrThrow<string>('ZOHO_CALLBACK_URL');
 
     super({
       authorizationURL: 'https://accounts.zoho.com/oauth/v2/auth',
@@ -34,7 +31,7 @@ export class ZohoStrategy extends PassportStrategy(Strategy, 'zoho') {
   async validate(
     accessToken: string,
     refreshToken: string,
-    profile: Record<string, unknown>,
+    _profile: Record<string, unknown>,
     done: VerifyCallback,
   ): Promise<void> {
     // Fetch user info from Zoho
@@ -46,11 +43,10 @@ export class ZohoStrategy extends PassportStrategy(Strategy, 'zoho') {
 
     const userInfo = (await response.json()) as ZohoUserInfo;
 
-    const user: ZohoProfile = {
+    const user: ZohoProfileInterface = {
       email: userInfo.Email,
       firstName: userInfo.First_Name,
       lastName: userInfo.Last_Name,
-      picture: userInfo.picture || '',
       accessToken,
       refreshToken,
     };

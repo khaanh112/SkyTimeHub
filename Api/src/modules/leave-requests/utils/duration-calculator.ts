@@ -11,7 +11,6 @@
 import { Repository } from 'typeorm';
 import { CalendarOverride } from '@entities/calendar-override.entity';
 import { LeaveSession } from '@/common/enums/leave-session.enum';
-import { find } from 'rxjs';
 
 /** Check if a date is Sat or Sun */
 function isWeekend(date: Date): boolean {

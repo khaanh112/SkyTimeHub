@@ -21,8 +21,6 @@ import {
   ApiParam,
   ApiBody,
 } from '@nestjs/swagger';
-import { Roles } from '@/modules/authorization/decorators/roles.decorator';
-import { UserRole } from '@/common/enums/roles.enum';
 import { OtManagementsService } from './ot-managements.service';
 import { OtBalanceService } from './ot-balance.service';
 import { CreateOtPlanDto } from './dto/create-ot-plan.dto';
@@ -34,7 +32,7 @@ import { CheckinDto } from './dto/checkin.dto';
 import { CheckoutDto } from './dto/checkout.dto';
 import { ApproveCheckinDto } from './dto/approve-checkin.dto';
 import { RejectCheckinDto } from './dto/reject-checkin.dto';
-import { AuthenticatedRequest } from '@/common/interfaces/authenticated-user.interface';
+import { AuthenticatedRequest } from '@/common/interfaces/authenticated-request.interface';
 
 @ApiTags('OT Plans')
 @ApiBearerAuth()
@@ -52,21 +50,21 @@ export class OtManagementsController {
   @Post('checkin')
   @ApiOperation({ summary: 'Employee checks in for OT' })
   @ApiResponse({ status: 201, description: 'Checked in successfully.' })
-  async checkin(@Body() dto: CheckinDto, @Request() req: AuthenticatedRequest ) {
+  async checkin(@Body() dto: CheckinDto, @Request() req: AuthenticatedRequest) {
     return this.otService.checkin(req.user.id, dto);
   }
 
   @Patch('checkout')
   @ApiOperation({ summary: 'Employee checks out from OT' })
   @ApiResponse({ status: 200, description: 'Checked out successfully.' })
-  async checkout(@Body() dto: CheckoutDto, @Request() req: AuthenticatedRequest ) {
+  async checkout(@Body() dto: CheckoutDto, @Request() req: AuthenticatedRequest) {
     return this.otService.checkout(req.user.id, dto);
   }
 
   @Patch('checkin/approve')
   @ApiOperation({ summary: 'Leader approves employee check-in' })
   @ApiResponse({ status: 200, description: 'Check-in approved.' })
-  async approveCheckin(@Body() dto: ApproveCheckinDto, @Request() req: AuthenticatedRequest ) {
+  async approveCheckin(@Body() dto: ApproveCheckinDto, @Request() req: AuthenticatedRequest) {
     return this.otService.approveCheckin(req.user.id, dto.checkinId, dto.version);
   }
 
@@ -142,7 +140,7 @@ export class OtManagementsController {
   @ApiResponse({ status: 409, description: 'Version conflict.' })
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateOtPlanDto, 
+    @Body() dto: UpdateOtPlanDto,
     @Request() req: AuthenticatedRequest,
   ) {
     return this.otService.updateOtPlan(id, req.user.id, dto);

@@ -11,6 +11,20 @@ export class TokenService {
     private configService: ConfigService,
   ) {}
 
+  private getRequiredSecret(key: string): string {
+    return this.configService.getOrThrow<string>(key);
+  }
+
+  private getRequiredExpirationSeconds(key: string): number {
+    const value = Number(this.configService.getOrThrow<string>(key));
+
+    if (Number.isNaN(value)) {
+      throw new Error(`Invalid ${key} configuration`);
+    }
+
+    return value;
+  }
+
   async generateTokens(user: User): Promise<{ accessToken: string; refreshToken: string }> {
     const payload: JwtPayload = {
       sub: user.id,
@@ -30,33 +44,33 @@ export class TokenService {
 
   async generateAccessToken(payload: JwtPayload): Promise<string> {
     return this.jwtService.signAsync(payload, {
-      secret: this.configService.get<string>('JWT_SECRET'),
-      expiresIn: `${this.configService.get<number>('JWT_EXPIRATION')}s`,
+      secret: this.getRequiredSecret('JWT_SECRET'),
+      expiresIn: this.getRequiredExpirationSeconds('JWT_EXPIRATION'),
     });
   }
 
   async generateRefreshToken(payload: JwtPayload): Promise<string> {
     return this.jwtService.signAsync(payload, {
-      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-      expiresIn: `${this.configService.get<number>('JWT_REFRESH_EXPIRATION')}s`,
+      secret: this.getRequiredSecret('JWT_REFRESH_SECRET'),
+      expiresIn: this.getRequiredExpirationSeconds('JWT_REFRESH_EXPIRATION'),
     });
   }
 
   async verifyRefreshToken(token: string): Promise<JwtPayload> {
     return this.jwtService.verifyAsync(token, {
-      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+      secret: this.getRequiredSecret('JWT_REFRESH_SECRET'),
     });
   }
 
   async verifyAccessToken(token: string): Promise<JwtPayload> {
     return this.jwtService.verifyAsync(token, {
-      secret: this.configService.get<string>('JWT_SECRET'),
+      secret: this.getRequiredSecret('JWT_SECRET'),
     });
   }
 
   getRefreshTokenExpiration(): Date {
     const expiresAt = new Date();
-    const expirationSeconds = this.configService.get<number>('JWT_REFRESH_EXPIRATION');
+    const expirationSeconds = this.getRequiredExpirationSeconds('JWT_REFRESH_EXPIRATION');
     expiresAt.setSeconds(expiresAt.getSeconds() + expirationSeconds);
     return expiresAt;
   }

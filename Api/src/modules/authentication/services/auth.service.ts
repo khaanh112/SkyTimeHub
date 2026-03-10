@@ -42,7 +42,7 @@ export class AuthService {
 
       // Find or create user by email
       let user = await this.usersService.getUserByEmail(email);
-      if(!user) {
+      if (!user) {
         this.logger.log(`No user found with email ${email}, creating new user`);
         throw new AppException(
           ErrorCode.USER_NOT_FOUND,
@@ -50,7 +50,7 @@ export class AuthService {
           HttpStatus.NOT_FOUND,
         );
       }
-      
+
       if (user.status !== UserStatus.ACTIVE) {
         this.logger.warn(`User account not active: ${user.id}, status: ${user.status}`);
 

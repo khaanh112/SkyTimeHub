@@ -2,8 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
-  Delete,
   Param,
   Body,
   UseInterceptors,
@@ -20,7 +18,6 @@ import { UserRole } from '@/common/enums/roles.enum';
 import { ExcelFileInterceptor } from '@/common/interceptors/excelfile.interceptor';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
 import { ImportUserRow } from './dto/import-user.dto';
 import { Roles } from '../authorization/decorators/roles.decorator';
 import { CurrentUser } from '../authentication/decorators/current-user.decorator';

@@ -23,6 +23,8 @@ import { ResendActivationEmailDto } from '../dto/resend-activation-email.dto';
 import { ApiOperation, ApiTags, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { SuccessResponseDto } from '@/common/dto/success-response.dto';
 import { AppException, ErrorCode } from '@/common';
+import { AuthenticatedRequest } from '@/common/interfaces/authenticated-request.interface';
+import { ZohoRequest } from '@/common/interfaces/zoho-profile.interface';
 
 @Controller('auth')
 @ApiTags('Authentication')
@@ -48,7 +50,7 @@ export class AuthController {
   @UseGuards(ZohoOAuthGuard)
   @ApiOperation({ summary: 'Zoho OAuth callback' })
   @ApiResponse({ status: 302, description: 'Redirects to frontend with tokens' })
-  async zohoCallback(@Req() req: any, @Res() res: Response) {
+  async zohoCallback(@Req() req: ZohoRequest, @Res() res: Response) {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
 
     // Handle OAuth errors from Zoho (e.g., user denied access)
@@ -166,7 +168,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'Current user profile retrieved successfully.' })
-  async getCurrentUser(@CurrentUser() user: AuthenticatedUser, @Req() req: any) {
+  async getCurrentUser(@CurrentUser() user: AuthenticatedUser, @Req() req: AuthenticatedRequest) {
     this.logger.log(`Get current user endpoint called`);
     this.logger.log(`CurrentUser decorator returned: ${JSON.stringify(user)}`);
     this.logger.log(`Request user object: ${JSON.stringify(req.user)}`);

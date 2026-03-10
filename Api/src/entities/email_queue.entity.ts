@@ -74,7 +74,7 @@ export class EmailQueue {
   @Column({ name: 'processing_started_at', type: 'timestamptz', nullable: true })
   processingStartedAt: Date | null;
 
-  @Column({ name: 'worker_id', nullable: true })
+  @Column({ name: 'worker_id', type: 'varchar', length: 100, nullable: true })
   workerId: string | null;
 
   // Completion timestamps

@@ -18,7 +18,6 @@ import { CalendarOverride } from '@/entities/calendar-override.entity';
 import { OtPlanStatus } from '@/common/enums/ot-plan-status.enum';
 import { OtCheckinStatus } from '@/common/enums/ot-checkin-status.enum';
 import { OtBalanceSource } from '@/common/enums/ot-balance-source.enum';
-import { OtDayType } from '@/common/enums/ot-day-type.enum';
 import { UserRole } from '@/common/enums/roles.enum';
 import { CreateOtPlanDto } from './dto/create-ot-plan.dto';
 import { UpdateOtPlanDto } from './dto/update-ot-plan.dto';
@@ -96,13 +95,13 @@ export class OtManagementsService {
       // Create OT Plan
       const plan = manager.create(OtPlan, {
         title: dto.title,
-        description: dto.description || null,
+        description: dto.description,
         departmentId: user.departmentId,
         createdBy: userId,
         approverId: approver.id,
         status: OtPlanStatus.PENDING,
         totalDurationMinutes: 0,
-      } as Partial<OtPlan> );
+      } as Partial<OtPlan>);
       const savedPlan = await manager.save(OtPlan, plan);
 
       let totalMinutes = 0;

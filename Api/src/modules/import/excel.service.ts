@@ -144,7 +144,7 @@ export class ExcelService {
       }
 
       // Parse sheet to JSON with error handling
-      let data: any[];
+      let data: Record<string, unknown>[];
       try {
         data = XLSX.utils.sheet_to_json(worksheet, {
           raw: false,
@@ -251,7 +251,7 @@ export class ExcelService {
           let normalizedRole: string | undefined;
           if (rowData.role !== null && rowData.role !== undefined && String(rowData.role).trim()) {
             const roleStr = String(rowData.role).trim();
-            normalizedRole = this.normalizeRole(roleStr);
+            normalizedRole = this.normalizeRole(roleStr) || undefined;
             if (!normalizedRole) {
               errors.push(
                 `Invalid role "${roleStr}". Must be one of: ${Object.values(UserRole).join(', ')}`,
@@ -364,7 +364,7 @@ export class ExcelService {
             String(rowData.contractType).trim()
           ) {
             const ctStr = String(rowData.contractType).trim();
-            normalizedContractType = this.normalizeContractType(ctStr);
+            normalizedContractType = this.normalizeContractType(ctStr) || undefined;
             if (!normalizedContractType) {
               errors.push(
                 `Invalid contract type "${ctStr}". Must be one of: ${Object.values(ContractType).join(', ')}`,
@@ -402,7 +402,7 @@ export class ExcelService {
             employeeId: employeeId || undefined,
             email: email,
             username: username,
-            gender: gender || undefined,
+            gender: gender || '',
             role: normalizedRole || undefined,
             departmentId: resolvedDepartment ? resolvedDepartment.id : undefined,
             departmentName: resolvedDepartment ? resolvedDepartment.name : undefined,
@@ -460,7 +460,7 @@ export class ExcelService {
             employeeId: undefined,
             email: '',
             username: '',
-            gender: undefined,
+            gender: '',
             role: undefined,
             departmentId: undefined,
             departmentName: undefined,
@@ -591,7 +591,7 @@ export class ExcelService {
    * Validate employee ID format
    */
   private isValidEmployeeId(employeeId: string): boolean {
-    return employeeId && employeeId.length > 0 && employeeId.length <= 20;
+    return (employeeId && employeeId.length > 0 && employeeId.length <= 20) || false;
   }
 
   /**

@@ -158,7 +158,7 @@ export class LeaveRequestsService {
     return {
       attachmentId: saved.id,
       originalFilename: file.originalname,
-      sizeBytes: file.size ,
+      sizeBytes: file.size,
     };
   }
 
@@ -239,7 +239,7 @@ export class LeaveRequestsService {
 
     const requester = await this.userRepository.findOne({ where: { id: userId } });
 
-    if(!requester) {
+    if (!requester) {
       throw new AppException(
         ErrorCode.USER_NOT_FOUND,
         'User not found. Please contact HR to create an account.',
@@ -500,7 +500,6 @@ export class LeaveRequestsService {
       relations: ['items', 'items.leaveType', 'user', 'approver', 'notificationRecipients'],
     });
 
-    
     return reloadedRequest || savedRequest;
   }
 
@@ -553,7 +552,7 @@ export class LeaveRequestsService {
         400,
       );
     }
-    if ( dto.ccUserIds && dto.ccUserIds?.length > 0) {
+    if (dto.ccUserIds && dto.ccUserIds?.length > 0) {
       const hrUsers = await this.userRepository.find({
         where: { role: UserRole.HR, status: UserStatus.ACTIVE },
       });
