@@ -3,6 +3,8 @@ export enum OtBalanceSource {
   OT_CHECKIN_APPROVED = 'OT_CHECKIN_APPROVED',
   OT_PLAN_CANCELLED = 'OT_PLAN_CANCELLED',
   OT_PLAN_REJECTED = 'OT_PLAN_REJECTED',
+  /** Reserved plan credit reversed when actual check-in hours are approved */
+  OT_PLAN_RECONCILED = 'OT_PLAN_RECONCILED',
   ADJUSTMENT = 'ADJUSTMENT',
   CARRYOVER = 'CARRYOVER',
 }

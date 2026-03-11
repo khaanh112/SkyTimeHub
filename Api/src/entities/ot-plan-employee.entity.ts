@@ -11,8 +11,6 @@ import {
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { OtDayType } from '@/common/enums/ot-day-type.enum';
-import { OtTimeType } from '@/common/enums/ot-time-type.enum';
 import { User } from './users.entity';
 import { OtPlan } from './ot-plan.entity';
 import { OtCheckin } from './ot-checkin.entity';
@@ -66,15 +64,6 @@ export class OtPlanEmployee {
   @ApiProperty({ example: 'Deploy hotfix to production', description: 'Planned task' })
   @Column({ name: 'planned_task', type: 'varchar', length: 150, nullable: false })
   plannedTask: string;
-
-  // ── OT classification ─────────────────────────────────────
-  @ApiProperty({ enum: OtDayType, example: OtDayType.WEEKDAY, description: 'Day type' })
-  @Column({ name: 'day_type', type: 'enum', enum: OtDayType, nullable: false })
-  dayType: OtDayType;
-
-  @ApiProperty({ enum: OtTimeType, example: OtTimeType.DAY, description: 'OT time type' })
-  @Column({ name: 'ot_time_type', type: 'enum', enum: OtTimeType, nullable: false })
-  otTimeType: OtTimeType;
 
   // ── Relations ──────────────────────────────────────────────
   @Exclude()

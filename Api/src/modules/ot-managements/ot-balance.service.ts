@@ -51,7 +51,7 @@ export class OtBalanceService {
     const dailyResult = await this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = 'CREDIT' THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        "COALESCE(SUM(CASE WHEN t.direction = OtBalanceDirection.CREDIT THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })
@@ -62,7 +62,7 @@ export class OtBalanceService {
     const monthlyResult = await this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = 'CREDIT' THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        "COALESCE(SUM(CASE WHEN t.direction = OtBalanceDirection.CREDIT THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })
@@ -74,7 +74,7 @@ export class OtBalanceService {
     const yearlyResult = await this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = 'CREDIT' THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        "COALESCE(SUM(CASE WHEN t.direction = OtBalanceDirection.CREDIT THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })

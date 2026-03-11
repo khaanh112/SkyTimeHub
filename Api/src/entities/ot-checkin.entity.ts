@@ -5,6 +5,7 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   VersionColumn,
@@ -15,6 +16,7 @@ import { OtCheckinStatus } from '@/common/enums/ot-checkin-status.enum';
 import { OtCompensatoryMethod } from '@/common/enums/ot-compensatory-method.enum';
 import { User } from './users.entity';
 import { OtPlanEmployee } from './ot-plan-employee.entity';
+import { OtCheckinItem } from './ot-checkin-item.entity';
 
 @Entity('ot_checkins')
 @Index('idx_ot_checkins_plan_emp', ['otPlanEmployeeId'])
@@ -111,4 +113,8 @@ export class OtCheckin {
   @ApiProperty({ description: 'Last update timestamp' })
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
+
+  // ── Items ──────────────────────────────────────────────────
+  @OneToMany(() => OtCheckinItem, (item) => item.otCheckin, { cascade: true })
+  items: OtCheckinItem[];
 }

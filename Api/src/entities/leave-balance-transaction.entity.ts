@@ -9,6 +9,7 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { User } from './users.entity';
 import { LeaveType } from './leave-type.entity';
+import { BalanceTxDirection } from '@/common/enums/balance-tx-direction.enum';
 
 @Entity('leave_balance_transactions')
 export class LeaveBalanceTransaction {
@@ -38,9 +39,9 @@ export class LeaveBalanceTransaction {
   @Column({ name: 'period_month', type: 'int' })
   periodMonth: number;
 
-  @ApiProperty({ example: 'CREDIT', description: 'CREDIT or DEBIT' })
+  @ApiProperty({ example: BalanceTxDirection.CREDIT, description: 'CREDIT or DEBIT' })
   @Column({ type: 'varchar', length: 10 })
-  direction: string;
+  direction: BalanceTxDirection;
 
   @ApiProperty({ example: 1.0, description: 'Amount in days (0.5 step)' })
   @Column({ name: 'amount_days', type: 'numeric', precision: 7, scale: 2 })

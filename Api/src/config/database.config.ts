@@ -20,6 +20,8 @@ import { SystemSetting } from '@entities/system-setting.entity';
 import { OtPlan } from '@entities/ot-plan.entity';
 import { OtPlanEmployee } from '@entities/ot-plan-employee.entity';
 import { OtCheckin } from '@entities/ot-checkin.entity';
+import { OtCheckinItem } from '@entities/ot-checkin-item.entity';
+import { OtType } from '@entities/ot-type.entity';
 import { OtBalanceTransaction } from '@entities/ot-balance-transaction.entity';
 
 export const getDatabaseConfig = (configService: ConfigService): TypeOrmModuleOptions => ({
@@ -56,6 +58,8 @@ export const getDatabaseConfig = (configService: ConfigService): TypeOrmModuleOp
     OtPlan,
     OtPlanEmployee,
     OtCheckin,
+    OtCheckinItem,
+    OtType,
     OtBalanceTransaction,
   ],
   synchronize: configService.get('DB_SYNCHRONIZE') === 'true',

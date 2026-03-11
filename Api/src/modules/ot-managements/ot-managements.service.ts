@@ -11,6 +11,8 @@ import { Repository, DataSource, In, Brackets } from 'typeorm';
 import { OtPlan } from '@/entities/ot-plan.entity';
 import { OtPlanEmployee } from '@/entities/ot-plan-employee.entity';
 import { OtCheckin } from '@/entities/ot-checkin.entity';
+import { OtCheckinItem } from '@/entities/ot-checkin-item.entity';
+import { OtType } from '@/entities/ot-type.entity';
 import { OtBalanceTransaction } from '@/entities/ot-balance-transaction.entity';
 import { User } from '@/entities/users.entity';
 import { Department } from '@/entities/departments.entity';
@@ -19,16 +21,18 @@ import { OtPlanStatus } from '@/common/enums/ot-plan-status.enum';
 import { OtCheckinStatus } from '@/common/enums/ot-checkin-status.enum';
 import { OtBalanceSource } from '@/common/enums/ot-balance-source.enum';
 import { UserRole } from '@/common/enums/roles.enum';
+import { OtDayType } from '@/common/enums/ot-day-type.enum';
 import { CreateOtPlanDto } from './dto/create-ot-plan.dto';
 import { UpdateOtPlanDto } from './dto/update-ot-plan.dto';
 import { ListOtPlansQueryDto, OtPlanView } from './dto/list-ot-plans-query.dto';
 import { CheckinDto } from './dto/checkin.dto';
 import { CheckoutDto } from './dto/checkout.dto';
 import { OtBalanceService } from './ot-balance.service';
-import { resolveDayType } from './utils/day-type-resolver';
-import { computeDurationMinutes, resolveOtTimeType } from './utils/duration-calculator';
+import { computeDurationMinutes } from './utils/duration-calculator';
+import { splitIntoSegments, applyCarryOver } from './utils/segment-splitter';
 import { formatOtPlanCode } from './utils/ot-plan-code-formatter';
 import { AppException, ErrorCode } from '@/common';
+import { OtBalanceDirection } from '@/common/enums/ot-balance-direction.enum';
 
 @Injectable()
 export class OtManagementsService {
@@ -41,6 +45,10 @@ export class OtManagementsService {
     private readonly otPlanEmpRepo: Repository<OtPlanEmployee>,
     @InjectRepository(OtCheckin)
     private readonly otCheckinRepo: Repository<OtCheckin>,
+    @InjectRepository(OtCheckinItem)
+    private readonly otCheckinItemRepo: Repository<OtCheckinItem>,
+    @InjectRepository(OtType)
+    private readonly otTypeRepo: Repository<OtType>,
     @InjectRepository(OtBalanceTransaction)
     private readonly otBalanceRepo: Repository<OtBalanceTransaction>,
     @InjectRepository(User)
@@ -91,6 +99,18 @@ export class OtManagementsService {
       }
     }
 
+    // Yearly limit check per employee (200 h = 12 000 min)
+    for (const empDto of dto.employees) {
+      const start = new Date(empDto.startTime);
+      const newMinutes = computeDurationMinutes(start, new Date(empDto.endTime));
+      const yearlyMinutes = await this.getYearlyNetMinutes(empDto.employeeId, start.getFullYear());
+      if (yearlyMinutes + newMinutes > 12_000) {
+        throw new BadRequestException(
+          `Employee ${empDto.employeeId} would exceed the 200-hour yearly OT limit for ${start.getFullYear()}`,
+        );
+      }
+    }
+
     const savedPlanId = await this.dataSource.transaction(async (manager) => {
       // Create OT Plan
       const plan = manager.create(OtPlan, {
@@ -110,8 +130,6 @@ export class OtManagementsService {
         const start = new Date(empDto.startTime);
         const end = new Date(empDto.endTime);
         const durationMinutes = computeDurationMinutes(start, end);
-        const dayType = await resolveDayType(start, this.calendarRepo);
-        const otTimeType = resolveOtTimeType(start, end);
 
         const planEmp = manager.create(OtPlanEmployee, {
           otPlanId: savedPlan.id,
@@ -120,8 +138,6 @@ export class OtManagementsService {
           endTime: end,
           durationMinutes,
           plannedTask: empDto.plannedTask,
-          dayType,
-          otTimeType,
         });
         const savedPlanEmp = await manager.save(OtPlanEmployee, planEmp);
 
@@ -377,8 +393,6 @@ export class OtManagementsService {
         endTime: emp.endTime,
         durationMinutes: emp.durationMinutes,
         plannedTask: emp.plannedTask,
-        dayType: emp.dayType,
-        otTimeType: emp.otTimeType,
         checkin: latestCheckin
           ? {
               id: latestCheckin.id,
@@ -466,8 +480,6 @@ export class OtManagementsService {
         }
 
         const durationMinutes = computeDurationMinutes(start, end);
-        const dayType = await resolveDayType(start, this.calendarRepo);
-        const otTimeType = resolveOtTimeType(start, end);
 
         const planEmp = manager.create(OtPlanEmployee, {
           otPlanId: id,
@@ -476,8 +488,6 @@ export class OtManagementsService {
           endTime: end,
           durationMinutes,
           plannedTask: empDto.plannedTask,
-          dayType,
-          otTimeType,
         });
         const savedPlanEmp = await manager.save(OtPlanEmployee, planEmp);
 
@@ -517,21 +527,20 @@ export class OtManagementsService {
       plan.approvedAt = new Date();
       await manager.save(OtPlan, plan);
 
-      // Create balance transactions for each employee
+      // Create one bulk CREDIT reservation per employee — no day-type splitting at plan time
       for (const emp of plan.employees) {
         const startDate = new Date(emp.startTime);
-        const tx = manager.create(OtBalanceTransaction, {
+        await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
           employeeId: emp.employeeId,
-          direction: 'CREDIT',
+          direction: OtBalanceDirection.CREDIT,
           amountMinutes: emp.durationMinutes,
           sourceType: OtBalanceSource.OT_PLAN_APPROVED,
-          sourceId: emp.id,
+          sourceId: Number(emp.id),
           periodYear: startDate.getFullYear(),
           periodMonth: startDate.getMonth() + 1,
           periodDate: startDate.toISOString().slice(0, 10),
           note: `OT plan #${id} approved`,
-        });
-        await manager.save(OtBalanceTransaction, tx);
+        }));
       }
     });
 
@@ -576,22 +585,35 @@ export class OtManagementsService {
       plan.cancelledAt = new Date();
       await manager.save(OtPlan, plan);
 
-      // If was approved, create reversal balance transactions
+      // If was approved, reverse only the balance transactions that have NOT been reconciled
       if (wasApproved && plan.employees) {
         for (const emp of plan.employees) {
-          const startDate = new Date(emp.startTime);
-          const tx = manager.create(OtBalanceTransaction, {
-            employeeId: emp.employeeId,
-            direction: 'DEBIT',
-            amountMinutes: emp.durationMinutes,
-            sourceType: OtBalanceSource.OT_PLAN_CANCELLED,
-            sourceId: emp.id,
-            periodYear: startDate.getFullYear(),
-            periodMonth: startDate.getMonth() + 1,
-            periodDate: startDate.toISOString().slice(0, 10),
-            note: `OT plan #${id} cancelled`,
+          // Skip if this employee's plan allocation was already reconciled at checkin-approval
+          const reconciledCount = await manager.count(OtBalanceTransaction, {
+            where: { sourceType: OtBalanceSource.OT_PLAN_RECONCILED, sourceId: Number(emp.id) },
           });
-          await manager.save(OtBalanceTransaction, tx);
+          if (reconciledCount > 0) continue;
+
+          const creditTxs = await manager.find(OtBalanceTransaction, {
+            where: { sourceType: OtBalanceSource.OT_PLAN_APPROVED, sourceId: Number(emp.id) },
+          });
+
+          for (const creditTx of creditTxs) {
+            await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
+              employeeId: emp.employeeId,
+              direction: OtBalanceDirection.DEBIT,
+              amountMinutes: creditTx.amountMinutes,
+              sourceType: OtBalanceSource.OT_PLAN_CANCELLED,
+              sourceId: Number(emp.id),
+              periodYear: creditTx.periodYear,
+              periodMonth: creditTx.periodMonth,
+              periodDate: creditTx.periodDate,
+              dayType: creditTx.dayType,
+              otTypeId: creditTx.otTypeId,
+              actualDate: creditTx.actualDate,
+              note: `OT plan #${id} cancelled`,
+            }));
+          }
         }
       }
     });
@@ -682,20 +704,86 @@ export class OtManagementsService {
       checkin.leaderApprovedAt = new Date();
       await manager.save(OtCheckin, checkin);
 
-      // Create balance transaction for actual hours
-      const startDate = new Date(checkin.otPlanEmployee.startTime);
-      const tx = manager.create(OtBalanceTransaction, {
-        employeeId: checkin.otPlanEmployee.employeeId,
-        direction: 'CREDIT',
-        amountMinutes: checkin.actualDurationMinutes || 0,
-        sourceType: OtBalanceSource.OT_CHECKIN_APPROVED,
-        sourceId: Number(checkin.id),
-        periodYear: startDate.getFullYear(),
-        periodMonth: startDate.getMonth() + 1,
-        periodDate: startDate.toISOString().slice(0, 10),
-        note: `OT check-in approved`,
+      const planEmp = checkin.otPlanEmployee;
+
+      // ── Phase A: Reconcile plan reservation ────────────────
+      // Reverse all OT_PLAN_APPROVED CREDITs for this plan employee
+      const planCreditTxs = await manager.find(OtBalanceTransaction, {
+        where: { sourceType: OtBalanceSource.OT_PLAN_APPROVED, sourceId: Number(planEmp.id) },
       });
-      await manager.save(OtBalanceTransaction, tx);
+      for (const creditTx of planCreditTxs) {
+        await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
+          employeeId: planEmp.employeeId,
+          direction: OtBalanceDirection.DEBIT,
+          amountMinutes: creditTx.amountMinutes,
+          sourceType: OtBalanceSource.OT_PLAN_RECONCILED,
+          sourceId: Number(planEmp.id),
+          periodYear: creditTx.periodYear,
+          periodMonth: creditTx.periodMonth,
+          periodDate: creditTx.periodDate,
+          dayType: creditTx.dayType,
+          otTypeId: creditTx.otTypeId,
+          actualDate: creditTx.actualDate,
+          note: `Plan employee #${planEmp.id} reconciled on checkin`,
+        }));
+      }
+
+      // ── Phase B & C: Split actual hours and enforce daily caps ─
+      if (!checkin.checkInAt || !checkin.checkOutAt) {
+        throw new BadRequestException('Check-in/out times are required for approval');
+      }
+      const rawSegments = await splitIntoSegments(
+        new Date(checkin.checkInAt),
+        new Date(checkin.checkOutAt),
+        this.calendarRepo,
+      );
+      const segments = await applyCarryOver(rawSegments, this.calendarRepo);
+
+      // ── Phase D: Save OtCheckinItems ───────────────────────
+      const otTypes   = await this.otTypeRepo.find();
+      const otTypeMap = new Map(otTypes.map(t => [t.dayType as OtDayType, t]));
+
+      for (const seg of segments) {
+        const otType = otTypeMap.get(seg.dayType);
+        if (!otType) continue;
+        await manager.save(OtCheckinItem, manager.create(OtCheckinItem, {
+          otCheckinId: Number(checkin.id),
+          employeeId: planEmp.employeeId,
+          otTypeId: Number(otType.id),
+          dayType: seg.dayType,
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+          durationMinutes: seg.durationMinutes,
+          actualDate: seg.actualDate,
+          attributedDate: seg.attributedDate,
+        }));
+      }
+
+      // ── Phase E: Credit actual hours with monthly carry-over ─
+      const monthlyMap = await this.getMonthlyBalanceMap(planEmp.employeeId);
+      for (const seg of segments) {
+        const otType = otTypeMap.get(seg.dayType);
+        if (!otType) continue;
+        const [periodYear, periodMonth] = this.assignPeriodWithCarryOver(
+          seg.attributedDate,
+          monthlyMap,
+          seg.durationMinutes,
+        );
+        await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
+          employeeId: planEmp.employeeId,
+          direction: OtBalanceDirection.CREDIT,
+          amountMinutes: seg.durationMinutes,
+          sourceType: OtBalanceSource.OT_CHECKIN_APPROVED,
+          sourceId: Number(checkin.id),
+          periodYear,
+          periodMonth,
+          periodDate: seg.attributedDate,
+          dayType: seg.dayType,
+          otTypeId: Number(otType.id),
+          actualDate: seg.actualDate,
+          note: `OT check-in #${checkin.id} approved`,
+        }));
+      }
 
       return { success: true, data: checkin };
     });
@@ -769,8 +857,6 @@ export class OtManagementsService {
       'End Time',
       'Planned Duration (hrs)',
       'Planned Task',
-      'Day Type',
-      'OT Time Type',
       'Check-in Status',
       'Actual Duration (hrs)',
       'Work Output',
@@ -797,8 +883,6 @@ export class OtManagementsService {
             emp.endTime ? new Date(emp.endTime).toISOString() : '',
             (emp.durationMinutes / 60).toFixed(1),
             this.csvEscape(emp.plannedTask),
-            emp.dayType,
-            emp.otTimeType,
             checkin?.status || OtCheckinStatus.PENDING,
             checkin?.actualDurationMinutes ? (checkin.actualDurationMinutes / 60).toFixed(1) : '',
             this.csvEscape(checkin?.workOutput || ''),
@@ -819,5 +903,56 @@ export class OtManagementsService {
       return `"${value.replace(/"/g, '""')}"`;
     }
     return value;
+  }
+
+  // ─── PRIVATE HELPERS ────────────────────────────────────────
+
+  /** Net OT minutes for an employee in a given year (CREDITs minus DEBITs). */
+  private async getYearlyNetMinutes(employeeId: number, year: number): Promise<number> {
+    const txs = await this.otBalanceRepo.find({ where: { employeeId, periodYear: year } });
+    return txs.reduce(
+      (sum, tx) => sum + (tx.direction === OtBalanceDirection.CREDIT ? tx.amountMinutes : -tx.amountMinutes),
+      0,
+    );
+  }
+
+  /**
+   * Net OT minutes per month for an employee, keyed by `"YYYY-M"`.
+   */
+  private async getMonthlyBalanceMap(employeeId: number): Promise<Map<string, number>> {
+    const txs = await this.otBalanceRepo.find({ where: { employeeId } });
+    const map = new Map<string, number>();
+    for (const tx of txs) {
+      const key = `${tx.periodYear}-${tx.periodMonth}`;
+      const delta = tx.direction === OtBalanceDirection.CREDIT ? tx.amountMinutes : -tx.amountMinutes;
+      map.set(key, (map.get(key) ?? 0) + delta);
+    }
+    return map;
+  }
+
+  /**
+   * Determine which (year, month) bucket a segment belongs to,
+   * bumping to the next month when the current would exceed 2 400 min (40 h).
+   * Updates `monthlyMap` in-place.
+   */
+  private assignPeriodWithCarryOver(
+    attributedDate: string,
+    monthlyMap: Map<string, number>,
+    addMinutes: number,
+  ): [number, number] {
+    const d = new Date(`${attributedDate}T12:00:00`);
+    let year  = d.getFullYear();
+    let month = d.getMonth() + 1;
+    const MONTHLY_CAP = 2_400;
+    while (true) {
+      const key     = `${year}-${month}`;
+      const current = monthlyMap.get(key) ?? 0;
+      if (current + addMinutes <= MONTHLY_CAP) {
+        monthlyMap.set(key, current + addMinutes);
+        return [year, month];
+      }
+      month++;
+      if (month > 12) { month = 1; year++; }
+    }
   }
 }

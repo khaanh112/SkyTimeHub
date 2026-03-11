@@ -9,7 +9,10 @@ import {
 } from 'typeorm';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OtBalanceSource } from '@/common/enums/ot-balance-source.enum';
+import { OtDayType } from '@/common/enums/ot-day-type.enum';
 import { User } from './users.entity';
+import { OtType } from './ot-type.entity';
+import { OtBalanceDirection } from '@/common/enums/ot-balance-direction.enum';
 
 @Entity('ot_balance_transactions')
 @Index('idx_ot_bal_emp_year_month', ['employeeId', 'periodYear', 'periodMonth'])
@@ -30,9 +33,9 @@ export class OtBalanceTransaction {
   employee: User;
 
   // ── Direction ──────────────────────────────────────────────
-  @ApiProperty({ example: 'CREDIT', description: 'CREDIT = hours used, DEBIT = hours refunded' })
+  @ApiProperty({ example: OtBalanceDirection.CREDIT, description: 'CREDIT = hours used, DEBIT = hours refunded' })
   @Column({ type: 'varchar', length: 10, nullable: false })
-  direction: string;
+  direction: OtBalanceDirection;
 
   // ── Amount ─────────────────────────────────────────────────
   @ApiProperty({ example: 240, description: 'Amount in minutes (always positive)' })
@@ -63,6 +66,23 @@ export class OtBalanceTransaction {
   })
   @Column({ name: 'period_date', type: 'date', nullable: true })
   periodDate: string | null;
+
+  // ── OT type (set on per-item transactions) ───────────────
+  @ApiPropertyOptional({ enum: OtDayType, description: 'Day type of the segment (null for legacy bulk transactions)' })
+  @Column({ name: 'day_type', type: 'enum', enum: OtDayType, nullable: true })
+  dayType: OtDayType | null;
+
+  @ApiPropertyOptional({ example: 1, description: 'ot_types.id FK (nullable)' })
+  @Column({ name: 'ot_type_id', type: 'bigint', nullable: true })
+  otTypeId: number | null;
+
+  @ManyToOne(() => OtType, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'ot_type_id' })
+  otType: OtType | null;
+
+  @ApiPropertyOptional({ example: '2026-03-15', description: 'Actual calendar date of the segment (HR reference)' })
+  @Column({ name: 'actual_date', type: 'date', nullable: true })
+  actualDate: string | null;
 
   // ── Note ───────────────────────────────────────────────────
   @ApiPropertyOptional({ description: 'Freetext note' })
