@@ -12,6 +12,7 @@ const otService = {
     if (params.to) query.to = params.to;
     if (params.q) query.q = params.q;
     if (params.sort) query.sort = params.sort;
+    if (params.departmentId) query.departmentId = params.departmentId;
     const response = await api.get('/ot-plans', { params: query });
     return response.data;
   },
@@ -84,6 +85,31 @@ const otService = {
   // Get employee OT summary (for tooltip)
   getEmployeeOtSummary: async (employeeId) => {
     const response = await api.get(`/ot-plans/employee-ot-summary/${employeeId}`);
+    return response.data.data || response.data;
+  },
+
+  // List assigned OT items for the current employee (personal view)
+  getMyAssignments: async (params = {}) => {
+    const query = {};
+    if (params.page) query.page = params.page;
+    if (params.pageSize) query.pageSize = params.pageSize;
+    if (params.otBenefits) query.otBenefits = params.otBenefits;
+    if (params.from) query.from = params.from;
+    if (params.to) query.to = params.to;
+    if (params.status) query.status = params.status;
+    const response = await api.get('/ot-plans/my-assignments', { params: query });
+    return response.data;
+  },
+
+  // Get a single assigned OT item detail
+  getMyAssignment: async (id) => {
+    const response = await api.get(`/ot-plans/my-assignments/${id}`);
+    return response.data.data || response.data;
+  },
+
+  // Get OT plan employee assignment detail (admin/leader view, no user restriction)
+  getOtPlanEmployee: async (id) => {
+    const response = await api.get(`/ot-plans/employees/${id}`);
     return response.data.data || response.data;
   },
 

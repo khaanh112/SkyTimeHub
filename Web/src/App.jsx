@@ -21,6 +21,8 @@ import {
   CreateOtPlanPage,
   EditOtPlanPage,
   OtPlanDetailPage,
+  AssignedOtDetailPage,
+  AdminAssignedOtDetailPage,
 } from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
 
@@ -197,6 +199,22 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <EditOtPlanPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ot-management/assignments/:id"
+        element={
+          <ProtectedRoute>
+            <AssignedOtDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ot-management/:planId/employees/:empId"
+        element={
+          <ProtectedRoute>
+            <AdminAssignedOtDetailPage />
           </ProtectedRoute>
         }
       />

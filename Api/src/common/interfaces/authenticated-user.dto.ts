@@ -16,4 +16,8 @@ export interface AuthenticatedUser {
   role: UserRole;
   /** User gender */
   gender?: UserGender;
+  /** Job position (e.g. 'Department leader') */
+  position?: string;
+  /** Department ID */
+  departmentId?: number | null;
 }

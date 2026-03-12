@@ -14,6 +14,7 @@ import {
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from '../services/auth.service';
+import { UsersService } from '../../users/users.service';
 import { ZohoOAuthGuard } from '../guards/zoho-oauth.guard';
 import { Public } from '../decorators/public.decorator';
 import { CurrentUser } from '../decorators/current-user.decorator';
@@ -34,6 +35,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
+    private usersService: UsersService,
   ) {}
 
   @Public()
@@ -183,7 +185,19 @@ export class AuthController {
     }
 
     this.logger.log(`Returning user profile for userId: ${user.id}`);
-    return new SuccessResponseDto(user, 'Current user profile retrieved successfully');
+    const fullUser = await this.usersService.getUser(user.id);
+    return new SuccessResponseDto(
+      {
+        id: fullUser.id,
+        email: fullUser.email,
+        username: fullUser.username,
+        role: fullUser.role,
+        gender: fullUser.gender,
+        position: fullUser.position,
+        departmentId: fullUser.departmentId,
+      },
+      'Current user profile retrieved successfully',
+    );
   }
 
   // =====================================================

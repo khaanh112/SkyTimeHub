@@ -73,4 +73,11 @@ export class ListOtPlansQueryDto {
   @IsOptional()
   @IsString()
   sort?: string = '-createdAt';
+
+  /** Filter by department ID (admin/HR management view only) */
+  @ApiPropertyOptional({ example: '5' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  departmentId?: number;
 }

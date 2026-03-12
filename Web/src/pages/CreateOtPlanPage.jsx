@@ -139,20 +139,24 @@ const CreateOtPlanPage = () => {
   ]);
   const nextKey = useRef(2);
 
-  // Load users
+  // Load users belonging to the current user's department
   useEffect(() => {
     (async () => {
       try {
         setLoadingUsers(true);
         const res = await userService.getAll();
-        setUsers(Array.isArray(res) ? res : res.data || []);
+        const allUsers = Array.isArray(res) ? res : res.data || [];
+        const deptUsers = currentUser?.departmentId
+          ? allUsers.filter((u) => u.departmentId === currentUser.departmentId)
+          : allUsers;
+        setUsers(deptUsers);
       } catch {
         toast.error('Failed to load users');
       } finally {
         setLoadingUsers(false);
       }
     })();
-  }, []);
+  }, [currentUser?.departmentId]);
 
   // Compute total duration
   const totalMinutes = employees.reduce((sum, emp) => {

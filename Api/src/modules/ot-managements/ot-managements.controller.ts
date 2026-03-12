@@ -102,6 +102,49 @@ export class OtManagementsController {
     res.send(csvBuffer);
   }
 
+  @Get('my-assignments')
+  @ApiOperation({ summary: 'List assigned OT items for the current employee (personal view)' })
+  @ApiResponse({ status: 200, description: 'Paginated list of assigned OT items.' })
+  async getMyAssignments(
+    @Request() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('otBenefits') otBenefits?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.otService.getMyAssignments(req.user.id, {
+      page: page ? parseInt(page, 10) : 1,
+      pageSize: pageSize ? parseInt(pageSize, 10) : 10,
+      otBenefits,
+      from,
+      to,
+      status,
+    });
+  }
+
+  @Get('my-assignments/:id')
+  @ApiOperation({ summary: 'Get a single assigned OT item detail' })
+  @ApiParam({ name: 'id', type: 'number' })
+  @ApiResponse({ status: 200, description: 'Assigned OT item detail.' })
+  @ApiResponse({ status: 404, description: 'Assignment not found.' })
+  async getMyAssignment(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.otService.getMyAssignment(req.user.id, id);
+  }
+
+  @Get('employees/:id')
+  @ApiOperation({ summary: 'Get OT plan employee assignment detail (admin/leader view)' })
+  @ApiParam({ name: 'id', type: 'number' })
+  @ApiResponse({ status: 200, description: 'Assignment detail with employee info.' })
+  @ApiResponse({ status: 404, description: 'Assignment not found.' })
+  async getOtPlanEmployeeDetail(@Param('id', ParseIntPipe) id: number) {
+    return this.otService.getOtPlanEmployeeDetail(id);
+  }
+
   // ── CRUD routes ──
 
   @Post()

@@ -13,6 +13,7 @@ import { User } from '@/entities/users.entity';
 import { Department } from '@/entities/departments.entity';
 import { CalendarOverride } from '@/entities/calendar-override.entity';
 import { SystemSetting } from '@/entities/system-setting.entity';
+import { NotificationsModule } from '@/modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SystemSetting } from '@/entities/system-setting.entity';
       CalendarOverride,
       SystemSetting,
     ]),
+    NotificationsModule,
   ],
   controllers: [OtManagementsController],
   providers: [OtManagementsService, OtBalanceService],

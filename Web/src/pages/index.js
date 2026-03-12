@@ -17,3 +17,5 @@ export { default as OTManagementPage } from './OTManagementPage';
 export { default as CreateOtPlanPage } from './CreateOtPlanPage';
 export { default as EditOtPlanPage } from './EditOtPlanPage';
 export { default as OtPlanDetailPage } from './OtPlanDetailPage';
+export { default as AssignedOtDetailPage } from './AssignedOtDetailPage';
+export { default as AdminAssignedOtDetailPage } from './AdminAssignedOtDetailPage';

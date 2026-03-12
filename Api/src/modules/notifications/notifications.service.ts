@@ -170,6 +170,8 @@ export class NotificationsService implements OnModuleDestroy {
       { type: EmailType.OT_PLAN_APPROVED, file: 'ot-plan-approved.hbs' },
       { type: EmailType.OT_PLAN_REJECTED, file: 'ot-plan-rejected.hbs' },
       { type: EmailType.OT_PLAN_CANCELLED, file: 'ot-plan-cancelled.hbs' },
+      { type: EmailType.OT_ASSIGNMENT_APPROVED, file: 'ot-assignment-approved.hbs' },
+      { type: EmailType.OT_ASSIGNMENT_CANCELLED, file: 'ot-assignment-cancelled.hbs' },
       { type: EmailType.OT_CHECKIN_CONFIRMED, file: 'ot-checkin-confirmed.hbs' },
       { type: EmailType.OT_CHECKIN_REJECTED, file: 'ot-checkin-rejected.hbs' },
       { type: EmailType.NONE, file: 'none.hbs' },
@@ -289,13 +291,17 @@ export class NotificationsService implements OnModuleDestroy {
       case EmailType.LEAVE_REQUEST_CANCELLED:
         return `Yêu cầu nghỉ phép đã bị hủy - ${context.requesterName || 'User'}`;
       case EmailType.OT_PLAN_SUBMITTED:
-        return `Yêu cầu OT mới từ ${context.requesterName || 'User'}`;
-      case EmailType.OT_PLAN_APPROVED:  
-        return 'Yêu cầu OT đã được phê duyệt';
+        return `[Action Required] OT Plan – ${context.departmentName || ''}`;
+      case EmailType.OT_PLAN_APPROVED:
+        return '[Approved] Your department OT plan';
+      case EmailType.OT_ASSIGNMENT_APPROVED:
+        return '[Approved] Your OT Assignment';
       case EmailType.OT_PLAN_REJECTED:
-        return 'Yêu cầu OT bị từ chối';
+        return '[Rejected] Your OT Plan';
       case EmailType.OT_PLAN_CANCELLED:
-        return 'Yêu cầu OT đã bị hủy';
+        return `[Notice] OT plan canceled – ${context.departmentName || ''}`;
+      case EmailType.OT_ASSIGNMENT_CANCELLED:
+        return '[Notice] Your OT assignment canceled';
       case EmailType.OT_CHECKIN_REJECTED:
         return 'Check-in OT bị từ chối';
       case EmailType.OT_CHECKIN_CONFIRMED:
@@ -688,5 +694,265 @@ export class NotificationsService implements OnModuleDestroy {
     }
     this.logger.log(`✅ Leave request cancelled notification queued for request ${leaveRequestId}`);
     return emailIds;
+  }
+
+  // ─── OT PLAN NOTIFICATIONS ──────────────────────────────────
+
+  /**
+   * Enqueue OT plan submitted notification to BOD.
+   */
+  async enqueueOtPlanSubmittedNotification(
+    otPlanId: number,
+    bodUserId: number,
+    context: {
+      bodName: string;
+      leaderName: string;
+      departmentName: string;
+      otPlanUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-plan-submitted-${otPlanId}-${bodUserId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: bodUserId,
+      type: EmailType.OT_PLAN_SUBMITTED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: otPlanId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT plan submitted notification queued for plan ${otPlanId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
+
+  /**
+   * Enqueue OT plan approved notification to Department Leader.
+   */
+  async enqueueOtPlanApprovedNotification(
+    otPlanId: number,
+    leaderUserId: number,
+    context: {
+      leaderName: string;
+      departmentName: string;
+      approverName: string;
+      approvedAt: string;
+      otPlanUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-plan-approved-${otPlanId}-${leaderUserId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: leaderUserId,
+      type: EmailType.OT_PLAN_APPROVED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: otPlanId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT plan approved notification queued for plan ${otPlanId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
+
+  /**
+   * Enqueue OT assignment approved notification to a single Employee.
+   */
+  async enqueueOtAssignmentApprovedNotification(
+    otPlanId: number,
+    employeeId: number,
+    context: {
+      employeeName: string;
+      otAssignmentUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-assignment-approved-${otPlanId}-${employeeId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: employeeId,
+      type: EmailType.OT_ASSIGNMENT_APPROVED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: otPlanId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT assignment approved notification queued for plan ${otPlanId}, employee ${employeeId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
+
+  /**
+   * Enqueue OT plan rejected notification to Department Leader.
+   */
+  async enqueueOtPlanRejectedNotification(
+    otPlanId: number,
+    leaderUserId: number,
+    context: {
+      leaderName: string;
+      departmentName: string;
+      approverName: string;
+      rejectedReason: string;
+      rejectedAt: string;
+      otPlanUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-plan-rejected-${otPlanId}-${leaderUserId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: leaderUserId,
+      type: EmailType.OT_PLAN_REJECTED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: otPlanId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT plan rejected notification queued for plan ${otPlanId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
+
+  /**
+   * Enqueue OT plan cancelled notification to BOD.
+   */
+  async enqueueOtPlanCancelledNotification(
+    otPlanId: number,
+    bodUserId: number,
+    context: {
+      bodName: string;
+      leaderName: string;
+      departmentName: string;
+      otPlanUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-plan-cancelled-${otPlanId}-${bodUserId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: bodUserId,
+      type: EmailType.OT_PLAN_CANCELLED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: otPlanId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT plan cancelled notification queued for plan ${otPlanId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
+
+  /**
+   * Enqueue OT assignment cancelled notification to a single Employee.
+   * Only sent when the cancelled plan was previously Approved.
+   */
+  async enqueueOtAssignmentCancelledNotification(
+    otPlanId: number,
+    employeeId: number,
+    context: {
+      employeeName: string;
+      otAssignmentUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-assignment-cancelled-${otPlanId}-${employeeId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: employeeId,
+      type: EmailType.OT_ASSIGNMENT_CANCELLED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: otPlanId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT assignment cancelled notification queued for plan ${otPlanId}, employee ${employeeId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
   }
 }

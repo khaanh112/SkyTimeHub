@@ -28,6 +28,7 @@ import { ListOtPlansQueryDto, OtPlanView } from './dto/list-ot-plans-query.dto';
 import { CheckinDto } from './dto/checkin.dto';
 import { CheckoutDto } from './dto/checkout.dto';
 import { OtBalanceService } from './ot-balance.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { computeDurationMinutes } from './utils/duration-calculator';
 import { splitIntoSegments, applyCarryOver } from './utils/segment-splitter';
 import { formatOtPlanCode } from './utils/ot-plan-code-formatter';
@@ -59,6 +60,7 @@ export class OtManagementsService {
     private readonly calendarRepo: Repository<CalendarOverride>,
     private readonly dataSource: DataSource,
     private readonly otBalanceService: OtBalanceService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ─── CREATE ─────────────────────────────────────────────────
@@ -88,6 +90,16 @@ export class OtManagementsService {
       throw new BadRequestException('No admin user found to assign as approver');
     }
 
+    // Validate all employees belong to the leader's department
+    const employeeIds = dto.employees.map((e) => e.employeeId);
+    const empUsers = await this.userRepo.findBy({ id: In(employeeIds) });
+    const outsideDept = empUsers.filter((e) => e.departmentId !== user.departmentId);
+    if (outsideDept.length > 0) {
+      throw new ForbiddenException(
+        `Employees [${outsideDept.map((e) => e.id).join(', ')}] do not belong to your department`,
+      );
+    }
+
     // Validate employee start/end times
     for (const emp of dto.employees) {
       const start = new Date(emp.startTime);
@@ -111,6 +123,7 @@ export class OtManagementsService {
       }
     }
 
+    const submittedEmailIds: number[] = [];
     const savedPlanId = await this.dataSource.transaction(async (manager) => {
       // Create OT Plan
       const plan = manager.create(OtPlan, {
@@ -155,15 +168,32 @@ export class OtManagementsService {
       savedPlan.totalDurationMinutes = totalMinutes;
       await manager.save(OtPlan, savedPlan);
 
+      // Enqueue submitted notification to BOD inside the transaction (transactional outbox)
+      const emailIds = await this.notificationsService.enqueueOtPlanSubmittedNotification(
+        savedPlan.id,
+        approver.id,
+        {
+          bodName: approver.username,
+          leaderName: user.username,
+          departmentName: dept.name,
+          otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${savedPlan.id}`,
+        },
+        manager,
+      );
+      submittedEmailIds.push(...emailIds);
+
       return savedPlan.id;
     });
+
+    // Post-commit: trigger immediate send (fire and forget)
+    this.notificationsService.triggerImmediateSend(submittedEmailIds);
 
     return this.findOne(savedPlanId, userId);
   }
 
   // ─── FIND ALL (LIST) ────────────────────────────────────────
   async findOtPlans(user: { id: number; role: UserRole }, query: ListOtPlansQueryDto) {
-    const { view, page = 1, pageSize = 10, status, from, to, q, sort } = query;
+    const { view, page = 1, pageSize = 10, status, from, to, q, sort, departmentId } = query;
 
     // Step 1: Build a sub-query to find matching plan IDs with filters
     const idQb = this.otPlanRepo.createQueryBuilder('plan').select('plan.id', 'id');
@@ -212,6 +242,9 @@ export class OtManagementsService {
           }
           idQb.andWhere('emp.employeeId = :userId', { userId: user.id });
         }
+      } else if (departmentId) {
+        // Admin/HR: optional department filter
+        idQb.andWhere('plan.departmentId = :filterDeptId', { filterDeptId: departmentId });
       }
     }
 
@@ -325,9 +358,11 @@ export class OtManagementsService {
       const isCreator = plan.createdBy === user.id;
       const isApprover = plan.approverId === user.id;
       const canUpdate = isCreator && plan.status === OtPlanStatus.PENDING;
+      // canCancel requires: creator, pending/approved status, AND no employee has checked in yet
       const canCancel =
         isCreator &&
-        (plan.status === OtPlanStatus.PENDING || plan.status === OtPlanStatus.APPROVED);
+        (plan.status === OtPlanStatus.PENDING || plan.status === OtPlanStatus.APPROVED) &&
+        checkedInCount === 0;
       const canApprove = isApprover && plan.status === OtPlanStatus.PENDING;
       const canReject = isApprover && plan.status === OtPlanStatus.PENDING;
 
@@ -434,7 +469,10 @@ export class OtManagementsService {
         canUpdate: isCreator && plan.status === OtPlanStatus.PENDING,
         canCancel:
           isCreator &&
-          (plan.status === OtPlanStatus.PENDING || plan.status === OtPlanStatus.APPROVED),
+          (plan.status === OtPlanStatus.PENDING || plan.status === OtPlanStatus.APPROVED) &&
+          !plan.employees?.some((emp) =>
+            emp.checkins?.some((c) => c.status !== OtCheckinStatus.PENDING),
+          ),
         canApprove: isApprover && plan.status === OtPlanStatus.PENDING,
         canReject: isApprover && plan.status === OtPlanStatus.PENDING,
         canManageCheckins: isCreator && plan.status === OtPlanStatus.APPROVED,
@@ -522,9 +560,19 @@ export class OtManagementsService {
     if (plan.version !== version)
       throw new ConflictException('Plan has been modified. Please refresh.');
 
+    // Fetch additional data needed for notifications
+    const [leader, approver, dept] = await Promise.all([
+      this.userRepo.findOne({ where: { id: plan.createdBy } }),
+      this.userRepo.findOne({ where: { id: userId } }),
+      this.deptRepo.findOne({ where: { id: plan.departmentId } }),
+    ]);
+
+    const approvedAt = new Date();
+    const approvedEmailIds: number[] = [];
+
     await this.dataSource.transaction(async (manager) => {
       plan.status = OtPlanStatus.APPROVED;
-      plan.approvedAt = new Date();
+      plan.approvedAt = approvedAt;
       await manager.save(OtPlan, plan);
 
       // Create one bulk CREDIT reservation per employee — no day-type splitting at plan time
@@ -542,7 +590,44 @@ export class OtManagementsService {
           note: `OT plan #${id} approved`,
         }));
       }
+
+      // Notify dept leader
+      if (leader) {
+        const leaderEmailIds = await this.notificationsService.enqueueOtPlanApprovedNotification(
+          id,
+          leader.id,
+          {
+            leaderName: leader.username,
+            departmentName: dept?.name || '',
+            approverName: approver?.username || '',
+            approvedAt: approvedAt.toISOString(),
+            otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${id}`,
+          },
+          manager,
+        );
+        approvedEmailIds.push(...leaderEmailIds);
+      }
+
+      // Notify each employee in the plan
+      for (const emp of plan.employees) {
+        const empUser = await this.userRepo.findOne({ where: { id: emp.employeeId } });
+        if (empUser) {
+          const empEmailIds = await this.notificationsService.enqueueOtAssignmentApprovedNotification(
+            id,
+            emp.employeeId,
+            {
+              employeeName: empUser.username,
+              otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${emp.id}`,
+            },
+            manager,
+          );
+          approvedEmailIds.push(...empEmailIds);
+        }
+      }
     });
+
+    // Post-commit: trigger immediate send
+    this.notificationsService.triggerImmediateSend(approvedEmailIds);
 
     return this.findOne(id, userId);
   }
@@ -558,75 +643,181 @@ export class OtManagementsService {
     if (plan.version !== version)
       throw new ConflictException('Plan has been modified. Please refresh.');
 
+    // Fetch data for notification
+    const [leader, approver, dept] = await Promise.all([
+      this.userRepo.findOne({ where: { id: plan.createdBy } }),
+      this.userRepo.findOne({ where: { id: userId } }),
+      this.deptRepo.findOne({ where: { id: plan.departmentId } }),
+    ]);
+
+    const rejectedAt = new Date();
     plan.status = OtPlanStatus.REJECTED;
     plan.rejectedReason = reason;
-    plan.rejectedAt = new Date();
+    plan.rejectedAt = rejectedAt;
     await this.otPlanRepo.save(plan);
+
+    // Notify dept leader
+    if (leader) {
+      const emailIds = await this.notificationsService.enqueueOtPlanRejectedNotification(
+        id,
+        leader.id,
+        {
+          leaderName: leader.username,
+          departmentName: dept?.name || '',
+          approverName: approver?.username || '',
+          rejectedReason: reason,
+          rejectedAt: rejectedAt.toISOString(),
+          otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${id}`,
+        },
+      );
+      this.notificationsService.triggerImmediateSend(emailIds);
+    }
 
     return this.findOne(id, userId);
   }
 
   // ─── CANCEL ─────────────────────────────────────────────────
   async cancelOtPlan(id: number, userId: number) {
+    this.logger.log(`[cancelOtPlan] START id=${id} userId=${userId}`);
+
     const plan = await this.otPlanRepo.findOne({
       where: { id },
-      relations: ['employees'],
+      relations: ['employees', 'employees.checkins'],
     });
+    this.logger.log(`[cancelOtPlan] plan loaded: status=${plan?.status} employees=${plan?.employees?.length}`);
+
     if (!plan) throw new NotFoundException(`OT plan #${id} not found`);
     if (plan.createdBy !== userId) throw new ForbiddenException('Only the creator can cancel');
     if (plan.status !== OtPlanStatus.PENDING && plan.status !== OtPlanStatus.APPROVED) {
       throw new BadRequestException('Only pending or approved plans can be cancelled');
     }
 
-    await this.dataSource.transaction(async (manager) => {
-      const wasApproved = plan.status === OtPlanStatus.APPROVED;
+    // AC-01: Block cancellation if any employee has already checked in
+    const hasCheckedIn = plan.employees?.some((emp) =>
+      emp.checkins?.some((c) => c.status !== OtCheckinStatus.PENDING),
+    );
+    this.logger.log(`[cancelOtPlan] hasCheckedIn=${hasCheckedIn}`);
+    if (hasCheckedIn) {
+      throw new BadRequestException(
+        'Cannot cancel: one or more employees have already checked in',
+      );
+    }
 
-      plan.status = OtPlanStatus.CANCELLED;
-      plan.cancelledAt = new Date();
-      await manager.save(OtPlan, plan);
+    const wasApproved = plan.status === OtPlanStatus.APPROVED;
 
-      // If was approved, reverse only the balance transactions that have NOT been reconciled
-      if (wasApproved && plan.employees) {
-        for (const emp of plan.employees) {
-          // Skip if this employee's plan allocation was already reconciled at checkin-approval
-          const reconciledCount = await manager.count(OtBalanceTransaction, {
-            where: { sourceType: OtBalanceSource.OT_PLAN_RECONCILED, sourceId: Number(emp.id) },
-          });
-          if (reconciledCount > 0) continue;
+    // CC-01: fetch the current admin (BOD) in real-time
+    this.logger.log(`[cancelOtPlan] fetching leader/BOD/dept...`);
+    const [leader, currentBod, dept] = await Promise.all([
+      this.userRepo.findOne({ where: { id: plan.createdBy } }),
+      this.userRepo.findOne({ where: { role: UserRole.ADMIN } }),
+      this.deptRepo.findOne({ where: { id: plan.departmentId } }),
+    ]);
+    this.logger.log(`[cancelOtPlan] leader=${leader?.id} bod=${currentBod?.id} dept=${dept?.id}`);
+    const bod = currentBod;
 
-          const creditTxs = await manager.find(OtBalanceTransaction, {
-            where: { sourceType: OtBalanceSource.OT_PLAN_APPROVED, sourceId: Number(emp.id) },
-          });
+    const cancelledEmailIds: number[] = [];
+    const cancelledAt = new Date();
 
-          for (const creditTx of creditTxs) {
-            await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
-              employeeId: emp.employeeId,
-              direction: OtBalanceDirection.DEBIT,
-              amountMinutes: creditTx.amountMinutes,
-              sourceType: OtBalanceSource.OT_PLAN_CANCELLED,
-              sourceId: Number(emp.id),
-              periodYear: creditTx.periodYear,
-              periodMonth: creditTx.periodMonth,
-              periodDate: creditTx.periodDate,
-              dayType: creditTx.dayType,
-              otTypeId: creditTx.otTypeId,
-              actualDate: creditTx.actualDate,
-              note: `OT plan #${id} cancelled`,
-            }));
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        this.logger.log(`[cancelOtPlan] TX: updating plan status...`);
+        await manager.update(OtPlan, { id }, { status: OtPlanStatus.CANCELLED, cancelledAt });
+
+        // If was approved, reverse non-reconciled balance credits
+        if (wasApproved && plan.employees) {
+          for (const emp of plan.employees) {
+            this.logger.log(`[cancelOtPlan] TX: checking reconciled count for empId=${emp.id}`);
+            const reconciledCount = await manager.count(OtBalanceTransaction, {
+              where: { sourceType: OtBalanceSource.OT_PLAN_RECONCILED, sourceId: Number(emp.id) },
+            });
+            if (reconciledCount > 0) {
+              this.logger.log(`[cancelOtPlan] TX: empId=${emp.id} already reconciled, skipping`);
+              continue;
+            }
+
+            const creditTxs = await manager.find(OtBalanceTransaction, {
+              where: { sourceType: OtBalanceSource.OT_PLAN_APPROVED, sourceId: Number(emp.id) },
+            });
+            this.logger.log(`[cancelOtPlan] TX: empId=${emp.id} creditTxs=${creditTxs.length}`);
+
+            for (const creditTx of creditTxs) {
+              this.logger.log(`[cancelOtPlan] TX: inserting DEBIT tx for creditTx.id=${creditTx.id} amount=${creditTx.amountMinutes}`);
+              await manager.insert(OtBalanceTransaction, {
+                employeeId: emp.employeeId,
+                direction: OtBalanceDirection.DEBIT,
+                amountMinutes: creditTx.amountMinutes,
+                sourceType: OtBalanceSource.OT_PLAN_CANCELLED,
+                sourceId: Number(emp.id),
+                periodYear: creditTx.periodYear,
+                periodMonth: creditTx.periodMonth,
+                periodDate: creditTx.periodDate,
+                dayType: creditTx.dayType,
+                otTypeId: creditTx.otTypeId,
+                actualDate: creditTx.actualDate,
+                note: `OT plan #${id} cancelled`,
+              });
+            }
           }
         }
-      }
-    });
+
+        // Notify BOD
+        if (bod) {
+          this.logger.log(`[cancelOtPlan] TX: enqueue BOD email bod.id=${bod.id}`);
+          const bodEmailIds = await this.notificationsService.enqueueOtPlanCancelledNotification(
+            id,
+            bod.id,
+            {
+              bodName: bod.username,
+              leaderName: leader?.username || '',
+              departmentName: dept?.name || '',
+              otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${id}`,
+            },
+            manager,
+          );
+          cancelledEmailIds.push(...bodEmailIds);
+        }
+
+        // Notify employees only if plan was previously Approved
+        if (wasApproved && plan.employees) {
+          for (const emp of plan.employees) {
+            const empUser = await this.userRepo.findOne({ where: { id: emp.employeeId } });
+            if (empUser) {
+              this.logger.log(`[cancelOtPlan] TX: enqueue employee email empId=${emp.employeeId}`);
+              const empEmailIds = await this.notificationsService.enqueueOtAssignmentCancelledNotification(
+                id,
+                emp.employeeId,
+                {
+                  employeeName: empUser.username,
+                  otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${emp.id}`,
+                },
+                manager,
+              );
+              cancelledEmailIds.push(...empEmailIds);
+            }
+          }
+        }
+      });
+    } catch (err) {
+      this.logger.error(`[cancelOtPlan] TRANSACTION FAILED: ${err?.message}`, err?.stack);
+      throw err;
+    }
+
+    this.logger.log(`[cancelOtPlan] TX committed, triggering immediate send for ${cancelledEmailIds.length} emails`);
+    this.notificationsService.triggerImmediateSend(cancelledEmailIds);
 
     return this.findOne(id, userId);
   }
 
   // ─── CHECK-IN ───────────────────────────────────────────────
   async checkin(userId: number, dto: CheckinDto) {
+    this.logger.log(`[checkin] userId=${userId} otPlanEmployeeId=${dto.otPlanEmployeeId}`);
+
     const planEmp = await this.otPlanEmpRepo.findOne({
       where: { id: dto.otPlanEmployeeId },
       relations: ['otPlan'],
     });
+    this.logger.log(`[checkin] planEmp=${JSON.stringify({ id: planEmp?.id, employeeId: planEmp?.employeeId, planStatus: planEmp?.otPlan?.status })}`);
+
     if (!planEmp) throw new NotFoundException('OT plan employee assignment not found');
     if (planEmp.employeeId !== userId)
       throw new ForbiddenException('You can only check in for yourself');
@@ -634,16 +825,33 @@ export class OtManagementsService {
       throw new BadRequestException('Can only check in for approved plans');
     }
 
-    const checkin = await this.otCheckinRepo.findOne({
+    let checkin = await this.otCheckinRepo.findOne({
       where: { otPlanEmployeeId: planEmp.id, status: OtCheckinStatus.PENDING },
     });
-    if (!checkin) throw new BadRequestException('No pending check-in found');
+    this.logger.log(`[checkin] existing PENDING checkin=${JSON.stringify({ id: checkin?.id, status: checkin?.status })}`);
+
+    if (!checkin) {
+      // Guard: ensure no active check-in already exists for this assignment
+      const active = await this.otCheckinRepo.findOne({
+        where: { otPlanEmployeeId: planEmp.id, status: OtCheckinStatus.CHECKED_IN },
+      });
+      this.logger.log(`[checkin] existing CHECKED_IN record=${JSON.stringify({ id: active?.id })}`);
+      if (active) throw new BadRequestException('Already checked in for this assignment');
+      // Create the missing PENDING record on-the-fly (handles legacy assignments
+      // created before auto-PENDING creation was in place)
+      this.logger.log(`[checkin] no PENDING found — creating on-the-fly for otPlanEmployeeId=${planEmp.id}`);
+      checkin = this.otCheckinRepo.create({
+        otPlanEmployeeId: planEmp.id,
+        status: OtCheckinStatus.PENDING,
+      });
+    }
 
     checkin.status = OtCheckinStatus.CHECKED_IN;
     checkin.checkInAt = new Date();
-    await this.otCheckinRepo.save(checkin);
+    const saved = await this.otCheckinRepo.save(checkin);
+    this.logger.log(`[checkin] saved checkin id=${saved.id} status=${saved.status} checkInAt=${saved.checkInAt}`);
 
-    return { success: true, data: checkin };
+    return { success: true, data: saved };
   }
 
   // ─── CHECK-OUT ──────────────────────────────────────────────
@@ -895,6 +1103,231 @@ export class OtManagementsService {
     // BOM for Excel UTF-8 compatibility
     const bom = '\uFEFF';
     return Buffer.from(bom + rows.join('\n'), 'utf-8');
+  }
+
+  // ─── MY ASSIGNMENTS (Personal view) ──────────────────────
+
+  private deriveAssignedStatus(
+    planStatus: OtPlanStatus,
+    checkinStatus?: OtCheckinStatus,
+  ): string {
+    if (planStatus === OtPlanStatus.CANCELLED) return 'cancelled';
+    if (planStatus === OtPlanStatus.APPROVED) {
+      if (!checkinStatus || checkinStatus === OtCheckinStatus.PENDING) return 'approved';
+      if (checkinStatus === OtCheckinStatus.CHECKED_IN) return 'checked_in';
+      if (checkinStatus === OtCheckinStatus.CHECKED_OUT) return 'checked_out';
+      if (checkinStatus === OtCheckinStatus.LEADER_APPROVED) return 'confirmed';
+      if (checkinStatus === OtCheckinStatus.LEADER_REJECTED) return 'rejected';
+      if (checkinStatus === OtCheckinStatus.MISSED) return 'missed';
+    }
+    return planStatus as string;
+  }
+
+  async getMyAssignments(
+    userId: number,
+    query: {
+      page?: number;
+      pageSize?: number;
+      otBenefits?: string;
+      from?: string;
+      to?: string;
+      status?: string;
+    },
+  ) {
+    const { page = 1, pageSize = 10, otBenefits, from, to, status } = query;
+
+    const qb = this.otPlanEmpRepo
+      .createQueryBuilder('pe')
+      .leftJoinAndSelect('pe.otPlan', 'plan')
+      .leftJoinAndSelect('pe.checkins', 'checkin')
+      .where('pe.employeeId = :userId', { userId })
+      .orderBy('pe.startTime', 'DESC');
+
+    if (from) {
+      qb.andWhere('pe.startTime >= :from', { from: new Date(`${from}T00:00:00`) });
+    }
+    if (to) {
+      qb.andWhere('pe.startTime <= :to', { to: new Date(`${to}T23:59:59`) });
+    }
+
+    const assignments = await qb.getMany();
+
+    const mapped = assignments.map((pe) => {
+      const latestCheckin = pe.checkins?.length
+        ? [...pe.checkins].sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          )[0]
+        : null;
+
+      const assignedStatus = this.deriveAssignedStatus(
+        pe.otPlan?.status,
+        latestCheckin?.status,
+      );
+
+      const planIdStr = String(pe.otPlanId).padStart(3, '0');
+      const empIdStr = String(pe.id).padStart(3, '0');
+      const assignedOtId = `#OT-${planIdStr}-${empIdStr}`;
+
+      return {
+        id: pe.id,
+        assignedOtId,
+        planId: pe.otPlanId,
+        planTitle: pe.otPlan?.title || '',
+        startTime: pe.startTime,
+        endTime: pe.endTime,
+        durationMinutes: pe.durationMinutes,
+        actualDurationMinutes: latestCheckin?.actualDurationMinutes ?? null,
+        compensatoryMethod: latestCheckin?.compensatoryMethod ?? null,
+        status: assignedStatus,
+        plannedTask: pe.plannedTask,
+        checkin: latestCheckin
+          ? {
+              id: latestCheckin.id,
+              status: latestCheckin.status,
+              checkInAt: latestCheckin.checkInAt,
+              checkOutAt: latestCheckin.checkOutAt,
+              actualDurationMinutes: latestCheckin.actualDurationMinutes,
+              workOutput: latestCheckin.workOutput,
+              compensatoryMethod: latestCheckin.compensatoryMethod,
+              rejectedReason: latestCheckin.rejectedReason,
+              version: latestCheckin.version,
+            }
+          : null,
+      };
+    });
+
+    // Filter by derived status
+    const filtered1 = status ? mapped.filter((a) => a.status === status) : mapped;
+    // Filter by OT benefits (compensatory method) on confirmed/checked_out records
+    const filtered2 = otBenefits
+      ? filtered1.filter((a) => a.compensatoryMethod === otBenefits)
+      : filtered1;
+
+    const total = filtered2.length;
+    const paged = filtered2.slice((page - 1) * pageSize, page * pageSize);
+
+    return {
+      success: true,
+      data: paged,
+      page: { page, pageSize, total },
+    };
+  }
+
+  // ─── GET ASSIGNMENT DETAIL (Admin view, no userId restriction) ────────────
+  async getOtPlanEmployeeDetail(assignmentId: number) {
+    const pe = await this.otPlanEmpRepo.findOne({
+      where: { id: assignmentId },
+      relations: ['otPlan', 'checkins', 'employee', 'employee.department'],
+    });
+    if (!pe) {
+      throw new NotFoundException(`Assignment #${assignmentId} not found`);
+    }
+
+    const latestCheckin = pe.checkins?.length
+      ? [...pe.checkins].sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )[0]
+      : null;
+
+    const assignedStatus = this.deriveAssignedStatus(
+      pe.otPlan?.status,
+      latestCheckin?.status,
+    );
+
+    const planIdStr = String(pe.otPlanId).padStart(3, '0');
+    const empIdStr = String(pe.id).padStart(3, '0');
+    const assignedOtId = `#OT-${planIdStr}-${empIdStr}`;
+
+    return {
+      success: true,
+      data: {
+        id: pe.id,
+        assignedOtId,
+        planId: pe.otPlanId,
+        planTitle: pe.otPlan?.title || '',
+        startTime: pe.startTime,
+        endTime: pe.endTime,
+        durationMinutes: pe.durationMinutes,
+        plannedTask: pe.plannedTask,
+        status: assignedStatus,
+        employee: {
+          id: pe.employee?.id,
+          username: pe.employee?.username || '',
+          employeeId: pe.employee?.employeeId || '',
+          email: pe.employee?.email || '',
+          position: pe.employee?.position || '',
+          departmentName: (pe.employee as any)?.department?.name || '',
+        },
+        checkin: latestCheckin
+          ? {
+              id: latestCheckin.id,
+              status: latestCheckin.status,
+              checkInAt: latestCheckin.checkInAt,
+              checkOutAt: latestCheckin.checkOutAt,
+              actualDurationMinutes: latestCheckin.actualDurationMinutes,
+              workOutput: latestCheckin.workOutput,
+              compensatoryMethod: latestCheckin.compensatoryMethod,
+              rejectedReason: latestCheckin.rejectedReason,
+              version: latestCheckin.version,
+            }
+          : null,
+      },
+    };
+  }
+
+  async getMyAssignment(userId: number, assignmentId: number) {
+    const pe = await this.otPlanEmpRepo.findOne({
+      where: { id: assignmentId, employeeId: userId },
+      relations: ['otPlan', 'checkins'],
+    });
+    if (!pe) {
+      throw new NotFoundException(`Assignment #${assignmentId} not found`);
+    }
+
+    const latestCheckin = pe.checkins?.length
+      ? [...pe.checkins].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )[0]
+      : null;
+
+    const assignedStatus = this.deriveAssignedStatus(
+      pe.otPlan?.status,
+      latestCheckin?.status,
+    );
+
+    const planIdStr = String(pe.otPlanId).padStart(3, '0');
+    const empIdStr = String(pe.id).padStart(3, '0');
+    const assignedOtId = `#OT-${planIdStr}-${empIdStr}`;
+
+    return {
+      success: true,
+      data: {
+        id: pe.id,
+        assignedOtId,
+        planId: pe.otPlanId,
+        planTitle: pe.otPlan?.title || '',
+        startTime: pe.startTime,
+        endTime: pe.endTime,
+        durationMinutes: pe.durationMinutes,
+        plannedTask: pe.plannedTask,
+        status: assignedStatus,
+        checkin: latestCheckin
+          ? {
+              id: latestCheckin.id,
+              status: latestCheckin.status,
+              checkInAt: latestCheckin.checkInAt,
+              checkOutAt: latestCheckin.checkOutAt,
+              actualDurationMinutes: latestCheckin.actualDurationMinutes,
+              workOutput: latestCheckin.workOutput,
+              compensatoryMethod: latestCheckin.compensatoryMethod,
+              rejectedReason: latestCheckin.rejectedReason,
+              version: latestCheckin.version,
+            }
+          : null,
+      },
+    };
   }
 
   private csvEscape(value: string): string {
