@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OtBalanceTransaction } from '@/entities/ot-balance-transaction.entity';
 import { SystemSetting } from '@/entities/system-setting.entity';
+import { OtBalanceDirection } from '@/common/enums/ot-balance-direction.enum';
 
 export interface OtPolicy {
   maxOtHoursPerDay: number;
@@ -51,21 +52,23 @@ export class OtBalanceService {
     const dailyResult = await this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = OtBalanceDirection.CREDIT THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })
       .andWhere('t.period_date = :dateStr', { dateStr })
+      .setParameter('direction', OtBalanceDirection.CREDIT)
       .getRawOne();
 
     // Monthly hours
     const monthlyResult = await this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = OtBalanceDirection.CREDIT THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })
+      .setParameter('direction', OtBalanceDirection.CREDIT)
       .andWhere('t.period_year = :year', { year })
       .andWhere('t.period_month = :month', { month })
       .getRawOne();
@@ -74,10 +77,11 @@ export class OtBalanceService {
     const yearlyResult = await this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = OtBalanceDirection.CREDIT THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })
+      .setParameter('direction', OtBalanceDirection.CREDIT)
       .andWhere('t.period_year = :year', { year })
       .getRawOne();
 

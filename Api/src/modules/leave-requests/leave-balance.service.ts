@@ -151,8 +151,8 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = BalanceTxDirection.CREDIT ")
-      .andWhere("tx.source_type = BalanceTxSource.MONTHLY_ACCRUAL");
+      .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.CREDIT })
+      .andWhere("tx.source_type = :sourceType", { sourceType: BalanceTxSource.MONTHLY_ACCRUAL });
     if (atMonth) {
       accrualQb = accrualQb.andWhere('tx.period_month <= :atMonth', { atMonth });
     }
@@ -168,8 +168,8 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = BalanceTxDirection.CREDIT")
-      .andWhere("tx.source_type != BalanceTxSource.MONTHLY_ACCRUAL")
+      .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.CREDIT })
+      .andWhere("tx.source_type != :sourceType", { sourceType: BalanceTxSource.MONTHLY_ACCRUAL })
       .getRawOne();
     const otherCredit = parseFloat(otherCreditResult?.total ?? '0');
 
@@ -186,7 +186,7 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = 'DEBIT'");
+      .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.DEBIT });
 
     /// check lại balance
     if (excludeRequestId) {
@@ -891,8 +891,8 @@ export class LeaveBalanceService {
           .where('tx.employee_id = :employeeId', { employeeId })
           .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: leaveType.id })
           .andWhere('tx.period_year = :year', { year: startyear })
-          .andWhere("tx.direction = BalanceTxDirection.CREDIT")
-          .andWhere("tx.source_type NOT IN (BalanceTxSource.RELEASE, BalanceTxSource.REFUND)")
+          .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.CREDIT })
+          .andWhere("tx.source_type NOT IN (:...sourceTypes)", { sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] })
           .getRawOne();
         const entitlementCredit = parseFloat(entitlementResult?.total ?? '0');
 
@@ -1379,8 +1379,8 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = BalanceTxDirection.DEBIT")
-      .andWhere("tx.source_type IN (BalanceTxSource.RESERVE, BalanceTxSource.APPROVAL)");
+      .andWhere("tx.direction = :debit", { debit: BalanceTxDirection.DEBIT })
+      .andWhere("tx.source_type IN (:...sourceTypes)", { sourceTypes: [BalanceTxSource.RESERVE, BalanceTxSource.APPROVAL] });
 
     if (excludeRequestId) {
       debitQb = debitQb.andWhere('(tx.source_id IS NULL OR tx.source_id != :excludeRequestId)', {
@@ -1397,8 +1397,8 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = BalanceTxDirection.CREDIT")
-      .andWhere("tx.source_type IN (BalanceTxSource.RELEASE, BalanceTxSource.REFUND)");
+      .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.CREDIT })
+      .andWhere("tx.source_type IN (:...sourceTypes)", { sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] });
 
     if (excludeRequestId) {
       creditQb = creditQb.andWhere('(tx.source_id IS NULL OR tx.source_id != :excludeRequestId)', {
@@ -1779,8 +1779,8 @@ export class LeaveBalanceService {
         .where('tx.employee_id = :employeeId', { employeeId })
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
         .andWhere('tx.period_year = :year', { year })
-        .andWhere("tx.direction = 'CREDIT'")
-        .andWhere("tx.source_type IN ('RELEASE', 'REFUND')")
+        .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
+        .andWhere('tx.source_type IN (:...sourceTypes)', { sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] })
         .getRawOne();
       const reversalCredit = parseFloat(reversalCreditResult?.total ?? '0');
 
@@ -1791,7 +1791,8 @@ export class LeaveBalanceService {
         .where('tx.employee_id = :employeeId', { employeeId })
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
         .andWhere('tx.period_year = :year', { year })
-        .andWhere("tx.direction = 'DEBIT'")
+        .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.DEBIT })
+        .andWhere("tx.source_type IN (:...sourceTypes)", { sourceTypes: [BalanceTxSource.RESERVE, BalanceTxSource.APPROVAL] })
         .getRawOne();
       const grossDebit = parseFloat(grossDebitResult?.total ?? '0');
 
@@ -1802,8 +1803,8 @@ export class LeaveBalanceService {
         .where('tx.employee_id = :employeeId', { employeeId })
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
         .andWhere('tx.period_year = :year', { year })
-        .andWhere("tx.direction = 'DEBIT'")
-        .andWhere("tx.source_type = 'RESERVE'")
+        .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.DEBIT })
+        .andWhere('tx.source_type = :sourceType', { sourceType: BalanceTxSource.RESERVE })
         .getRawOne();
       const pendingDays = parseFloat(pendingResult?.total ?? '0');
 
@@ -1841,7 +1842,7 @@ export class LeaveBalanceService {
           .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
           .andWhere('tx.period_year = :year', { year })
           .andWhere('tx.period_month <= :effectiveMonth', { effectiveMonth })
-          .andWhere("tx.direction = 'DEBIT'")
+          .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.DEBIT })
           .getRawOne();
         const unpaidGrossDebit = parseFloat(unpaidDebitResult?.total ?? '0');
 
@@ -1852,8 +1853,8 @@ export class LeaveBalanceService {
           .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
           .andWhere('tx.period_year = :year', { year })
           .andWhere('tx.period_month <= :effectiveMonth', { effectiveMonth })
-          .andWhere("tx.direction = 'CREDIT'")
-          .andWhere("tx.source_type IN ('RELEASE', 'REFUND')")
+          .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
+          .andWhere('tx.source_type IN (:...sourceTypes)', { sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] })
           .getRawOne();
         const unpaidReleases = parseFloat(unpaidReleasesResult?.total ?? '0');
 
@@ -1880,8 +1881,8 @@ export class LeaveBalanceService {
           .where('tx.employee_id = :employeeId', { employeeId })
           .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
           .andWhere('tx.period_year = :year', { year })
-          .andWhere("tx.direction = 'CREDIT'")
-          .andWhere("tx.source_type NOT IN ('RELEASE', 'REFUND')")
+          .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
+          .andWhere('tx.source_type NOT IN (:...excludeSourceTypes)', { excludeSourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] })
           .getRawOne();
         const entitlementCredit = parseFloat(entitlementResult?.total ?? '0');
 
