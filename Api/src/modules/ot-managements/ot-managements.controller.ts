@@ -65,7 +65,11 @@ export class OtManagementsController {
   @ApiOperation({ summary: 'Leader approves employee check-in' })
   @ApiResponse({ status: 200, description: 'Check-in approved.' })
   async approveCheckin(@Body() dto: ApproveCheckinDto, @Request() req: AuthenticatedRequest) {
-    return this.otService.approveCheckin(req.user.id, dto.checkinId, dto.version);
+    return this.otService.approveCheckin(req.user.id, dto.checkinId, dto.version, {
+      checkInAt: dto.checkInAt,
+      checkOutAt: dto.checkOutAt,
+      compensatoryMethod: dto.compensatoryMethod,
+    });
   }
 
   @Patch('checkin/reject')

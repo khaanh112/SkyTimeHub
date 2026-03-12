@@ -13,6 +13,8 @@ import { User } from '@/entities/users.entity';
 import { Department } from '@/entities/departments.entity';
 import { CalendarOverride } from '@/entities/calendar-override.entity';
 import { SystemSetting } from '@/entities/system-setting.entity';
+import { CompBalanceTransaction } from '@/entities/comp-balance-transaction.entity';
+import { LeaveRequest } from '@/entities/leave_request.entity';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 
 @Module({
@@ -28,6 +30,8 @@ import { NotificationsModule } from '@/modules/notifications/notifications.modul
       Department,
       CalendarOverride,
       SystemSetting,
+      CompBalanceTransaction,
+      LeaveRequest,
     ]),
     NotificationsModule,
   ],

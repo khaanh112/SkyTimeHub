@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsInt,
   IsArray,
+  IsBoolean,
   ValidateNested,
   ArrayMinSize,
   Length,
@@ -50,4 +51,13 @@ export class CreateOtPlanDto {
   @ArrayMinSize(1)
   @Type(() => CreateOtPlanEmployeeDto)
   employees: CreateOtPlanEmployeeDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Set to true when the user has acknowledged the balance-exceeded warning (AC-03 soft confirmation)',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  acknowledgeBalanceExceeded?: boolean;
 }

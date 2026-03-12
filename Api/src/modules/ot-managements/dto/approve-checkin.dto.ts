@@ -1,7 +1,7 @@
-import { IsInt, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
-
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OtCompensatoryMethod } from '@/common/enums/ot-compensatory-method.enum';
 
 export class ApproveCheckinDto {
   @ApiProperty({ example: 1, description: 'Check-in record ID' })
@@ -14,4 +14,28 @@ export class ApproveCheckinDto {
   @IsInt()
   @Min(1)
   version: number;
+
+  @ApiPropertyOptional({
+    example: '2026-03-15T18:00:00.000Z',
+    description: 'Leader-overridden check-in time (ISO 8601). Required when status is MISSED.',
+  })
+  @IsOptional()
+  @IsDateString()
+  checkInAt?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-03-15T22:00:00.000Z',
+    description: 'Leader-overridden check-out time (ISO 8601). Required when status is MISSED.',
+  })
+  @IsOptional()
+  @IsDateString()
+  checkOutAt?: string;
+
+  @ApiPropertyOptional({
+    enum: OtCompensatoryMethod,
+    description: 'Override compensatory method (paid | comp_leave). Keeps employee choice if omitted.',
+  })
+  @IsOptional()
+  @IsString()
+  compensatoryMethod?: OtCompensatoryMethod;
 }

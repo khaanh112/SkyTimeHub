@@ -70,9 +70,15 @@ const otService = {
     return response.data.data || response.data;
   },
 
-  // Leader approve check-in
-  approveCheckin: async (checkinId, version) => {
-    const response = await api.patch('/ot-plans/checkin/approve', { checkinId, version });
+  // Leader approve check-in (with optional time overrides)
+  approveCheckin: async (checkinId, version, overrides = {}) => {
+    const response = await api.patch('/ot-plans/checkin/approve', {
+      checkinId,
+      version,
+      ...(overrides.checkInAt ? { checkInAt: overrides.checkInAt } : {}),
+      ...(overrides.checkOutAt ? { checkOutAt: overrides.checkOutAt } : {}),
+      ...(overrides.compensatoryMethod ? { compensatoryMethod: overrides.compensatoryMethod } : {}),
+    });
     return response.data.data || response.data;
   },
 

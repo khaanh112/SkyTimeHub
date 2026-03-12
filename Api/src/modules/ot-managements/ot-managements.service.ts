@@ -14,12 +14,18 @@ import { OtCheckin } from '@/entities/ot-checkin.entity';
 import { OtCheckinItem } from '@/entities/ot-checkin-item.entity';
 import { OtType } from '@/entities/ot-type.entity';
 import { OtBalanceTransaction } from '@/entities/ot-balance-transaction.entity';
+import { CompBalanceTransaction } from '@/entities/comp-balance-transaction.entity';
+import { LeaveRequest } from '@/entities/leave_request.entity';
 import { User } from '@/entities/users.entity';
 import { Department } from '@/entities/departments.entity';
 import { CalendarOverride } from '@/entities/calendar-override.entity';
 import { OtPlanStatus } from '@/common/enums/ot-plan-status.enum';
 import { OtCheckinStatus } from '@/common/enums/ot-checkin-status.enum';
 import { OtBalanceSource } from '@/common/enums/ot-balance-source.enum';
+import { OtCompensatoryMethod } from '@/common/enums/ot-compensatory-method.enum';
+import { CompTxDirection } from '@/common/enums/comp-tx-direction.enum';
+import { CompTxSource } from '@/common/enums/comp-tx-source.enum';
+import { LeaveRequestStatus } from '@/common/enums/request_status';
 import { UserRole } from '@/common/enums/roles.enum';
 import { OtDayType } from '@/common/enums/ot-day-type.enum';
 import { CreateOtPlanDto } from './dto/create-ot-plan.dto';
@@ -52,6 +58,10 @@ export class OtManagementsService {
     private readonly otTypeRepo: Repository<OtType>,
     @InjectRepository(OtBalanceTransaction)
     private readonly otBalanceRepo: Repository<OtBalanceTransaction>,
+    @InjectRepository(CompBalanceTransaction)
+    private readonly compBalanceRepo: Repository<CompBalanceTransaction>,
+    @InjectRepository(LeaveRequest)
+    private readonly leaveRequestRepo: Repository<LeaveRequest>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(Department)
@@ -111,15 +121,96 @@ export class OtManagementsService {
       }
     }
 
-    // Yearly limit check per employee (200 h = 12 000 min)
+    // ── CC-01: Self-overlap check within this DTO ────────────
+    const grouped = new Map<number, { startTime: string; endTime: string; index: number }[]>();
+    for (let i = 0; i < dto.employees.length; i++) {
+      const e = dto.employees[i];
+      const list = grouped.get(e.employeeId) ?? [];
+      list.push({ startTime: e.startTime, endTime: e.endTime, index: i });
+      grouped.set(e.employeeId, list);
+    }
+    for (const [empId, rows] of grouped.entries()) {
+      for (let a = 0; a < rows.length; a++) {
+        for (let b = a + 1; b < rows.length; b++) {
+          const aStart = new Date(rows[a].startTime).getTime();
+          const aEnd   = new Date(rows[a].endTime).getTime();
+          const bStart = new Date(rows[b].startTime).getTime();
+          const bEnd   = new Date(rows[b].endTime).getTime();
+          if (aStart < bEnd && bStart < aEnd) {
+            const empUser = empUsers.find((u) => u.id === empId);
+            throw new AppException(
+              ErrorCode.OT_OVERLAP,
+              `The overtime periods for ${empUser?.username ?? `employee ${empId}`} overlap within this plan. Please adjust the start and end times.`,
+              409,
+            );
+          }
+        }
+      }
+    }
+
+    // ── AC-02: Overlap with existing plans ──────────────────
     for (const empDto of dto.employees) {
-      const start = new Date(empDto.startTime);
-      const newMinutes = computeDurationMinutes(start, new Date(empDto.endTime));
-      const yearlyMinutes = await this.getYearlyNetMinutes(empDto.employeeId, start.getFullYear());
-      if (yearlyMinutes + newMinutes > 12_000) {
-        throw new BadRequestException(
-          `Employee ${empDto.employeeId} would exceed the 200-hour yearly OT limit for ${start.getFullYear()}`,
+      const overlappingPlan = await this.otPlanEmpRepo
+        .createQueryBuilder('pe')
+        .innerJoin('pe.otPlan', 'plan')
+        .where('pe.employeeId = :empId', { empId: empDto.employeeId })
+        .andWhere('plan.status IN (:...statuses)', { statuses: [OtPlanStatus.PENDING, OtPlanStatus.APPROVED] })
+        .andWhere('pe.startTime < :end', { end: new Date(empDto.endTime) })
+        .andWhere('pe.endTime > :start', { start: new Date(empDto.startTime) })
+        .getOne();
+      if (overlappingPlan) {
+        const empUser = empUsers.find((u) => u.id === empDto.employeeId);
+        throw new AppException(
+          ErrorCode.OT_OVERLAP,
+          `Submission failed: The overtime period for ${empUser?.username ?? `employee ${empDto.employeeId}`} overlaps with their scheduled leave or another existing OT plan.`,
+          409,
         );
+      }
+    }
+
+    // ── AC-02: Overlap with approved leave requests ─────────
+    for (const empDto of dto.employees) {
+      const otStart = new Date(empDto.startTime);
+      const otEnd   = new Date(empDto.endTime);
+      const otStartDate = otStart.toISOString().slice(0, 10);
+      const otEndDate   = otEnd.toISOString().slice(0, 10);
+
+      const overlappingLeave = await this.leaveRequestRepo
+        .createQueryBuilder('lr')
+        .where('lr.userId = :empId', { empId: empDto.employeeId })
+        .andWhere('lr.status = :status', { status: LeaveRequestStatus.APPROVED})
+        .andWhere('lr.startDate <= :otEnd', { otEnd: otEndDate })
+        .andWhere('lr.endDate >= :otStart', { otStart: otStartDate })
+        .getOne();
+      if (overlappingLeave) {
+        const empUser = empUsers.find((u) => u.id === empDto.employeeId);
+        throw new AppException(
+          ErrorCode.OT_OVERLAP,
+          `Submission failed: The overtime period for ${empUser?.username ?? `employee ${empDto.employeeId}`} overlaps with their scheduled leave or another existing OT plan.`,
+          409,
+        );
+      }
+    }
+
+    // ── AC-03: Soft balance warning (daily / monthly / yearly) ─
+    if (!dto.acknowledgeBalanceExceeded) {
+      for (const empDto of dto.employees) {
+        const start = new Date(empDto.startTime);
+        const newMinutes = computeDurationMinutes(start, new Date(empDto.endTime));
+        const isHoliday = false; // plan-time check uses conservative non-holiday cap
+        const result = await this.otBalanceService.validateOtLimits(
+          empDto.employeeId,
+          start,
+          newMinutes,
+          isHoliday,
+        );
+        if (!result.valid) {
+          throw new AppException(
+            ErrorCode.BALANCE_EXCEEDED,
+            result.violations.join('; '),
+            422,
+          );
+        }
       }
     }
 
@@ -154,6 +245,19 @@ export class OtManagementsService {
         });
         const savedPlanEmp = await manager.save(OtPlanEmployee, planEmp);
 
+        // ── Balance CREDIT: ghi ngay khi tạo plan ───────────
+        await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
+          employeeId: empDto.employeeId,
+          direction: OtBalanceDirection.CREDIT,
+          amountMinutes: durationMinutes,
+          sourceType: OtBalanceSource.OT_PLAN_APPROVED,
+          sourceId: Number(savedPlanEmp.id),
+          periodYear: start.getFullYear(),
+          periodMonth: start.getMonth() + 1,
+          periodDate: start.toISOString().slice(0, 10),
+          note: `OT plan submitted — plan employee #${savedPlanEmp.id}`,
+        }));
+
         // Create pending checkin record
         const checkin = manager.create(OtCheckin, {
           otPlanEmployeeId: savedPlanEmp.id,
@@ -163,12 +267,6 @@ export class OtManagementsService {
 
         totalMinutes += durationMinutes;
       }
-
-      // Update total duration
-      savedPlan.totalDurationMinutes = totalMinutes;
-      await manager.save(OtPlan, savedPlan);
-
-      // Enqueue submitted notification to BOD inside the transaction (transactional outbox)
       const emailIds = await this.notificationsService.enqueueOtPlanSubmittedNotification(
         savedPlan.id,
         approver.id,
@@ -575,21 +673,7 @@ export class OtManagementsService {
       plan.approvedAt = approvedAt;
       await manager.save(OtPlan, plan);
 
-      // Create one bulk CREDIT reservation per employee — no day-type splitting at plan time
-      for (const emp of plan.employees) {
-        const startDate = new Date(emp.startTime);
-        await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
-          employeeId: emp.employeeId,
-          direction: OtBalanceDirection.CREDIT,
-          amountMinutes: emp.durationMinutes,
-          sourceType: OtBalanceSource.OT_PLAN_APPROVED,
-          sourceId: Number(emp.id),
-          periodYear: startDate.getFullYear(),
-          periodMonth: startDate.getMonth() + 1,
-          periodDate: startDate.toISOString().slice(0, 10),
-          note: `OT plan #${id} approved`,
-        }));
-      }
+      // Balance CREDITs were already written at plan creation time — nothing to do here.
 
       // Notify dept leader
       if (leader) {
@@ -634,7 +718,10 @@ export class OtManagementsService {
 
   // ─── REJECT ─────────────────────────────────────────────────
   async rejectOtPlan(id: number, userId: number, reason: string, version: number) {
-    const plan = await this.otPlanRepo.findOne({ where: { id } });
+    const plan = await this.otPlanRepo.findOne({
+      where: { id },
+      relations: ['employees'],
+    });
     if (!plan) throw new NotFoundException(`OT plan #${id} not found`);
     if (plan.approverId !== userId)
       throw new ForbiddenException('Only the assigned approver can reject');
@@ -651,27 +738,54 @@ export class OtManagementsService {
     ]);
 
     const rejectedAt = new Date();
-    plan.status = OtPlanStatus.REJECTED;
-    plan.rejectedReason = reason;
-    plan.rejectedAt = rejectedAt;
-    await this.otPlanRepo.save(plan);
+    const rejectedEmailIds: number[] = [];
 
-    // Notify dept leader
-    if (leader) {
-      const emailIds = await this.notificationsService.enqueueOtPlanRejectedNotification(
-        id,
-        leader.id,
-        {
-          leaderName: leader.username,
-          departmentName: dept?.name || '',
-          approverName: approver?.username || '',
-          rejectedReason: reason,
-          rejectedAt: rejectedAt.toISOString(),
-          otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${id}`,
-        },
-      );
-      this.notificationsService.triggerImmediateSend(emailIds);
-    }
+    await this.dataSource.transaction(async (manager) => {
+      plan.status = OtPlanStatus.REJECTED;
+      plan.rejectedReason = reason;
+      plan.rejectedAt = rejectedAt;
+      await manager.save(OtPlan, plan);
+
+      // Reverse balance CREDITs written at plan creation
+      for (const emp of plan.employees) {
+        const creditTxs = await manager.find(OtBalanceTransaction, {
+          where: { sourceType: OtBalanceSource.OT_PLAN_APPROVED, sourceId: Number(emp.id) },
+        });
+        for (const creditTx of creditTxs) {
+          await manager.insert(OtBalanceTransaction, {
+            employeeId: emp.employeeId,
+            direction: OtBalanceDirection.DEBIT,
+            amountMinutes: creditTx.amountMinutes,
+            sourceType: OtBalanceSource.OT_PLAN_REJECTED,
+            sourceId: Number(emp.id),
+            periodYear: creditTx.periodYear,
+            periodMonth: creditTx.periodMonth,
+            periodDate: creditTx.periodDate,
+            note: `OT plan #${id} rejected`,
+          });
+        }
+      }
+
+      // Notify dept leader
+      if (leader) {
+        const emailIds = await this.notificationsService.enqueueOtPlanRejectedNotification(
+          id,
+          leader.id,
+          {
+            leaderName: leader.username,
+            departmentName: dept?.name || '',
+            approverName: approver?.username || '',
+            rejectedReason: reason,
+            rejectedAt: rejectedAt.toISOString(),
+            otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${id}`,
+          },
+          manager,
+        );
+        rejectedEmailIds.push(...emailIds);
+      }
+    });
+
+    this.notificationsService.triggerImmediateSend(rejectedEmailIds);
 
     return this.findOne(id, userId);
   }
@@ -723,8 +837,8 @@ export class OtManagementsService {
         this.logger.log(`[cancelOtPlan] TX: updating plan status...`);
         await manager.update(OtPlan, { id }, { status: OtPlanStatus.CANCELLED, cancelledAt });
 
-        // If was approved, reverse non-reconciled balance credits
-        if (wasApproved && plan.employees) {
+        // Reverse non-reconciled balance CREDITs (written at plan creation, PENDING or APPROVED)
+        if (plan.employees) {
           for (const emp of plan.employees) {
             this.logger.log(`[cancelOtPlan] TX: checking reconciled count for empId=${emp.id}`);
             const reconciledCount = await manager.count(OtBalanceTransaction, {
@@ -885,41 +999,85 @@ export class OtManagementsService {
   }
 
   // ─── APPROVE CHECK-IN ──────────────────────────────────────
-  async approveCheckin(userId: number, checkinId: number, version: number) {
+  async approveCheckin(
+    userId: number,
+    checkinId: number,
+    version: number,
+    overrides: { checkInAt?: string; checkOutAt?: string; compensatoryMethod?: OtCompensatoryMethod } = {},
+  ) {
+    this.logger.log(`[approveCheckin] START userId=${userId} checkinId=${checkinId} version=${version} overrides=${JSON.stringify(overrides)}`);
+
     const checkin = await this.otCheckinRepo.findOne({
       where: { id: checkinId },
       relations: ['otPlanEmployee', 'otPlanEmployee.otPlan'],
     });
+    this.logger.log(`[approveCheckin] checkin loaded: ${JSON.stringify({ id: checkin?.id, status: checkin?.status, version: checkin?.version, checkInAt: checkin?.checkInAt, checkOutAt: checkin?.checkOutAt, compensatoryMethod: checkin?.compensatoryMethod })}`);
     if (!checkin) throw new NotFoundException('Check-in record not found');
 
-    // Verify user is department leader
+    // CC-01: Real-time dept leader check
     const plan = checkin.otPlanEmployee.otPlan;
-    if (plan.createdBy !== userId) {
-      throw new ForbiddenException(
-        'Only the plan creator (department leader) can approve check-ins',
-      );
+    this.logger.log(`[approveCheckin] plan loaded: id=${plan?.id} departmentId=${plan?.departmentId} status=${plan?.status}`);
+    const dept = await this.deptRepo.findOne({ where: { id: plan.departmentId } });
+    this.logger.log(`[approveCheckin] dept loaded: id=${dept?.id} leaderId=${dept?.leaderId} requestUserId=${userId}`);
+    if (dept?.leaderId !== userId) {
+      this.logger.warn(`[approveCheckin] FORBIDDEN: dept.leaderId=${dept?.leaderId} !== userId=${userId}`);
+      throw new ForbiddenException('Only the current department leader can approve check-ins');
     }
-    if (checkin.status !== OtCheckinStatus.CHECKED_OUT) {
-      throw new BadRequestException('Can only approve checked-out records');
+    if (
+      checkin.status !== OtCheckinStatus.CHECKED_OUT &&
+      checkin.status !== OtCheckinStatus.MISSED
+    ) {
+      this.logger.warn(`[approveCheckin] BAD_REQUEST: invalid status=${checkin.status}`);
+      throw new BadRequestException('Can only approve checked-out or missed records');
     }
     if (checkin.version !== version) {
+      this.logger.warn(`[approveCheckin] CONFLICT: checkin.version=${checkin.version} !== provided version=${version}`);
       throw new ConflictException('Check-in has been modified. Please refresh.');
     }
 
+    // AC-02: Apply leader-overridden times (or require them for MISSED)
+    const effectiveCheckIn  = overrides.checkInAt  ? new Date(overrides.checkInAt)  : checkin.checkInAt;
+    const effectiveCheckOut = overrides.checkOutAt ? new Date(overrides.checkOutAt) : checkin.checkOutAt;
+    this.logger.log(`[approveCheckin] effectiveCheckIn=${effectiveCheckIn?.toISOString()} effectiveCheckOut=${effectiveCheckOut?.toISOString()}`);
+    if (!effectiveCheckIn || !effectiveCheckOut) {
+      this.logger.warn(`[approveCheckin] BAD_REQUEST: missing effectiveCheckIn or effectiveCheckOut`);
+      throw new BadRequestException(
+        'Check-in and check-out times are required. Provide them via checkInAt/checkOutAt for missed records.',
+      );
+    }
+    if (effectiveCheckOut <= effectiveCheckIn) {
+      this.logger.warn(`[approveCheckin] BAD_REQUEST: checkOut <= checkIn`);
+      throw new BadRequestException('Check-out time cannot be earlier than check-in time.');
+    }
+
+    const planEmp = checkin.otPlanEmployee;
+    this.logger.log(`[approveCheckin] planEmp: id=${planEmp?.id} employeeId=${planEmp?.employeeId}`);
+    const empUser = await this.userRepo.findOne({ where: { id: planEmp.employeeId } });
+    this.logger.log(`[approveCheckin] empUser loaded: id=${empUser?.id} username=${empUser?.username}`);
+    const confirmedEmailIds: number[] = [];
+
     return this.dataSource.transaction(async (manager) => {
+      this.logger.log(`[approveCheckin] TX: start`);
+
+      // Apply overrides to record
+      if (overrides.checkInAt)  checkin.checkInAt  = effectiveCheckIn;
+      if (overrides.checkOutAt) checkin.checkOutAt = effectiveCheckOut;
+      if (overrides.compensatoryMethod) checkin.compensatoryMethod = overrides.compensatoryMethod;
+      checkin.actualDurationMinutes = computeDurationMinutes(effectiveCheckIn, effectiveCheckOut);
       checkin.status = OtCheckinStatus.LEADER_APPROVED;
       checkin.leaderApprovedBy = userId;
       checkin.leaderApprovedAt = new Date();
+      this.logger.log(`[approveCheckin] TX: saving checkin actualDurationMinutes=${checkin.actualDurationMinutes}`);
       await manager.save(OtCheckin, checkin);
-
-      const planEmp = checkin.otPlanEmployee;
 
       // ── Phase A: Reconcile plan reservation ────────────────
       // Reverse all OT_PLAN_APPROVED CREDITs for this plan employee
       const planCreditTxs = await manager.find(OtBalanceTransaction, {
         where: { sourceType: OtBalanceSource.OT_PLAN_APPROVED, sourceId: Number(planEmp.id) },
       });
+      this.logger.log(`[approveCheckin] Phase A: planCreditTxs count=${planCreditTxs.length} for planEmp.id=${planEmp.id}`);
       for (const creditTx of planCreditTxs) {
+        this.logger.log(`[approveCheckin] Phase A: reversing creditTx.id=${creditTx.id} amount=${creditTx.amountMinutes}`);
         await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
           employeeId: planEmp.employeeId,
           direction: OtBalanceDirection.DEBIT,
@@ -932,28 +1090,33 @@ export class OtManagementsService {
           dayType: creditTx.dayType,
           otTypeId: creditTx.otTypeId,
           actualDate: creditTx.actualDate,
-          note: `Plan employee #${planEmp.id} reconciled on checkin`,
+          note: `Plan employee #${planEmp.id} reconciled on checkin confirm`,
         }));
       }
 
-      // ── Phase B & C: Split actual hours and enforce daily caps ─
-      if (!checkin.checkInAt || !checkin.checkOutAt) {
-        throw new BadRequestException('Check-in/out times are required for approval');
-      }
+      // ── Phase B & C: Split actual hours ──────────────────────
+      this.logger.log(`[approveCheckin] Phase B/C: splitting segments from ${effectiveCheckIn.toISOString()} to ${effectiveCheckOut.toISOString()}`);
       const rawSegments = await splitIntoSegments(
-        new Date(checkin.checkInAt),
-        new Date(checkin.checkOutAt),
+        effectiveCheckIn,
+        effectiveCheckOut,
         this.calendarRepo,
       );
+      this.logger.log(`[approveCheckin] Phase B/C: rawSegments count=${rawSegments.length}`);
       const segments = await applyCarryOver(rawSegments, this.calendarRepo);
+      this.logger.log(`[approveCheckin] Phase B/C: segments after carryOver count=${segments.length} details=${JSON.stringify(segments.map(s => ({ dayType: s.dayType, durationMinutes: s.durationMinutes, actualDate: s.actualDate, attributedDate: s.attributedDate })))}`);
 
       // ── Phase D: Save OtCheckinItems ───────────────────────
       const otTypes   = await this.otTypeRepo.find();
       const otTypeMap = new Map(otTypes.map(t => [t.dayType as OtDayType, t]));
+      this.logger.log(`[approveCheckin] Phase D: otTypes loaded count=${otTypes.length}`);
 
       for (const seg of segments) {
         const otType = otTypeMap.get(seg.dayType);
-        if (!otType) continue;
+        if (!otType) {
+          this.logger.warn(`[approveCheckin] Phase D: no otType for dayType=${seg.dayType}, skipping`);
+          continue;
+        }
+        this.logger.log(`[approveCheckin] Phase D: saving OtCheckinItem dayType=${seg.dayType} duration=${seg.durationMinutes}`);
         await manager.save(OtCheckinItem, manager.create(OtCheckinItem, {
           otCheckinId: Number(checkin.id),
           employeeId: planEmp.employeeId,
@@ -968,6 +1131,7 @@ export class OtManagementsService {
       }
 
       // ── Phase E: Credit actual hours with monthly carry-over ─
+      this.logger.log(`[approveCheckin] Phase E: getting monthlyBalanceMap for employeeId=${planEmp.employeeId}`);
       const monthlyMap = await this.getMonthlyBalanceMap(planEmp.employeeId);
       for (const seg of segments) {
         const otType = otTypeMap.get(seg.dayType);
@@ -977,6 +1141,7 @@ export class OtManagementsService {
           monthlyMap,
           seg.durationMinutes,
         );
+        this.logger.log(`[approveCheckin] Phase E: crediting seg dayType=${seg.dayType} duration=${seg.durationMinutes} period=${periodYear}/${periodMonth}`);
         await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
           employeeId: planEmp.employeeId,
           direction: OtBalanceDirection.CREDIT,
@@ -989,11 +1154,52 @@ export class OtManagementsService {
           dayType: seg.dayType,
           otTypeId: Number(otType.id),
           actualDate: seg.actualDate,
-          note: `OT check-in #${checkin.id} approved`,
+          note: `OT check-in #${checkin.id} confirmed`,
         }));
       }
 
+      // ── Phase F: Comp leave credit ────────────────────────
+      const effectiveMethod = checkin.compensatoryMethod;
+      this.logger.log(`[approveCheckin] Phase F: compensatoryMethod=${effectiveMethod}`);
+      if (effectiveMethod === OtCompensatoryMethod.COMP_LEAVE) {
+        const totalActualMinutes = segments.reduce((sum, s) => sum + s.durationMinutes, 0);
+        this.logger.log(`[approveCheckin] Phase F: crediting comp leave totalActualMinutes=${totalActualMinutes}`);
+        await manager.save(CompBalanceTransaction, manager.create(CompBalanceTransaction, {
+          employeeId: planEmp.employeeId,
+          direction: CompTxDirection.CREDIT,
+          amountMinutes: totalActualMinutes,
+          sourceType: CompTxSource.OT_CHECKIN_APPROVED,
+          sourceId: Number(checkin.id),
+          note: `OT check-in #${checkin.id} confirmed — comp leave credit`,
+        }));
+      }
+
+      // ── Phase G: Notify employee ──────────────────────────
+      this.logger.log(`[approveCheckin] Phase G: empUser=${empUser?.id}`);
+      if (empUser) {
+        const emailIds = await this.notificationsService.enqueueOtCheckinConfirmedNotification(
+          Number(checkin.id),
+          planEmp.employeeId,
+          {
+            employeeName: empUser.username,
+            otPlanTitle: plan.title,
+            otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+          },
+          manager,
+        );
+        this.logger.log(`[approveCheckin] Phase G: enqueued emailIds=${JSON.stringify(emailIds)}`);
+        confirmedEmailIds.push(...emailIds);
+      }
+
+      this.logger.log(`[approveCheckin] TX: committed successfully`);
       return { success: true, data: checkin };
+    }).then((result) => {
+      this.logger.log(`[approveCheckin] TX committed, triggering immediate send for ${confirmedEmailIds.length} emails`);
+      this.notificationsService.triggerImmediateSend(confirmedEmailIds);
+      return result;
+    }).catch((err) => {
+      this.logger.error(`[approveCheckin] TRANSACTION FAILED: ${err?.message}`, err?.stack);
+      throw err;
     });
   }
 
@@ -1001,26 +1207,71 @@ export class OtManagementsService {
   async rejectCheckin(userId: number, checkinId: number, reason: string, version: number) {
     const checkin = await this.otCheckinRepo.findOne({
       where: { id: checkinId },
-      relations: ['otPlanEmployee', 'otPlanEmployee.otPlan'],
+      relations: ['otPlanEmployee', 'otPlanEmployee.otPlan', 'otPlanEmployee.otPlan.department'],
     });
     if (!checkin) throw new NotFoundException('Check-in record not found');
 
+    // CC-01: Real-time dept leader check
     const plan = checkin.otPlanEmployee.otPlan;
-    if (plan.createdBy !== userId) {
-      throw new ForbiddenException(
-        'Only the plan creator (department leader) can reject check-ins',
-      );
+    const dept = await this.deptRepo.findOne({ where: { id: plan.departmentId } });
+    if (dept?.leaderId !== userId) {
+      throw new ForbiddenException('Only the current department leader can reject check-ins');
     }
-    if (checkin.status !== OtCheckinStatus.CHECKED_OUT) {
-      throw new BadRequestException('Can only reject checked-out records');
+    if (
+      checkin.status !== OtCheckinStatus.CHECKED_OUT &&
+      checkin.status !== OtCheckinStatus.MISSED
+    ) {
+      throw new BadRequestException('Can only reject checked-out or missed records');
     }
     if (checkin.version !== version) {
       throw new ConflictException('Check-in has been modified. Please refresh.');
     }
 
-    checkin.status = OtCheckinStatus.LEADER_REJECTED;
-    checkin.rejectedReason = reason;
-    await this.otCheckinRepo.save(checkin);
+    const planEmp = checkin.otPlanEmployee;
+    const empUser = await this.userRepo.findOne({ where: { id: planEmp.employeeId } });
+    const rejectedEmailIds: number[] = [];
+
+    await this.dataSource.transaction(async (manager) => {
+      checkin.status = OtCheckinStatus.LEADER_REJECTED;
+      checkin.rejectedReason = reason;
+      checkin.actualDurationMinutes = 0;
+      await manager.save(OtCheckin, checkin);
+
+      // Reverse plan balance CREDITs (OT_PLAN_APPROVED → OT_PLAN_RECONCILED)
+      const planCreditTxs = await manager.find(OtBalanceTransaction, {
+        where: { sourceType: OtBalanceSource.OT_PLAN_APPROVED, sourceId: Number(planEmp.id) },
+      });
+      for (const creditTx of planCreditTxs) {
+        await manager.insert(OtBalanceTransaction, {
+          employeeId: planEmp.employeeId,
+          direction: OtBalanceDirection.DEBIT,
+          amountMinutes: creditTx.amountMinutes,
+          sourceType: OtBalanceSource.OT_PLAN_RECONCILED,
+          sourceId: Number(planEmp.id),
+          periodYear: creditTx.periodYear,
+          periodMonth: creditTx.periodMonth,
+          periodDate: creditTx.periodDate,
+          note: `OT check-in #${checkin.id} rejected`,
+        });
+      }
+
+      // AC-06: Notify employee
+      if (empUser) {
+        const emailIds = await this.notificationsService.enqueueOtCheckinRejectedNotification(
+          Number(checkin.id),
+          planEmp.employeeId,
+          {
+            employeeName: empUser.username,
+            otPlanTitle: plan.title,
+            otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+          },
+          manager,
+        );
+        rejectedEmailIds.push(...emailIds);
+      }
+    });
+
+    this.notificationsService.triggerImmediateSend(rejectedEmailIds);
 
     return { success: true, data: checkin };
   }

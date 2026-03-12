@@ -955,4 +955,88 @@ export class NotificationsService implements OnModuleDestroy {
 
     return [savedEmail.id];
   }
+
+  /**
+   * Enqueue OT check-in confirmed notification to Employee.
+   */
+  async enqueueOtCheckinConfirmedNotification(
+    checkinId: number,
+    employeeId: number,
+    context: {
+      employeeName: string;
+      otPlanTitle: string;
+      otAssignmentUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-checkin-confirmed-${checkinId}-${employeeId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: employeeId,
+      type: EmailType.OT_CHECKIN_CONFIRMED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: checkinId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT checkin confirmed notification queued for checkin ${checkinId}, employee ${employeeId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
+
+  /**
+   * Enqueue OT check-in rejected notification to Employee.
+   */
+  async enqueueOtCheckinRejectedNotification(
+    checkinId: number,
+    employeeId: number,
+    context: {
+      employeeName: string;
+      otPlanTitle: string;
+      otAssignmentUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-checkin-rejected-${checkinId}-${employeeId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: employeeId,
+      type: EmailType.OT_CHECKIN_REJECTED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: checkinId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT checkin rejected notification queued for checkin ${checkinId}, employee ${employeeId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
 }
