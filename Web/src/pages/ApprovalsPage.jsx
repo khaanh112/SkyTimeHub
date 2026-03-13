@@ -3,6 +3,7 @@ import { leaveRequestService } from '../services';
 import Modal from '../components/Modal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-toastify';
+import { fmtDate, fmtDateTime } from '../utils/date';
 
 const ApprovalsPage = () => {
   const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -223,8 +224,8 @@ const ApprovalsPage = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                      {new Date(request.startDate).toLocaleDateString()} -<br />
-                      {new Date(request.endDate).toLocaleDateString()}
+                      {fmtDate(request.startDate)} -<br />
+                      {fmtDate(request.endDate)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -239,7 +240,7 @@ const ApprovalsPage = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-500">
-                      {new Date(request.createdAt).toLocaleDateString()}
+                      {fmtDate(request.createdAt)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
@@ -288,7 +289,7 @@ const ApprovalsPage = () => {
                 Version: {selectedRequest.version}
               </span>
               <span className="text-xs text-gray-600">
-                Last updated: {new Date(selectedRequest.updatedAt || selectedRequest.createdAt).toLocaleString()}
+                Last updated: {fmtDateTime(selectedRequest.updatedAt || selectedRequest.createdAt)}
               </span>
             </div>
 
@@ -317,23 +318,13 @@ const ApprovalsPage = () => {
                   <div>
                     <div className="text-xs text-gray-600">Start Date</div>
                     <div className="text-sm font-medium text-gray-900">
-                      {new Date(selectedRequest.startDate).toLocaleDateString('en-US', { 
-                        weekday: 'short', 
-                        year: 'numeric', 
-                        month: 'short', 
-                        day: 'numeric' 
-                      })}
+                      {fmtDate(selectedRequest.startDate)}
                     </div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-600">End Date</div>
                     <div className="text-sm font-medium text-gray-900">
-                      {new Date(selectedRequest.endDate).toLocaleDateString('en-US', { 
-                        weekday: 'short', 
-                        year: 'numeric', 
-                        month: 'short', 
-                        day: 'numeric' 
-                      })}
+                      {fmtDate(selectedRequest.endDate)}
                     </div>
                   </div>
                 </div>
@@ -371,7 +362,7 @@ const ApprovalsPage = () => {
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-2">Submitted On</h3>
               <div className="text-sm text-gray-900">
-                {new Date(selectedRequest.createdAt).toLocaleString()}
+                {fmtDateTime(selectedRequest.createdAt)}
               </div>
             </div>
 
@@ -424,7 +415,7 @@ const ApprovalsPage = () => {
                 <strong>Employee:</strong> {selectedRequest.user?.username || 'Unknown'}
               </p>
               <p className="text-sm text-yellow-800">
-                <strong>Period:</strong> {new Date(selectedRequest.startDate).toLocaleDateString()} - {new Date(selectedRequest.endDate).toLocaleDateString()}
+                <strong>Period:</strong> {fmtDate(selectedRequest.startDate)} - {fmtDate(selectedRequest.endDate)}
               </p>
             </div>
 

@@ -4,3 +4,4 @@ export { default as Modal } from './Modal';
 export { default as UserMultiSelect } from './UserMultiSelect';
 export { default as StatusBadge } from './StatusBadge';
 export { default as DetailSection } from './DetailSection';
+export { default as DateTimePicker } from './DateTimePicker';

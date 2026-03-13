@@ -43,7 +43,7 @@ export class OtBalanceTransaction {
   amountMinutes: number;
 
   // ── Source ─────────────────────────────────────────────────
-  @ApiProperty({ enum: OtBalanceSource, example: OtBalanceSource.OT_PLAN_APPROVED })
+  @ApiProperty({ enum: OtBalanceSource, example: OtBalanceSource.OT_PLAN_CREATED })
   @Column({ name: 'source_type', type: 'enum', enum: OtBalanceSource, nullable: false })
   sourceType: OtBalanceSource;
 

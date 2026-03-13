@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { OtBalanceTransaction } from '@/entities/ot-balance-transaction.entity';
 import { SystemSetting } from '@/entities/system-setting.entity';
 import { OtBalanceDirection } from '@/common/enums/ot-balance-direction.enum';
+import { OtBalanceSource } from '@/common/enums/ot-balance-source.enum';
+import { toVN } from '@/common/utils/date.util';
 
 export interface OtPolicy {
   maxOtHoursPerDay: number;
@@ -42,14 +44,29 @@ export class OtBalanceService {
     };
   }
 
-  async getEmployeeSummary(employeeId: number, referenceDate?: Date): Promise<EmployeeOtSummary> {
-    const now = referenceDate || new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const dateStr = now.toISOString().slice(0, 10);
+  async getEmployeeSummary(
+    employeeId: number,
+    referenceDate?: Date,
+    excludePlanEmpIds?: number[],
+  ): Promise<EmployeeOtSummary> {
+    const ref = toVN(referenceDate || new Date());
+    const year = ref.year();
+    const month = ref.month() + 1;
+    const dateStr = ref.format('YYYY-MM-DD');
+
+    // Helper: exclude old plan-creation credits so update balance checks aren't inflated
+    const applyExclusion = (qb: ReturnType<typeof this.otBalanceRepo.createQueryBuilder>) => {
+      if (excludePlanEmpIds?.length) {
+        qb.andWhere(
+          'NOT (t.source_type = :excType AND t.source_id IN (:...excIds))',
+          { excType: OtBalanceSource.OT_PLAN_CREATED, excIds: excludePlanEmpIds },
+        );
+      }
+      return qb;
+    };
 
     // Daily hours
-    const dailyResult = await this.otBalanceRepo
+    const dailyQb = this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
         "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
@@ -57,11 +74,11 @@ export class OtBalanceService {
       )
       .where('t.employee_id = :employeeId', { employeeId })
       .andWhere('t.period_date = :dateStr', { dateStr })
-      .setParameter('direction', OtBalanceDirection.CREDIT)
-      .getRawOne();
+      .setParameter('direction', OtBalanceDirection.CREDIT);
+    const dailyResult = await applyExclusion(dailyQb).getRawOne();
 
     // Monthly hours
-    const monthlyResult = await this.otBalanceRepo
+    const monthlyQb = this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
         "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
@@ -70,11 +87,11 @@ export class OtBalanceService {
       .where('t.employee_id = :employeeId', { employeeId })
       .setParameter('direction', OtBalanceDirection.CREDIT)
       .andWhere('t.period_year = :year', { year })
-      .andWhere('t.period_month = :month', { month })
-      .getRawOne();
+      .andWhere('t.period_month = :month', { month });
+    const monthlyResult = await applyExclusion(monthlyQb).getRawOne();
 
     // Yearly hours
-    const yearlyResult = await this.otBalanceRepo
+    const yearlyQb = this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
         "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
@@ -82,8 +99,8 @@ export class OtBalanceService {
       )
       .where('t.employee_id = :employeeId', { employeeId })
       .setParameter('direction', OtBalanceDirection.CREDIT)
-      .andWhere('t.period_year = :year', { year })
-      .getRawOne();
+      .andWhere('t.period_year = :year', { year });
+    const yearlyResult = await applyExclusion(yearlyQb).getRawOne();
 
     return {
       employeeId,
@@ -98,9 +115,22 @@ export class OtBalanceService {
     date: Date,
     additionalMinutes: number,
     isHoliday: boolean,
-  ): Promise<{ valid: boolean; violations: string[] }> {
+    excludePlanEmpIds?: number[],
+  ): Promise<{
+    valid: boolean;
+    violations: string[];
+    details: {
+      employeeId: number;
+      otHoursToday: number;
+      otHoursThisMonth: number;
+      otHoursThisYear: number;
+      dailyLimit: number;
+      monthlyLimit: number;
+      yearlyLimit: number;
+    };
+  }> {
     const policy = await this.getOtPolicy();
-    const summary = await this.getEmployeeSummary(employeeId, date);
+    const summary = await this.getEmployeeSummary(employeeId, date, excludePlanEmpIds);
     const violations: string[] = [];
 
     const additionalHours = additionalMinutes / 60;
@@ -124,7 +154,19 @@ export class OtBalanceService {
       );
     }
 
-    return { valid: violations.length === 0, violations };
+    return {
+      valid: violations.length === 0,
+      violations,
+      details: {
+        employeeId,
+        otHoursToday: summary.otHoursToday,
+        otHoursThisMonth: summary.otHoursThisMonth,
+        otHoursThisYear: summary.otHoursThisYear,
+        dailyLimit: dailyMax,
+        monthlyLimit: policy.maxOtHoursPerMonth,
+        yearlyLimit: policy.maxOtHoursPerYear,
+      },
+    };
   }
 
   private toNumber(value: string | undefined, fallback: number): number {

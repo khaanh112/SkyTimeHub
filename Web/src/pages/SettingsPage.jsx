@@ -5,6 +5,7 @@ import { AlertCircle } from 'lucide-react';
 import { LoadingSpinner } from '../components';
 import holidayCalendarService from '../services/holidayCalendarService';
 import settingsService from '../services/settingsService';
+import { dayjs, vnYear } from '../utils/date';
 
 const TABS = [
   { key: 'leave-policy', label: 'Leave Policy' },
@@ -317,7 +318,7 @@ const OtPolicyTab = () => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const HolidayCalendarTab = () => {
-  const currentYear = new Date().getFullYear();
+  const currentYear = vnYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [holidays, setHolidays] = useState(DEFAULT_HOLIDAYS.map((h) => ({ ...h })));
   const [originalHolidays, setOriginalHolidays] = useState([]);
@@ -400,10 +401,10 @@ const HolidayCalendarTab = () => {
     let total = 0;
     for (const h of holidayList) {
       if (h.startDate && h.endDate) {
-        const start = new Date(h.startDate);
-        const end = new Date(h.endDate);
-        if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
-          total += Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        const start = dayjs(h.startDate);
+        const end = dayjs(h.endDate);
+        if (start.isValid() && end.isValid() && !end.isBefore(start)) {
+          total += end.diff(start, 'day') + 1;
         }
       }
     }
@@ -441,38 +442,38 @@ const HolidayCalendarTab = () => {
       }
 
       if (h.startDate && h.endDate) {
-        const start = new Date(h.startDate);
-        const end = new Date(h.endDate);
+        const start = dayjs(h.startDate);
+        const end = dayjs(h.endDate);
 
-        if (isNaN(start.getTime())) {
+        if (!start.isValid()) {
           newErrors[`${i}-startDate`] = 'Invalid date';
         }
-        if (isNaN(end.getTime())) {
+        if (!end.isValid()) {
           newErrors[`${i}-endDate`] = 'Invalid date';
         }
-        if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+        if (start.isValid() && end.isValid() && end.isBefore(start)) {
           newErrors[`${i}-dateRange`] = 'End date cannot be earlier than start date';
         }
 
-        if (!isNaN(start.getTime()) && start.getFullYear() !== selectedYear) {
+        if (start.isValid() && start.year() !== selectedYear) {
           newErrors[`${i}-startDate`] = `Date must be in year ${selectedYear}`;
         }
-        if (!isNaN(end.getTime()) && end.getFullYear() !== selectedYear) {
+        if (end.isValid() && end.year() !== selectedYear) {
           newErrors[`${i}-endDate`] = `Date must be in year ${selectedYear}`;
         }
       }
 
       // Compensatory date validation (optional field)
       if (h.compensatoryDate) {
-        const compDate = new Date(h.compensatoryDate);
-        if (isNaN(compDate.getTime())) {
+        const compDate = dayjs(h.compensatoryDate);
+        if (!compDate.isValid()) {
           newErrors[`${i}-compensatoryDate`] = 'Invalid date';
         } else {
-          const dayOfWeek = compDate.getDay();
+          const dayOfWeek = compDate.day();
           if (dayOfWeek !== 0 && dayOfWeek !== 6) {
             newErrors[`${i}-compensatoryDate`] = 'Must be on a weekend (Sat/Sun)';
           }
-          if (compDate.getFullYear() !== selectedYear) {
+          if (compDate.year() !== selectedYear) {
             newErrors[`${i}-compensatoryDate`] = `Date must be in year ${selectedYear}`;
           }
         }
@@ -485,12 +486,12 @@ const HolidayCalendarTab = () => {
       for (let j = i + 1; j < filled.length; j++) {
         const a = filled[i];
         const b = filled[j];
-        const aStart = new Date(a.startDate);
-        const aEnd = new Date(a.endDate);
-        const bStart = new Date(b.startDate);
-        const bEnd = new Date(b.endDate);
+        const aStart = dayjs(a.startDate);
+        const aEnd = dayjs(a.endDate);
+        const bStart = dayjs(b.startDate);
+        const bEnd = dayjs(b.endDate);
 
-        if (aStart <= bEnd && bStart <= aEnd) {
+        if (!aStart.isAfter(bEnd) && !bStart.isAfter(aEnd)) {
           const idxA = holidays.indexOf(a);
           const idxB = holidays.indexOf(b);
           newErrors[`${idxA}-dateRange`] = `Overlapping dates with "${b.name}"`;

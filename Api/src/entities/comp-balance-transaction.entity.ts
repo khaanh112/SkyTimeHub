@@ -30,7 +30,7 @@ export class CompBalanceTransaction {
   @Column({ type: 'enum', enum: CompTxDirection })
   direction: CompTxDirection;
 
-  @ApiProperty({ example: 480, description: 'Amount in minutes (30-min steps, always positive)' })
+  @ApiProperty({ example: 480, description: 'Amount in minutes (15-min steps, always positive)' })
   @Column({ name: 'amount_minutes', type: 'int' })
   amountMinutes: number;
 
@@ -48,6 +48,6 @@ export class CompBalanceTransaction {
   @Column({ type: 'text', nullable: true })
   note: string | null;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

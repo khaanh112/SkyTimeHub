@@ -31,6 +31,7 @@ import {
 import { LeaveCategory } from '@/common/enums/leave-category.enum';
 import { BALANCE_TYPE_CODES } from '@/common/enums/balance_leavetype.enum';
 import { ContractType } from '@/common/enums/contract-type.enum';
+import { vnMonth } from '@/common/utils/date.util';
 
 export interface BalanceInfo {
   leaveTypeId: number;
@@ -1682,7 +1683,7 @@ export class LeaveBalanceService {
       }
     } else {
       // Fallback: use current month if no join date
-      startMonth = new Date().getMonth() + 1;
+      startMonth = vnMonth();
     }
 
     if (startMonth > 12) {
@@ -1751,7 +1752,7 @@ export class LeaveBalanceService {
       monthlyAccrual: number | null;
     }[]
   > {
-    const effectiveMonth = month ?? new Date().getMonth() + 1;
+    const effectiveMonth = month ?? vnMonth();
 
     const leaveTypes = await this.leaveTypeRepo
       .createQueryBuilder('lt')

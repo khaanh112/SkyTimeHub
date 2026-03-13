@@ -4,6 +4,7 @@ import { leaveRequestService, approverService } from '../services';
 import { UserMultiSelect } from '../components';
 import { useAuth } from '../context';
 import { toast } from 'react-toastify';
+import { fmtDate, toInputDate } from '../utils/date';
 import {
   Calendar,
   AlertCircle,
@@ -358,14 +359,11 @@ const CreateLeaveRequestPage = () => {
 
   const formatDateTime = (date, session, type) => {
     if (!date) return '';
-    const d = new Date(date);
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
+    const formatted = fmtDate(date);
     if (type === 'start') {
-      return `${dd}/${mm}/${yyyy} ${session === 'AM' ? '8:30' : '13:00'}`;
+      return `${formatted} ${session === 'AM' ? '8:30' : '13:00'}`;
     }
-    return `${dd}/${mm}/${yyyy} ${session === 'AM' ? '12:00' : '17:30'}`;
+    return `${formatted} ${session === 'AM' ? '12:00' : '17:30'}`;
   };
 
   // Determine if the current selection is PARENTAL leave
@@ -399,30 +397,30 @@ const CreateLeaveRequestPage = () => {
         let lastSession = formData.startSession;
         
         while (remainingSlots > 0) {
-          const isFirst = cur.toISOString().slice(0, 10) === formData.startDate;
+          const isFirst = toInputDate(cur) === formData.startDate;
           const amAvailable = !(isFirst && formData.startSession === 'PM');
-          
+
           if (amAvailable && remainingSlots > 0) {
             remainingSlots--;
-            lastDate = cur.toISOString().slice(0, 10);
+            lastDate = toInputDate(cur);
             lastSession = 'AM';
           }
           if (remainingSlots > 0) {
             remainingSlots--;
-            lastDate = cur.toISOString().slice(0, 10);
+            lastDate = toInputDate(cur);
             lastSession = 'PM';
           }
           if (remainingSlots > 0) {
             cur.setDate(cur.getDate() + 1);
           }
         }
-        
+
         // Calculate excess working days (after maternity end)
         let excessStart, excessStartSession;
         if (lastSession === 'PM') {
           const nextDay = new Date(lastDate + 'T00:00:00');
           nextDay.setDate(nextDay.getDate() + 1);
-          excessStart = nextDay.toISOString().slice(0, 10);
+          excessStart = toInputDate(nextDay);
           excessStartSession = 'AM';
         } else {
           excessStart = lastDate;

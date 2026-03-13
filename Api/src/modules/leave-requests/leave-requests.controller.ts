@@ -39,6 +39,7 @@ import { BalanceSummaryQueryDto } from './dto/balance-summary-query.dto';
 import { AuthenticatedRequest } from '@/common/interfaces/authenticated-request.interface';
 import { LeaveSession } from '@/common/enums/leave-session.enum';
 import { ChildbirthMethod } from '@/common/enums/childbirth-method.enum';
+import { vnYear, vnMonth } from '@/common/utils/date.util';
 
 @ApiTags('Leave Requests')
 @ApiBearerAuth()
@@ -189,8 +190,8 @@ export class LeaveRequestsController {
     @Request() req: AuthenticatedRequest,
     @Query() q: BalanceSummaryQueryDto,
   ) {
-    const year = q.year ?? new Date().getFullYear();
-    const month = q.month ?? new Date().getMonth() + 1;
+    const year = q.year ?? vnYear();
+    const month = q.month ?? vnMonth();
 
     return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, month, year);
   }
@@ -224,7 +225,7 @@ export class LeaveRequestsController {
     if (req.user.role !== 'hr') {
       throw new ForbiddenException('Only HR can initialize balances');
     }
-    const year = body.year || new Date().getFullYear();
+    const year = body.year || vnYear();
     const annualDays = body.annualDays || 12;
     return this.leaveBalanceService.initializeYearlyBalance(year, annualDays);
   }

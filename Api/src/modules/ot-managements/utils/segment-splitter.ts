@@ -1,7 +1,6 @@
-import { Repository } from 'typeorm';
-import { CalendarOverride } from '@/entities/calendar-override.entity';
 import { OtDayType } from '@/common/enums/ot-day-type.enum';
-import { resolveDayType } from './day-type-resolver';
+import { resolveDayTypeFromCache } from './day-type-resolver';
+import { vnHour, vnDateStr, vnStartOfDay, vnSetHour, addDaysToStr } from '@/common/utils/date.util';
 
 export interface OtSegment {
   dayType: OtDayType;
@@ -14,61 +13,53 @@ export interface OtSegment {
   attributedDate: string;
 }
 
-const DAY_START_HOUR = 6;  // 06:00 local time
-const DAY_END_HOUR   = 22; // 22:00 local time
+const DAY_START_HOUR = 6;  // 06:00 VN time
+const DAY_END_HOUR   = 22; // 22:00 VN time
 
 function isNightHour(date: Date): boolean {
-  const h = date.getHours();
+  const h = vnHour(date);
   return h < DAY_START_HOUR || h >= DAY_END_HOUR;
-}
-
-function localDateString(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 /** Add `days` days to an ISO date string and return a new ISO date string. */
 export function addDays(dateStr: string, days: number): string {
-  const d = new Date(`${dateStr}T12:00:00`);
-  d.setDate(d.getDate() + days);
-  return localDateString(d);
+  return addDaysToStr(dateStr, days);
 }
 
 /**
  * Split the interval [start, end) at midnight, 06:00, and 22:00 boundaries
- * (local time) and resolve the OtDayType for each resulting sub-segment.
+ * (VN time) and resolve the OtDayType for each resulting sub-segment.
  *
  * Each segment's `attributedDate` is initialized to its `actualDate`;
  * call `applyCarryOver` afterwards to enforce daily caps.
+ *
+ * @param dayTypeCache - pre-built via buildDayTypeCache() covering all dates in [start, end+N]
  */
-export async function splitIntoSegments(
+export function splitIntoSegments(
   start: Date,
   end: Date,
-  calendarRepo: Repository<CalendarOverride>,
-): Promise<OtSegment[]> {
+  dayTypeCache: Map<string, OtDayType>,
+): OtSegment[] {
   const cuts = new Set<number>();
   cuts.add(start.getTime());
   cuts.add(end.getTime());
 
-  // Walk day by day from midnight of the start date, inserting 06:00 / 22:00 / midnight
-  const cursor = new Date(start);
-  cursor.setHours(0, 0, 0, 0);
+  // Walk day by day from midnight of the start date (VN time), inserting 06:00 / 22:00 / midnight
+  let cursor = vnStartOfDay(start);
 
   while (cursor.getTime() < end.getTime()) {
-    const sixAm = new Date(cursor); sixAm.setHours(DAY_START_HOUR, 0, 0, 0);
-    const tenPm = new Date(cursor); tenPm.setHours(DAY_END_HOUR, 0, 0, 0);
-    const nextMidnight = new Date(cursor); nextMidnight.setDate(nextMidnight.getDate() + 1); nextMidnight.setHours(0, 0, 0, 0);
+    const sixAm       = vnSetHour(cursor, DAY_START_HOUR);
+    const tenPm       = vnSetHour(cursor, DAY_END_HOUR);
+    const nextMidnight = vnStartOfDay(new Date(cursor.getTime() + 24 * 60 * 60 * 1000));
 
     for (const b of [sixAm, tenPm, nextMidnight]) {
       const t = b.getTime();
       if (t > start.getTime() && t < end.getTime()) cuts.add(t);
     }
-    cursor.setDate(cursor.getDate() + 1);
+    cursor = nextMidnight;
   }
 
-  const sorted = [...cuts].sort((a, b) => a - b).map(t => new Date(t));
+  const sorted = [...cuts].sort((a, b) => a - b).map((t) => new Date(t));
 
   const segments: OtSegment[] = [];
 
@@ -78,8 +69,8 @@ export async function splitIntoSegments(
     const durationMinutes = Math.round((segEnd.getTime() - segStart.getTime()) / 60_000);
     if (durationMinutes <= 0) continue;
 
-    const actualDate = localDateString(segStart);
-    const baseDayType = await resolveDayType(segStart, calendarRepo);
+    const actualDate  = vnDateStr(segStart);
+    const baseDayType = resolveDayTypeFromCache(actualDate, dayTypeCache);
     const night       = isNightHour(segStart);
 
     let dayType: OtDayType;
@@ -104,9 +95,8 @@ export async function splitIntoSegments(
  * Resolve the daily cap (minutes) for a given date string.
  * WEEKDAY → 240 min (4 h); WEEKEND / HOLIDAY → 480 min (8 h).
  */
-async function getDailyCap(dateStr: string, calendarRepo: Repository<CalendarOverride>): Promise<number> {
-  const probe = new Date(`${dateStr}T12:00:00`);
-  const baseDayType = await resolveDayType(probe, calendarRepo);
+function getDailyCap(dateStr: string, dayTypeCache: Map<string, OtDayType>): number {
+  const baseDayType = resolveDayTypeFromCache(dateStr, dayTypeCache);
   return baseDayType === OtDayType.WEEKDAY ? 240 : 480;
 }
 
@@ -120,11 +110,13 @@ async function getDailyCap(dateStr: string, calendarRepo: Repository<CalendarOve
  * - Chaining continues until all attributed dates are within their caps.
  *
  * Note: `actualDate` is never modified — it always records the physical date.
+ *
+ * @param dayTypeCache - pre-built via buildDayTypeCache(); dates not in cache fall back to WEEKDAY cap
  */
-export async function applyCarryOver(
+export function applyCarryOver(
   segments: OtSegment[],
-  calendarRepo: Repository<CalendarOverride>,
-): Promise<OtSegment[]> {
+  dayTypeCache: Map<string, OtDayType>,
+): OtSegment[] {
   // Build an ordered list of attributed dates with their segments
   const dateOrder: string[] = [];
   const dateMap = new Map<string, OtSegment[]>();
@@ -149,7 +141,7 @@ export async function applyCarryOver(
   for (let di = 0; di < dateOrder.length; di++) {
     const dateStr = dateOrder[di];
     const daySegs = dateMap.get(dateStr)!;
-    const cap     = await getDailyCap(dateStr, calendarRepo);
+    const cap     = getDailyCap(dateStr, dayTypeCache);
 
     let accumulated = 0;
     const kept: OtSegment[]     = [];

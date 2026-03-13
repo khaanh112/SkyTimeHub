@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { LoadingSpinner } from '../components';
 import { userService, departmentService } from '../services';
+import { fmtDate } from '../utils/date';
 
 const EmployeeDetailPage = () => {
   const navigate = useNavigate();
@@ -223,7 +224,7 @@ const EmployeeDetailPage = () => {
                   type="text"
                   value={
                     user.dateOfBirth
-                      ? new Date(user.dateOfBirth).toLocaleDateString()
+                      ? fmtDate(user.dateOfBirth)
                       : ''
                   }
                   readOnly
@@ -274,7 +275,7 @@ const EmployeeDetailPage = () => {
                   type="text"
                   value={
                     user.officialContractDate
-                      ? new Date(user.officialContractDate).toLocaleDateString()
+                      ? fmtDate(user.officialContractDate)
                       : ''
                   }
                   readOnly
@@ -288,7 +289,7 @@ const EmployeeDetailPage = () => {
                 <input
                   type="text"
                   value={
-                    user.joinDate ? new Date(user.joinDate).toLocaleDateString() : ''
+                    user.joinDate ? fmtDate(user.joinDate) : ''
                   }
                   readOnly
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-600"

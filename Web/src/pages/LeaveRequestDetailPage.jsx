@@ -4,6 +4,7 @@ import { leaveRequestService } from '../services';
 import { LoadingSpinner, StatusBadge, Modal } from '../components';
 import { useAuth } from '../context';
 import { toast } from 'react-toastify';
+import { fmtDate, fmtDateTime } from '../utils/date';
 import {
   ArrowLeft,
   Calendar,
@@ -279,41 +280,23 @@ const LeaveRequestDetailPage = () => {
 
   const formatDate = (date) => {
     if (!date) return '';
-    const d = new Date(date);
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
+    return fmtDate(date);
   };
 
   const formatDateWithTime = (date, session) => {
     if (!date) return '';
-    const d = new Date(date);
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
     const time = session === 'AM' ? '8:30' : '13:30';
-    return `${dd}/${mm}/${yyyy} ${time}`;
+    return `${fmtDate(date)} ${time}`;
   };
 
   const formatEndDateWithTime = (date, session) => {
     if (!date) return '';
-    const d = new Date(date);
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
     const time = session === 'PM' ? '17:30' : '12:00';
-    return `${dd}/${mm}/${yyyy} ${time}`;
+    return `${fmtDate(date)} ${time}`;
   };
 
   const formatDateTime = (date) => {
-    return new Date(date).toLocaleString('en-US', { 
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return fmtDateTime(date);
   };
 
   // Get leave type items breakdown (paid vs unpaid)

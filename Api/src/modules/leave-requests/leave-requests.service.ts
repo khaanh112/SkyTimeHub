@@ -40,6 +40,7 @@ import { validateAllocationsNoDuplicateBucket } from './utils/allocation-validat
 import { DefaultLeaveType } from '@/common/enums/default-leavetype.enum';
 import { ContractType } from '@/common/enums/contract-type.enum';
 import { LeaveCategory as LeaveCategoryEnum } from '@/common/enums/leave-category.enum';
+import { vnTodayStr, toVN } from '@/common/utils/date.util';
 
 @Injectable()
 export class LeaveRequestsService {
@@ -109,10 +110,7 @@ export class LeaveRequestsService {
     const conflict = await qb.getOne();
 
     if (conflict) {
-      const fmt = (d: string) => {
-        const dt = new Date(d);
-        return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
-      };
+      const fmt = (d: string) => d.split('-').reverse().join('/');
       throw new AppException(
         ErrorCode.INVALID_INPUT,
         `This leave request overlaps with an existing ${conflict.status} request (${fmt(conflict.startDate)} – ${fmt(conflict.endDate)}). Please choose different dates.`,
@@ -386,8 +384,8 @@ export class LeaveRequestsService {
           ? validation.monthlyAllocations
           : validation.items.map((item) => ({
               ...item,
-              year: new Date(dto.startDate).getFullYear(),
-              month: new Date(dto.startDate).getMonth() + 1,
+              year: toVN(dto.startDate).year(),
+              month: toVN(dto.startDate).month() + 1,
             }));
       validateAllocationsNoDuplicateBucket(allocationsToSave);
 
@@ -405,8 +403,8 @@ export class LeaveRequestsService {
         await queryRunner.manager.save(items);
       } else if (validation.items.length > 0) {
         // Fallback: non-monthly types (policy/social) — use request year/month
-        const requestYear = new Date(dto.startDate).getFullYear();
-        const requestMonth = new Date(dto.startDate).getMonth() + 1;
+        const requestYear = toVN(dto.startDate).year();
+        const requestMonth = toVN(dto.startDate).month() + 1;
         const items = validation.items.map((item) =>
           this.leaveRequestItemRepository.create({
             leaveRequestId: savedRequest.id,
@@ -702,8 +700,8 @@ export class LeaveRequestsService {
         );
         await itemRepo.save(items);
       } else if (validation.items.length > 0) {
-        const requestYear = new Date(dto.startDate).getFullYear();
-        const requestMonth = new Date(dto.startDate).getMonth() + 1;
+        const requestYear = toVN(dto.startDate).year();
+        const requestMonth = toVN(dto.startDate).month() + 1;
         const items = validation.items.map((item) =>
           itemRepo.create({
             leaveRequestId: requestId,
@@ -1301,7 +1299,6 @@ export class LeaveRequestsService {
       const leaveRequests = await qb.getMany();
 
       // ── Map to DTOs ────────────────────────────────────────────
-      const now = new Date();
       const isManagement = view === LeaveRequestView.MANAGEMENT;
 
       const data: LeaveRequestListItemDto[] = leaveRequests.map((lr) => {
@@ -1320,7 +1317,7 @@ export class LeaveRequestsService {
         const durationLabel = buildDurationLabel(lr.durationDays);
 
         // Permissions
-        const permissions = this.computePermissions(lr, now);
+        const permissions = this.computePermissions(lr);
 
         return {
           id: lr.id,
@@ -1387,8 +1384,8 @@ export class LeaveRequestsService {
    * Compute per-row action permissions based on status and whether
    * the leave start date is in the future.
    */
-  private computePermissions(lr: LeaveRequest, now: Date): LeaveRequestPermissionsDto {
-    const isFuture = new Date(lr.startDate + 'T00:00:00') > now;
+  private computePermissions(lr: LeaveRequest): LeaveRequestPermissionsDto {
+    const isFuture = lr.startDate > vnTodayStr();
 
     switch (lr.status) {
       case LeaveRequestStatus.PENDING:

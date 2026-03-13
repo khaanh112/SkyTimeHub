@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { LoadingSpinner } from '../components';
 import { userService, departmentService } from '../services';
+import { toInputDate } from '../utils/date';
 
 const ROLES = ['employee', 'hr', 'admin'];
 const GENDERS = ['male', 'female'];
@@ -72,13 +73,13 @@ const EditEmployeePage = () => {
           departmentId: user.departmentId || '',
           position: user.position || '',
           officialContractDate: user.officialContractDate
-            ? new Date(user.officialContractDate).toISOString().split('T')[0]
+            ? toInputDate(user.officialContractDate)
             : '',
-          joinDate: user.joinDate ? new Date(user.joinDate).toISOString().split('T')[0] : '',
+          joinDate: user.joinDate ? toInputDate(user.joinDate) : '',
           approverId: '',
           phoneNumber: user.phoneNumber || '',
           dateOfBirth: user.dateOfBirth
-            ? new Date(user.dateOfBirth).toISOString().split('T')[0]
+            ? toInputDate(user.dateOfBirth)
             : '',
           address: user.address || '',
           contractType: user.contractType || '',

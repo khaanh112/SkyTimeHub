@@ -3,6 +3,7 @@ import { User, Calendar, FileText, Clock } from 'lucide-react';
 import { userService, leaveRequestService } from '../services';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-toastify';
+import { vnYear, vnMonth, fmtDate } from '../utils/date';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -42,7 +43,7 @@ const getLeaveTypeStyle = (code) =>
     remainingColor: 'text-blue-600',
   };
 
-const currentYear = new Date().getFullYear();
+const currentYear = vnYear();
 const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - 3 + i);
 
 const ProfilePage = () => {
@@ -53,11 +54,11 @@ const ProfilePage = () => {
   const [balanceSummary, setBalanceSummary] = useState([]);
   const [balanceLoading, setBalanceLoading] = useState(true);
   const [balanceYear, setBalanceYear] = useState(currentYear);
-  const [balanceMonth, setBalanceMonth] = useState(new Date().getMonth()); // 0-indexed
+  const [balanceMonth, setBalanceMonth] = useState(vnMonth() - 1); // 0-indexed
 
   // OT summary filters
   const [otYear, setOtYear] = useState(currentYear);
-  const [otMonth, setOtMonth] = useState(new Date().getMonth());
+  const [otMonth, setOtMonth] = useState(vnMonth() - 1);
   const [otSummary, setOtSummary] = useState({ today: 0, monthly: 0, yearly: 0 });
   const [otLoading, setOtLoading] = useState(true);
 
@@ -145,7 +146,7 @@ const ProfilePage = () => {
   };
 
   const formatDate = (val) =>
-    val ? new Date(val).toLocaleDateString('en-GB') : '—';
+    val ? fmtDate(val) : '—';
 
   const FilterDropdowns = ({ year, onYearChange, month, onMonthChange }) => (
     <div className="flex items-center gap-2">

@@ -33,6 +33,7 @@ import { CheckoutDto } from './dto/checkout.dto';
 import { ApproveCheckinDto } from './dto/approve-checkin.dto';
 import { RejectCheckinDto } from './dto/reject-checkin.dto';
 import { AuthenticatedRequest } from '@/common/interfaces/authenticated-request.interface';
+import { vnTodayStr } from '@/common/utils/date.util';
 
 @ApiTags('OT Plans')
 @ApiBearerAuth()
@@ -97,7 +98,7 @@ export class OtManagementsController {
   @ApiResponse({ status: 200, description: 'CSV file download.' })
   async exportReport(@Query() query: ListOtPlansQueryDto, @Res() res: Response) {
     const csvBuffer = await this.otService.exportReport(query);
-    const filename = `ot-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    const filename = `ot-report-${vnTodayStr()}.csv`;
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="${filename}"`,

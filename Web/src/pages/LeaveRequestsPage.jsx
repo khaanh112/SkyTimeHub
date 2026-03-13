@@ -4,6 +4,7 @@ import { leaveRequestService } from '../services';
 import { LoadingSpinner } from '../components';
 import { toast } from 'react-toastify';
 import { Calendar, Clock, FileText, CheckCircle, XCircle, Edit, Plus } from 'lucide-react';
+import { fmtDate } from '../utils/date';
 
 const LeaveRequestsPage = () => {
   const navigate = useNavigate();
@@ -247,20 +248,12 @@ const LeaveRequestsPage = () => {
                           <Calendar className="w-4 h-4 text-gray-400" />
                           <div>
                             <div className="text-sm font-medium text-gray-900">
-                              {new Date(request.startDate).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric',
-                                year: 'numeric'
-                              })}
+                              {fmtDate(request.startDate)}
                               {' → '}
-                              {new Date(request.endDate).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric',
-                                year: 'numeric'
-                              })}
+                              {fmtDate(request.endDate)}
                             </div>
                             <div className="text-xs text-gray-500">
-                              Submitted: {new Date(request.createdAt).toLocaleDateString()}
+                              Submitted: {fmtDate(request.createdAt)}
                             </div>
                           </div>
                         </div>

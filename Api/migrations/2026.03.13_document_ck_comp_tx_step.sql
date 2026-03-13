@@ -1,0 +1,16 @@
+-- ============================================================
+-- Migration: Document ck_comp_tx_step constraint
+-- Date: 2026-03-13
+-- Description: Documents an existing DB constraint on
+--              comp_balance_transactions.amount_minutes that
+--              requires values to be multiples of 15 minutes.
+--              This constraint was added manually to the DB.
+--              The service layer (approveCheckin Phase F) now
+--              floors totalActualMinutes to the nearest 15-min
+--              step before inserting, ensuring compliance.
+-- ============================================================
+
+-- This constraint already exists in the database.
+-- Run only if the constraint is missing (e.g. fresh DB restore):
+-- ALTER TABLE comp_balance_transactions
+--   ADD CONSTRAINT ck_comp_tx_step CHECK (amount_minutes % 15 = 0);
