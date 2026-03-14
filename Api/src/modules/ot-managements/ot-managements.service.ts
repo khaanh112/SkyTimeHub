@@ -7,7 +7,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, In, Brackets } from 'typeorm';
+import { Repository, DataSource, In, Brackets, EntityManager } from 'typeorm';
 import { OtPlan } from '@/entities/ot-plan.entity';
 import { OtPlanEmployee } from '@/entities/ot-plan-employee.entity';
 import { OtCheckin } from '@/entities/ot-checkin.entity';
@@ -36,7 +36,7 @@ import { CheckoutDto } from './dto/checkout.dto';
 import { OtBalanceService } from './ot-balance.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { computeDurationMinutes } from './utils/duration-calculator';
-import { splitIntoSegments, applyCarryOver } from './utils/segment-splitter';
+import { splitIntoSegments, applyCarryOver, applyMonthlyCarryOver } from './utils/segment-splitter';
 import { buildDayTypeCache } from './utils/day-type-resolver';
 import { formatOtPlanCode } from './utils/ot-plan-code-formatter';
 import { AppException, ErrorCode } from '@/common';
@@ -232,6 +232,17 @@ export class OtManagementsService {
       }
     }
 
+    // Pre-build dayTypeCache covering all employee date ranges + 7 days for carry-over
+    const allDatesCreate: string[] = [];
+    for (const empDto of dto.employees) {
+      const startStr = vnDateStr(dayjs(empDto.startTime).toDate());
+      const endStr   = addDaysToStr(vnDateStr(dayjs(empDto.endTime).toDate()), 7);
+      for (let d = startStr; d <= endStr; d = addDaysToStr(d, 1)) allDatesCreate.push(d);
+    }
+    const dayTypeCacheCreate = await buildDayTypeCache(allDatesCreate, this.calendarRepo);
+    const policyCreate = await this.otBalanceService.getOtPolicy();
+    const monthlyCapCreate = policyCreate.maxOtHoursPerMonth * 60;
+
     const submittedEmailIds: number[] = [];
     const savedPlanId = await this.dataSource.transaction(async (manager) => {
       // Create OT Plan
@@ -263,18 +274,26 @@ export class OtManagementsService {
         });
         const savedPlanEmp = await manager.save(OtPlanEmployee, planEmp);
 
-        // ── Balance CREDIT: ghi ngay khi tạo plan ───────────
-        await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
-          employeeId: empDto.employeeId,
-          direction: OtBalanceDirection.CREDIT,
-          amountMinutes: durationMinutes,
-          sourceType: OtBalanceSource.OT_PLAN_CREATED,
-          sourceId: Number(savedPlanEmp.id),
-          periodYear: toVN(start).year(),
-          periodMonth: toVN(start).month() + 1,
-          periodDate: vnDateStr(start),
-          note: `OT plan submitted — plan employee #${savedPlanEmp.id}`,
-        }));
+        // ── Balance CREDITs: split with daily + monthly carry-over ──
+        const rawSegs = splitIntoSegments(start, end, dayTypeCacheCreate);
+        const dailyCarried = applyCarryOver(rawSegs, dayTypeCacheCreate);
+        const monthlyMap = await this.getMonthlyBalanceMap(empDto.employeeId, manager);
+        const segments = applyMonthlyCarryOver(dailyCarried, monthlyMap, monthlyCapCreate);
+
+        for (const seg of segments) {
+          const [periodYear, periodMonth] = seg.attributedDate.split('-').map(Number);
+          await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
+            employeeId: empDto.employeeId,
+            direction: OtBalanceDirection.CREDIT,
+            amountMinutes: seg.durationMinutes,
+            sourceType: OtBalanceSource.OT_PLAN_CREATED,
+            sourceId: Number(savedPlanEmp.id),
+            periodYear,
+            periodMonth,
+            periodDate: seg.attributedDate,
+            note: `OT plan submitted — plan employee #${savedPlanEmp.id}`,
+          }));
+        }
 
         // Create pending checkin record
         const checkin = manager.create(OtCheckin, {
@@ -659,6 +678,17 @@ export class OtManagementsService {
       }
     }
 
+    // Pre-build dayTypeCache covering all employee date ranges + 7 days for carry-over
+    const allDatesUpdate: string[] = [];
+    for (const empDto of dto.employees) {
+      const startStr = vnDateStr(dayjs(empDto.startTime).toDate());
+      const endStr   = addDaysToStr(vnDateStr(dayjs(empDto.endTime).toDate()), 7);
+      for (let d = startStr; d <= endStr; d = addDaysToStr(d, 1)) allDatesUpdate.push(d);
+    }
+    const dayTypeCacheUpdate = await buildDayTypeCache(allDatesUpdate, this.calendarRepo);
+    const policyUpdate = await this.otBalanceService.getOtPolicy();
+    const monthlyCapUpdate = policyUpdate.maxOtHoursPerMonth * 60;
+
     await this.dataSource.transaction(async (manager) => {
       // ── Reverse old balance CREDITs before deleting employee rows ──
       // Re-uses oldPlanEmps loaded above (same data, version-checked plan cannot change concurrently)
@@ -718,18 +748,26 @@ export class OtManagementsService {
         });
         const savedPlanEmp = await manager.save(OtPlanEmployee, planEmp);
 
-        // ── Balance CREDIT: ghi ngay khi update plan ─────────
-        await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
-          employeeId: empDto.employeeId,
-          direction: OtBalanceDirection.CREDIT,
-          amountMinutes: durationMinutes,
-          sourceType: OtBalanceSource.OT_PLAN_CREATED,
-          sourceId: Number(savedPlanEmp.id),
-          periodYear: toVN(start).year(),
-          periodMonth: toVN(start).month() + 1,
-          periodDate: vnDateStr(start),
-          note: `OT plan #${id} updated — plan employee #${savedPlanEmp.id}`,
-        }));
+        // ── Balance CREDITs: split with daily + monthly carry-over ──
+        const rawSegsUpd = splitIntoSegments(start, end, dayTypeCacheUpdate);
+        const dailyCarriedUpd = applyCarryOver(rawSegsUpd, dayTypeCacheUpdate);
+        const monthlyMapUpd = await this.getMonthlyBalanceMap(empDto.employeeId, manager);
+        const segmentsUpd = applyMonthlyCarryOver(dailyCarriedUpd, monthlyMapUpd, monthlyCapUpdate);
+
+        for (const seg of segmentsUpd) {
+          const [periodYear, periodMonth] = seg.attributedDate.split('-').map(Number);
+          await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
+            employeeId: empDto.employeeId,
+            direction: OtBalanceDirection.CREDIT,
+            amountMinutes: seg.durationMinutes,
+            sourceType: OtBalanceSource.OT_PLAN_CREATED,
+            sourceId: Number(savedPlanEmp.id),
+            periodYear,
+            periodMonth,
+            periodDate: seg.attributedDate,
+            note: `OT plan #${id} updated — plan employee #${savedPlanEmp.id}`,
+          }));
+        }
 
         // Create pending checkin record
         const checkin = manager.create(OtCheckin, {
@@ -1172,6 +1210,8 @@ export class OtManagementsService {
     const allDates: string[] = [];
     for (let d = startDateStr; d <= endDateStr; d = addDaysToStr(d, 1)) allDates.push(d);
     const dayTypeCache = await buildDayTypeCache(allDates, this.calendarRepo);
+    const policyCheckin = await this.otBalanceService.getOtPolicy();
+    const monthlyCapCheckin = policyCheckin.maxOtHoursPerMonth * 60;
 
     const confirmedEmailIds: number[] = [];
 
@@ -1213,11 +1253,13 @@ export class OtManagementsService {
         }));
       }
 
-      // ── Phase B & C: Split actual hours ──────────────────────
+      // ── Phase B & C: Split actual hours with daily + monthly carry-over ──
       this.logger.log(`[approveCheckin] Phase B/C: splitting segments from ${effectiveCheckIn.toISOString()} to ${effectiveCheckOut.toISOString()}`);
       const rawSegments = splitIntoSegments(effectiveCheckIn, effectiveCheckOut, dayTypeCache);
       this.logger.log(`[approveCheckin] Phase B/C: rawSegments count=${rawSegments.length}`);
-      const segments = applyCarryOver(rawSegments, dayTypeCache);
+      const dailyCarriedSegments = applyCarryOver(rawSegments, dayTypeCache);
+      const monthlyMapCheckin = await this.getMonthlyBalanceMap(planEmp.employeeId, manager);
+      const segments = applyMonthlyCarryOver(dailyCarriedSegments, monthlyMapCheckin, monthlyCapCheckin);
       this.logger.log(`[approveCheckin] Phase B/C: segments after carryOver count=${segments.length} details=${JSON.stringify(segments.map(s => ({ dayType: s.dayType, durationMinutes: s.durationMinutes, actualDate: s.actualDate, attributedDate: s.attributedDate })))}`);
 
       // ── Phase D: Save OtCheckinItems ───────────────────────
@@ -1245,17 +1287,12 @@ export class OtManagementsService {
         }));
       }
 
-      // ── Phase E: Credit actual hours with monthly carry-over ─
-      this.logger.log(`[approveCheckin] Phase E: getting monthlyBalanceMap for employeeId=${planEmp.employeeId}`);
-      const monthlyMap = await this.getMonthlyBalanceMap(planEmp.employeeId);
+      // ── Phase E: Credit actual hours ─────────────────────────
+      // Period is derived directly from attributedDate (already carry-overed in Phase B/C)
       for (const seg of segments) {
         const otType = otTypeMap.get(seg.dayType);
         if (!otType) continue;
-        const [periodYear, periodMonth] = this.assignPeriodWithCarryOver(
-          seg.attributedDate,
-          monthlyMap,
-          seg.durationMinutes,
-        );
+        const [periodYear, periodMonth] = seg.attributedDate.split('-').map(Number);
         this.logger.log(`[approveCheckin] Phase E: crediting seg dayType=${seg.dayType} duration=${seg.durationMinutes} period=${periodYear}/${periodMonth}`);
         await manager.save(OtBalanceTransaction, manager.create(OtBalanceTransaction, {
           employeeId: planEmp.employeeId,
@@ -1723,9 +1760,15 @@ export class OtManagementsService {
    * Only loads transactions for the current and next calendar year since
    * assignPeriodWithCarryOver only ever bumps months forward within this window.
    */
-  private async getMonthlyBalanceMap(employeeId: number): Promise<Map<string, number>> {
+  private async getMonthlyBalanceMap(
+    employeeId: number,
+    manager?: EntityManager,
+  ): Promise<Map<string, number>> {
     const currentYear = vnYear();
-    const txs = await this.otBalanceRepo.find({
+    const repo = manager
+      ? manager.getRepository(OtBalanceTransaction)
+      : this.otBalanceRepo;
+    const txs = await repo.find({
       where: [
         { employeeId, periodYear: currentYear },
         { employeeId, periodYear: currentYear + 1 },

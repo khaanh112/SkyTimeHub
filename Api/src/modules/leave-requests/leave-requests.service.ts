@@ -40,7 +40,7 @@ import { validateAllocationsNoDuplicateBucket } from './utils/allocation-validat
 import { DefaultLeaveType } from '@/common/enums/default-leavetype.enum';
 import { ContractType } from '@/common/enums/contract-type.enum';
 import { LeaveCategory as LeaveCategoryEnum } from '@/common/enums/leave-category.enum';
-import { vnTodayStr, toVN } from '@/common/utils/date.util';
+import { vnTodayStr, toVN, dayjs } from '@/common/utils/date.util';
 
 @Injectable()
 export class LeaveRequestsService {
@@ -74,9 +74,7 @@ export class LeaveRequestsService {
    * Matches the DB trigger: (date - '2000-01-01') * 2 + (PM ? 1 : 0)
    */
   private dateToSlot(date: string, session: string): number {
-    const epoch = new Date('2000-01-01T00:00:00');
-    const d = new Date(date + 'T00:00:00');
-    const daysDiff = Math.round((d.getTime() - epoch.getTime()) / (1000 * 60 * 60 * 24));
+    const daysDiff = dayjs(date).diff(dayjs('2000-01-01'), 'day');
     return daysDiff * 2 + (session === 'PM' ? 1 : 0);
   }
 
@@ -214,10 +212,7 @@ export class LeaveRequestsService {
     );
 
     //  Basic validation
-    const startDate = new Date(dto.startDate);
-    const endDate = new Date(dto.endDate);
-
-    if (endDate < startDate) {
+    if (dto.endDate < dto.startDate) {
       throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
 
@@ -514,9 +509,7 @@ export class LeaveRequestsService {
     this.logger.log(`[updateLeaveRequest] User ${userId} updating leave request ${requestId}`);
 
     // ── Basic validation ─────────────────────────────────────
-    const startDate = new Date(dto.startDate);
-    const endDate = new Date(dto.endDate);
-    if (endDate < startDate) {
+    if (dto.endDate < dto.startDate) {
       throw new AppException(ErrorCode.INVALID_INPUT, 'End date must be after start date', 400);
     }
 

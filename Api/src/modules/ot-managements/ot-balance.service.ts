@@ -5,7 +5,7 @@ import { OtBalanceTransaction } from '@/entities/ot-balance-transaction.entity';
 import { SystemSetting } from '@/entities/system-setting.entity';
 import { OtBalanceDirection } from '@/common/enums/ot-balance-direction.enum';
 import { OtBalanceSource } from '@/common/enums/ot-balance-source.enum';
-import { toVN } from '@/common/utils/date.util';
+import { toVN, vnNow } from '@/common/utils/date.util';
 
 export interface OtPolicy {
   maxOtHoursPerDay: number;
@@ -19,6 +19,15 @@ export interface EmployeeOtSummary {
   otHoursToday: number;
   otHoursThisMonth: number;
   otHoursThisYear: number;
+}
+
+export interface EmployeeOtSummaryDetailed extends EmployeeOtSummary {
+  otHoursTodayBroughtForward: number;
+  otHoursTodayCarriedForward: number;
+  otHoursThisMonthBroughtForward: number;
+  otHoursThisMonthCarriedForward: number;
+  otHoursThisYearBroughtForward: number;
+  otHoursThisYearCarriedForward: number;
 }
 
 @Injectable()
@@ -107,6 +116,125 @@ export class OtBalanceService {
       otHoursToday: Math.round(((Number(dailyResult?.minutes) || 0) / 60) * 10) / 10,
       otHoursThisMonth: Math.round(((Number(monthlyResult?.minutes) || 0) / 60) * 10) / 10,
       otHoursThisYear: Math.round(((Number(yearlyResult?.minutes) || 0) / 60) * 10) / 10,
+    };
+  }
+
+  async getOtSummaryByFilter(
+    employeeId: number,
+    year: number,
+    month: number,
+  ): Promise<EmployeeOtSummaryDetailed> {
+    const todayStr = vnNow().format('YYYY-MM-DD');
+    const firstOfMonth = `${year}-${String(month).padStart(2, '0')}-01`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextMonthYear = month === 12 ? year + 1 : year;
+    const firstOfNextMonth = `${nextMonthYear}-${String(nextMonth).padStart(2, '0')}-01`;
+    const firstOfYear = `${year}-01-01`;
+    const firstOfNextYear = `${year + 1}-01-01`;
+
+    const net = (d: OtBalanceDirection) =>
+      `COALESCE(SUM(CASE WHEN t.direction = '${d}' THEN t.amount_minutes ELSE -t.amount_minutes END), 0)`;
+    const select = net(OtBalanceDirection.CREDIT);
+
+    const [
+      daily, dailyBF, dailyCF,
+      monthly, monthlyBF, monthlyCF,
+      yearly, yearlyBF, yearlyCF,
+    ] = await Promise.all([
+      // Daily total (period_date = today)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.period_date = :today', { today: todayStr })
+        .getRawOne(),
+
+      // Daily brought forward (work before today → attributed TO today)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.period_date = :today', { today: todayStr })
+        .andWhere('t.actual_date IS NOT NULL')
+        .andWhere('t.actual_date < :today', { today: todayStr })
+        .getRawOne(),
+
+      // Daily carried forward (work today → attributed to future)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.actual_date = :today', { today: todayStr })
+        .andWhere('t.period_date IS NOT NULL')
+        .andWhere('t.period_date > :today', { today: todayStr })
+        .getRawOne(),
+
+      // Monthly total (period_year=year, period_month=month)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.period_year = :year', { year })
+        .andWhere('t.period_month = :month', { month })
+        .getRawOne(),
+
+      // Monthly brought forward (work before this month → attributed TO this month)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.period_year = :year', { year })
+        .andWhere('t.period_month = :month', { month })
+        .andWhere('t.actual_date IS NOT NULL')
+        .andWhere('t.actual_date < :firstOfMonth', { firstOfMonth })
+        .getRawOne(),
+
+      // Monthly carried forward (work in this month → attributed to future month)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.actual_date IS NOT NULL')
+        .andWhere('t.actual_date >= :firstOfMonth', { firstOfMonth })
+        .andWhere('t.actual_date < :firstOfNextMonth', { firstOfNextMonth })
+        .andWhere('NOT (t.period_year = :year AND t.period_month = :month)', { year, month })
+        .getRawOne(),
+
+      // Yearly total (period_year = year)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.period_year = :year', { year })
+        .getRawOne(),
+
+      // Yearly brought forward (work before this year → attributed TO this year)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.period_year = :year', { year })
+        .andWhere('t.actual_date IS NOT NULL')
+        .andWhere('t.actual_date < :firstOfYear', { firstOfYear })
+        .getRawOne(),
+
+      // Yearly carried forward (work in this year → attributed to future year)
+      this.otBalanceRepo.createQueryBuilder('t')
+        .select(select, 'minutes')
+        .where('t.employee_id = :id', { id: employeeId })
+        .andWhere('t.actual_date IS NOT NULL')
+        .andWhere('t.actual_date >= :firstOfYear', { firstOfYear })
+        .andWhere('t.actual_date < :firstOfNextYear', { firstOfNextYear })
+        .andWhere('t.period_year > :year', { year })
+        .getRawOne(),
+    ]);
+
+    const toHours = (row: { minutes: unknown }) =>
+      Math.round(((Number(row?.minutes) || 0) / 60) * 100) / 100;
+
+    return {
+      employeeId,
+      otHoursToday: toHours(daily),
+      otHoursTodayBroughtForward: toHours(dailyBF),
+      otHoursTodayCarriedForward: toHours(dailyCF),
+      otHoursThisMonth: toHours(monthly),
+      otHoursThisMonthBroughtForward: toHours(monthlyBF),
+      otHoursThisMonthCarriedForward: toHours(monthlyCF),
+      otHoursThisYear: toHours(yearly),
+      otHoursThisYearBroughtForward: toHours(yearlyBF),
+      otHoursThisYearCarriedForward: toHours(yearlyCF),
     };
   }
 

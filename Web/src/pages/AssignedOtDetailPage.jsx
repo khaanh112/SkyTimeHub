@@ -4,22 +4,9 @@ import { otService } from '../services';
 import { LoadingSpinner } from '../components';
 import { toast } from 'react-toastify';
 import { ArrowLeft } from 'lucide-react';
+import { fmtDate, toInputTime as fmtTime } from '../utils/date';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
-
-const fmtDate = (isoStr) => {
-  if (!isoStr) return '—';
-  const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return isoStr;
-  return `${m[3]}/${m[2]}/${m[1]}`;
-};
-
-const fmtTime = (isoStr) => {
-  if (!isoStr) return null;
-  const m = isoStr.match(/T(\d{2}):(\d{2})/);
-  if (!m) return null;
-  return `${m[1]}:${m[2]}`;
-};
 
 const fmtDuration = (minutes) => {
   if (minutes == null) return '—';

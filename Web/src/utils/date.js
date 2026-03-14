@@ -32,4 +32,8 @@ export const toInputDate = (val) =>
 export const toInputTime = (val) =>
   val ? dayjs(val).tz(VN_TZ).format('HH:mm') : '';
 
+/** Extract YYYY-MM-DDTHH:mm for <input type="datetime-local"> from any date value */
+export const toInputDateTime = (val) =>
+  val ? dayjs(val).tz(VN_TZ).format('YYYY-MM-DDTHH:mm') : '';
+
 export { dayjs, VN_TZ as default };

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User, Calendar, FileText, Clock } from 'lucide-react';
-import { userService, leaveRequestService } from '../services';
+import { userService, leaveRequestService, otService } from '../services';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-toastify';
 import { vnYear, vnMonth, fmtDate } from '../utils/date';
@@ -44,7 +44,11 @@ const getLeaveTypeStyle = (code) =>
   };
 
 const currentYear = vnYear();
-const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - 3 + i);
+const GO_LIVE_YEAR = 2024;
+const yearOptions = Array.from(
+  { length: currentYear + 1 - GO_LIVE_YEAR + 1 },
+  (_, i) => GO_LIVE_YEAR + i,
+);
 
 const ProfilePage = () => {
   const [user, setUser] = useState(null);
@@ -59,7 +63,11 @@ const ProfilePage = () => {
   // OT summary filters
   const [otYear, setOtYear] = useState(currentYear);
   const [otMonth, setOtMonth] = useState(vnMonth() - 1);
-  const [otSummary, setOtSummary] = useState({ today: 0, monthly: 0, yearly: 0 });
+  const [otSummary, setOtSummary] = useState({
+    today: 0, todayBF: 0, todayCF: 0,
+    monthly: 0, monthlyBF: 0, monthlyCF: 0,
+    yearly: 0, yearlyBF: 0, yearlyCF: 0,
+  });
   const [otLoading, setOtLoading] = useState(true);
 
   useEffect(() => {
@@ -96,10 +104,18 @@ const ProfilePage = () => {
     const fetchOTSummary = async () => {
       try {
         setOtLoading(true);
-        // TODO: Replace with real OT API call when available
-        // e.g. await otService.getSummary({ year: otYear, month: otMonth + 1 })
-        await new Promise((r) => setTimeout(r, 300));
-        setOtSummary({ today: 0, monthly: 0, yearly: 0 });
+        const data = await otService.getMyOtSummary(otYear, otMonth + 1);
+        setOtSummary({
+          today: data.otHoursToday ?? 0,
+          todayBF: data.otHoursTodayBroughtForward ?? 0,
+          todayCF: data.otHoursTodayCarriedForward ?? 0,
+          monthly: data.otHoursThisMonth ?? 0,
+          monthlyBF: data.otHoursThisMonthBroughtForward ?? 0,
+          monthlyCF: data.otHoursThisMonthCarriedForward ?? 0,
+          yearly: data.otHoursThisYear ?? 0,
+          yearlyBF: data.otHoursThisYearBroughtForward ?? 0,
+          yearlyCF: data.otHoursThisYearCarriedForward ?? 0,
+        });
       } catch (error) {
         console.error('Failed to fetch OT summary:', error);
       } finally {
@@ -143,6 +159,11 @@ const ProfilePage = () => {
   const formatContractType = (value) => {
     if (!value) return '—';
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase().replace(/_/g, ' ');
+  };
+
+  const fmtHours = (val) => {
+    const n = parseFloat(val) || 0;
+    return `${n.toFixed(2)} ${n === 1 ? 'Hour' : 'Hours'}`;
   };
 
   const formatDate = (val) =>
@@ -312,6 +333,7 @@ const ProfilePage = () => {
       </div>
 
       {/* Overtime Summary */}
+      {user.role !== 'admin' && (
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-gray-900">Overtime Summary</h2>
@@ -335,7 +357,17 @@ const ProfilePage = () => {
                 <Calendar className="w-6 h-6 text-indigo-400" />
               </div>
               <p className="text-sm text-gray-500 text-center">Total OT hours Today</p>
-              <p className="text-3xl font-bold text-gray-900">{otSummary.today} Hours</p>
+              <p className="text-3xl font-bold text-gray-900">{fmtHours(otSummary.today)}</p>
+              <div className="w-full border-t border-gray-100 pt-2 space-y-1">
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Brought Forward</span>
+                  <span>{fmtHours(otSummary.todayBF)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Carried Forward</span>
+                  <span>{fmtHours(otSummary.todayCF)}</span>
+                </div>
+              </div>
             </div>
 
             {/* Monthly */}
@@ -346,7 +378,17 @@ const ProfilePage = () => {
               <p className="text-sm text-gray-500 text-center">
                 Total OT Hours in {MONTHS[otMonth]}
               </p>
-              <p className="text-3xl font-bold text-gray-900">{otSummary.monthly} Hours</p>
+              <p className="text-3xl font-bold text-gray-900">{fmtHours(otSummary.monthly)}</p>
+              <div className="w-full border-t border-gray-100 pt-2 space-y-1">
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Brought Forward</span>
+                  <span>{fmtHours(otSummary.monthlyBF)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Carried Forward</span>
+                  <span>{fmtHours(otSummary.monthlyCF)}</span>
+                </div>
+              </div>
             </div>
 
             {/* Yearly */}
@@ -357,11 +399,22 @@ const ProfilePage = () => {
               <p className="text-sm text-gray-500 text-center">
                 Total OT hours in {otYear}
               </p>
-              <p className="text-3xl font-bold text-gray-900">{otSummary.yearly} Hours</p>
+              <p className="text-3xl font-bold text-gray-900">{fmtHours(otSummary.yearly)}</p>
+              <div className="w-full border-t border-gray-100 pt-2 space-y-1">
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Brought Forward</span>
+                  <span>{fmtHours(otSummary.yearlyBF)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Carried Forward</span>
+                  <span>{fmtHours(otSummary.yearlyCF)}</span>
+                </div>
+              </div>
             </div>
           </div>
         )}
       </div>
+      )}
     </div>
   );
 };

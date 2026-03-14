@@ -31,7 +31,15 @@ import {
 import { LeaveCategory } from '@/common/enums/leave-category.enum';
 import { BALANCE_TYPE_CODES } from '@/common/enums/balance_leavetype.enum';
 import { ContractType } from '@/common/enums/contract-type.enum';
-import { vnMonth } from '@/common/utils/date.util';
+import {
+  vnMonth,
+  dayjs,
+  parseDateParts,
+  fmtDateParts,
+  addMonthsToStr,
+  diffDaysStr,
+  addDaysToStr,
+} from '@/common/utils/date.util';
 
 export interface BalanceInfo {
   leaveTypeId: number;
@@ -283,7 +291,7 @@ export class LeaveBalanceService {
     }
 
     const policy = await this.getActivePolicy(leaveTypeId, startDate);
-    const startyear = new Date(startDate).getFullYear();
+    const startyear = parseDateParts(startDate).year;
     const categoryCode = leaveType.category?.code ?? '';
 
     const warnings: string[] = [];
@@ -306,13 +314,9 @@ export class LeaveBalanceService {
     if (isParentalLeave) {
       if (isFemale) {
         const numChildren = parentalOptions?.numberOfChildren ?? 1;
-        const start = new Date(startDate);
-        const end = new Date(start);
-        end.setMonth(end.getMonth() + 6); // +6 tháng
-        end.setDate(end.getDate() - 1); // inclusive
-
-        const sixMonthsDays =
-          Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        // +6 months, then -1 day (inclusive)
+        const endStr = addDaysToStr(addMonthsToStr(startDate, 6), -1);
+        const sixMonthsDays = diffDaysStr(startDate, endStr) + 1;
 
         parentalEntitlementDays = sixMonthsDays + Math.max(0, numChildren - 1) * 30;
 
@@ -338,23 +342,15 @@ export class LeaveBalanceService {
           maternityEndDateStr = maternityEnd.endDate;
           maternityEndSessionVal = maternityEnd.endSession;
 
-          const excessStartDate = new Date(maternityEnd.endDate + 'T00:00:00');
           let excessStartSession: LeaveSession;
           if (maternityEnd.endSession === LeaveSession.PM) {
-            excessStartDate.setDate(excessStartDate.getDate() + 1);
+            excessStartStr = addDaysToStr(maternityEnd.endDate, 1);
             excessStartSession = LeaveSession.AM;
           } else {
+            excessStartStr = maternityEnd.endDate;
             excessStartSession = LeaveSession.PM;
           }
 
-          const fmtDate = (d: Date) => {
-            const yyyy = d.getFullYear();
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            return `${yyyy}-${mm}-${dd}`;
-          };
-
-          excessStartStr = fmtDate(excessStartDate);
           excessStartSessionVal = excessStartSession;
           const excessDuration = await calculateLeaveDuration(
             leaveTypeId,
@@ -420,9 +416,7 @@ export class LeaveBalanceService {
     const monthlyAllocations: MonthlyAllocation[] = [];
     let remainingDays = durationDays;
 
-    const endDateObj = new Date(endDate + 'T00:00:00');
-    const endYear = endDateObj.getFullYear();
-    const endMonth = endDateObj.getMonth() + 1;
+    const { year: endYear, month: endMonth } = parseDateParts(endDate);
 
     // Pre-compute monthly duration split (always compute, including PARENTAL)
     const monthlyBuckets: MonthlyDuration[] = await splitLeaveDaysByMonth(
@@ -968,8 +962,8 @@ export class LeaveBalanceService {
           ? monthlyBuckets
           : [
               {
-                year: new Date(startDate).getFullYear(),
-                month: new Date(startDate).getMonth() + 1,
+                year: parseDateParts(startDate).year,
+                month: parseDateParts(startDate).month,
                 durationDays: durationDays,
                 slots: durationDays * 2,
               },
@@ -1068,8 +1062,8 @@ export class LeaveBalanceService {
       childbirthMethod?: ChildbirthMethod;
     },
   ): Promise<LeaveValidationResult> {
-    const startYear = new Date(startDate).getFullYear();
-    const endYear = new Date(endDate + 'T00:00:00').getFullYear();
+    const startYear = parseDateParts(startDate).year;
+    const endYear = parseDateParts(endDate).year;
 
     // Lock the primary leave type for each year in range
     for (let y = startYear; y <= endYear; y++) {
@@ -1313,23 +1307,9 @@ export class LeaveBalanceService {
       if (isFemale) {
         const numChildren = parentalOptions?.numberOfChildren ?? 1;
 
-        const start = new Date(startDate + 'T00:00:00');
-        const startDay = start.getDate();
-
-        // add 6 months safely
-        const end = new Date(start);
-        end.setMonth(end.getMonth() + 6);
-
-        // if day overflowed (e.g., 31st -> next month), clamp to last day of target month
-        if (end.getDate() !== startDay) {
-          end.setDate(0); // last day of previous month
-        }
-
-        // inclusive: subtract 1 day
-        end.setDate(end.getDate() - 1);
-
-        const msPerDay = 24 * 60 * 60 * 1000;
-        const sixMonthsDays = Math.round((end.getTime() - start.getTime()) / msPerDay) + 1;
+        // add 6 months, then -1 day (inclusive)
+        const endStr = addDaysToStr(addMonthsToStr(startDate, 6), -1);
+        const sixMonthsDays = diffDaysStr(startDate, endStr) + 1;
 
         const entitlementDays = sixMonthsDays + Math.max(0, numChildren - 1) * 30;
         const result = calculateCalendarEndDate(startDate, startSession, entitlementDays);
@@ -1430,9 +1410,10 @@ export class LeaveBalanceService {
     year: number,
   ): number {
     if (!officialContractDate) return 0;
-    const contractDate = new Date(officialContractDate);
-    const targetDate = new Date(`${year}-01-01T00:00:00`);
-    const yearsOfService = targetDate.getFullYear() - contractDate.getFullYear();
+    const contractYear = parseDateParts(
+      dayjs(officialContractDate).format('YYYY-MM-DD'),
+    ).year;
+    const yearsOfService = year - contractYear;
     // Only count full completed years at the start of the target year
     if (yearsOfService < 5) return 0;
     return Math.floor(yearsOfService / 5);
@@ -1496,11 +1477,10 @@ export class LeaveBalanceService {
         // Determine start month based on join date proration
         let startMonth = 1;
         if (user.joinDate) {
-          const joinDate = new Date(user.joinDate);
-          const joinYear = joinDate.getFullYear();
+          const { year: joinYear, month: joinMonth, day: joinDay } = parseDateParts(
+            dayjs(user.joinDate).format('YYYY-MM-DD'),
+          );
           if (joinYear === year) {
-            const joinDay = joinDate.getDate();
-            const joinMonth = joinDate.getMonth() + 1;
             startMonth = joinDay < 15 ? joinMonth : joinMonth + 1;
           } else if (joinYear > year) {
             continue; // Skip employees who haven't joined yet
@@ -1581,10 +1561,9 @@ export class LeaveBalanceService {
     const toCredit = activeUsers.filter((u) => {
       if (existingIds.has(u.id)) return false;
       if (u.joinDate) {
-        const joinDate = new Date(u.joinDate);
-        const joinYear = joinDate.getFullYear();
-        const joinMonth = joinDate.getMonth() + 1;
-        const joinDay = joinDate.getDate();
+        const { year: joinYear, month: joinMonth, day: joinDay } = parseDateParts(
+          dayjs(u.joinDate).format('YYYY-MM-DD'),
+        );
 
         if (joinYear > year || (joinYear === year && joinMonth > month)) return false;
         if (joinYear === year && joinMonth === month && joinDay >= 15) return false;
@@ -1664,10 +1643,9 @@ export class LeaveBalanceService {
     let startMonth: number;
 
     if (employee?.joinDate) {
-      const joinDate = new Date(employee.joinDate);
-      const joinYear = joinDate.getFullYear();
-      const joinMonth = joinDate.getMonth() + 1; // 1-12
-      const joinDay = joinDate.getDate();
+      const { year: joinYear, month: joinMonth, day: joinDay } = parseDateParts(
+        dayjs(employee.joinDate).format('YYYY-MM-DD'),
+      );
 
       if (joinYear > year) {
         // Employee joins after this year — no accrual

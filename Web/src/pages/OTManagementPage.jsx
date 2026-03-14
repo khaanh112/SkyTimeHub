@@ -4,6 +4,7 @@ import { otService, departmentService } from '../services';
 import { useAuth } from '../context';
 import { LoadingSpinner, Modal } from '../components';
 import { toast } from 'react-toastify';
+import { fmtDate, fmtDateTime } from '../utils/date';
 import {
   Clock,
   CheckCircle,
@@ -23,20 +24,6 @@ import {
 } from 'lucide-react';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
-
-const fmtDate = (isoStr) => {
-  if (!isoStr) return '';
-  const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return isoStr;
-  return `${m[3]}/${m[2]}/${m[1]}`;
-};
-
-const fmtDateTime = (isoStr) => {
-  if (!isoStr) return '—';
-  const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (!m) return isoStr;
-  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
-};
 
 const fmtMinutes = (minutes) => {
   if (minutes == null) return '—';

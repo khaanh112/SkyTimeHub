@@ -201,3 +201,140 @@ export function applyCarryOver(
   }
   return result;
 }
+
+// ─── Monthly carry-over helpers ─────────────────────────────
+
+function yearMonthKey(dateStr: string): string {
+  const [y, m] = dateStr.split('-').map(Number);
+  return `${y}-${m}`;
+}
+
+function nextMonthKey(key: string): string {
+  const [y, m] = key.split('-').map(Number);
+  return m === 12 ? `${y + 1}-1` : `${y}-${m + 1}`;
+}
+
+function firstOfNextMonthDate(key: string): string {
+  const [y, m] = key.split('-').map(Number);
+  if (m === 12) return `${y + 1}-01-01`;
+  return `${y}-${String(m + 1).padStart(2, '0')}-01`;
+}
+
+/**
+ * Enforce per-month caps and chain overflow to the first day of the next month.
+ *
+ * Runs AFTER `applyCarryOver` (daily). When a month's total (existing balance +
+ * new segments) exceeds `monthlyCap`, overflow segments get their
+ * `attributedDate` set to the first day of the following month. Chaining
+ * continues until all months are within their caps.
+ *
+ * @param segments        - segments already processed by `applyCarryOver`
+ * @param existingMonthlyBalance - "YYYY-M" → net minutes already recorded for that month
+ * @param monthlyCap      - max minutes per month (default 2400 = 40 h)
+ */
+export function applyMonthlyCarryOver(
+  segments: OtSegment[],
+  existingMonthlyBalance: Map<string, number>,
+  monthlyCap: number = 2_400,
+): OtSegment[] {
+  if (segments.length === 0) return [];
+
+  const workingMap = new Map(existingMonthlyBalance);
+
+  const monthOrder: string[] = [];
+  const monthMap = new Map<string, OtSegment[]>();
+
+  for (const seg of segments) {
+    const key = yearMonthKey(seg.attributedDate);
+    if (!monthMap.has(key)) {
+      monthOrder.push(key);
+      monthMap.set(key, []);
+    }
+    monthMap.get(key)!.push({ ...seg });
+  }
+
+  monthOrder.sort((a, b) => {
+    const [ay, am] = a.split('-').map(Number);
+    const [by, bm] = b.split('-').map(Number);
+    return ay !== by ? ay - by : am - bm;
+  });
+
+  for (const segs of monthMap.values()) {
+    segs.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+  }
+
+  for (let mi = 0; mi < monthOrder.length; mi++) {
+    const key = monthOrder[mi];
+    const segs = monthMap.get(key)!;
+    const existing = workingMap.get(key) ?? 0;
+    let remaining = monthlyCap - existing;
+
+    if (remaining <= 0) {
+      const nKey = nextMonthKey(key);
+      const nDate = firstOfNextMonthDate(key);
+      const overflow = segs.map(s => ({ ...s, attributedDate: nDate }));
+      monthMap.set(key, []);
+
+      if (!monthMap.has(nKey)) {
+        monthOrder.splice(mi + 1, 0, nKey);
+        monthMap.set(nKey, []);
+      }
+      const nextSegs = monthMap.get(nKey)!;
+      monthMap.set(
+        nKey,
+        [...overflow, ...nextSegs].sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
+      );
+      continue;
+    }
+
+    let accumulated = 0;
+    const kept: OtSegment[] = [];
+    const overflow: OtSegment[] = [];
+
+    for (const seg of segs) {
+      if (accumulated >= remaining) {
+        overflow.push(seg);
+        continue;
+      }
+      const space = remaining - accumulated;
+      if (seg.durationMinutes <= space) {
+        kept.push(seg);
+        accumulated += seg.durationMinutes;
+      } else {
+        const splitPoint = new Date(seg.startTime.getTime() + space * 60_000);
+        kept.push({ ...seg, endTime: splitPoint, durationMinutes: space });
+        accumulated += space;
+        overflow.push({
+          ...seg,
+          startTime: splitPoint,
+          durationMinutes: seg.durationMinutes - space,
+        });
+      }
+    }
+
+    workingMap.set(key, existing + accumulated);
+    monthMap.set(key, kept);
+
+    if (overflow.length > 0) {
+      const nKey = nextMonthKey(key);
+      const nDate = firstOfNextMonthDate(key);
+      const overflowMoved = overflow.map(s => ({ ...s, attributedDate: nDate }));
+
+      if (!monthMap.has(nKey)) {
+        monthOrder.splice(mi + 1, 0, nKey);
+        monthMap.set(nKey, []);
+      }
+      const nextSegs = monthMap.get(nKey)!;
+      monthMap.set(
+        nKey,
+        [...overflowMoved, ...nextSegs].sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
+      );
+    }
+  }
+
+  const result: OtSegment[] = [];
+  for (const key of monthOrder) {
+    result.push(...(monthMap.get(key) ?? []));
+  }
+  return result;
+}

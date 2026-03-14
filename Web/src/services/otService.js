@@ -95,6 +95,12 @@ const otService = {
     return response.data.data || response.data;
   },
 
+  // Get own OT summary filtered by year/month (for profile page)
+  getMyOtSummary: async (year, month) => {
+    const response = await api.get('/ot-plans/my-ot-summary', { params: { year, month } });
+    return response.data.data || response.data;
+  },
+
   // List assigned OT items for the current employee (personal view)
   getMyAssignments: async (params = {}) => {
     const query = {};

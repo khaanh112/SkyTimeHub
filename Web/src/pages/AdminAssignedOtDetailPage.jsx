@@ -4,22 +4,9 @@ import { otService } from '../services';
 import { LoadingSpinner, Modal } from '../components';
 import { toast } from 'react-toastify';
 import { CheckCircle, XCircle } from 'lucide-react';
+import { fmtDate, toInputTime as fmtTime, toInputDateTime } from '../utils/date';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
-
-const fmtDate = (isoStr) => {
-  if (!isoStr) return '—';
-  const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return isoStr;
-  return `${m[3]}/${m[2]}/${m[1]}`;
-};
-
-const fmtTime = (isoStr) => {
-  if (!isoStr) return null;
-  const m = isoStr.match(/T(\d{2}):(\d{2})/);
-  if (!m) return null;
-  return `${m[1]}:${m[2]}`;
-};
 
 const fmtDuration = (minutes) => {
   if (minutes == null) return '—';
@@ -49,15 +36,6 @@ const StatusBadge = ({ status }) => {
       <span className={`text-sm font-medium ${c.text}`}>{c.label}</span>
     </div>
   );
-};
-
-// ── Datetime-local helper ────────────────────────────────────────────────
-
-const toDatetimeLocal = (isoStr) => {
-  if (!isoStr) return '';
-  const m = isoStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (!m) return '';
-  return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
 };
 
 // ── Detail Row ────────────────────────────────────────────────────────────
@@ -94,8 +72,8 @@ const AdminAssignedOtDetailPage = () => {
       const data = await otService.getOtPlanEmployee(empId);
       setAssignment(data);
       // Pre-fill override fields from existing checkin data
-      if (data.checkin?.checkInAt) setCheckInOverride(toDatetimeLocal(data.checkin.checkInAt));
-      if (data.checkin?.checkOutAt) setCheckOutOverride(toDatetimeLocal(data.checkin.checkOutAt));
+      if (data.checkin?.checkInAt) setCheckInOverride(toInputDateTime(data.checkin.checkInAt));
+      if (data.checkin?.checkOutAt) setCheckOutOverride(toInputDateTime(data.checkin.checkOutAt));
       if (data.checkin?.compensatoryMethod) setCompMethod(data.checkin.compensatoryMethod);
     } catch (err) {
       console.error(err);
@@ -113,8 +91,8 @@ const AdminAssignedOtDetailPage = () => {
     try {
       setSubmitting(true);
       await otService.approveCheckin(assignment.checkin.id, assignment.checkin.version, {
-        checkInAt: checkInOverride || undefined,
-        checkOutAt: checkOutOverride || undefined,
+        checkInAt: checkInOverride ? `${checkInOverride}:00+07:00` : undefined,
+        checkOutAt: checkOutOverride ? `${checkOutOverride}:00+07:00` : undefined,
         compensatoryMethod: compMethod || undefined,
       });
       toast.success('Check-in confirmed successfully');

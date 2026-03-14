@@ -33,7 +33,7 @@ import { CheckoutDto } from './dto/checkout.dto';
 import { ApproveCheckinDto } from './dto/approve-checkin.dto';
 import { RejectCheckinDto } from './dto/reject-checkin.dto';
 import { AuthenticatedRequest } from '@/common/interfaces/authenticated-request.interface';
-import { vnTodayStr } from '@/common/utils/date.util';
+import { vnTodayStr, vnYear, vnMonth } from '@/common/utils/date.util';
 
 @ApiTags('OT Plans')
 @ApiBearerAuth()
@@ -91,6 +91,19 @@ export class OtManagementsController {
   @ApiResponse({ status: 200, description: 'Employee OT summary returned.' })
   async getEmployeeOtSummary(@Param('employeeId', ParseIntPipe) employeeId: number) {
     return this.otBalanceService.getEmployeeSummary(employeeId);
+  }
+
+  @Get('my-ot-summary')
+  @ApiOperation({ summary: 'Get own OT hours summary filtered by year/month' })
+  @ApiResponse({ status: 200, description: 'Own OT summary returned.' })
+  async getMyOtSummary(
+    @Request() req: AuthenticatedRequest,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    const y = year ? parseInt(year, 10) : vnYear();
+    const m = month ? parseInt(month, 10) : vnMonth();
+    return this.otBalanceService.getOtSummaryByFilter(req.user.id, y, m);
   }
 
   @Get('export')

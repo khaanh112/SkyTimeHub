@@ -59,5 +59,36 @@ export const vnStartOfDayFromStr = (dateStr: string): Date =>
 export const vnEndOfDayFromStr = (dateStr: string): Date =>
   dayjs.tz(dateStr, 'YYYY-MM-DD', VN_TZ).endOf('day').toDate();
 
+/**
+ * Parse a YYYY-MM-DD string into { year, month, day } numbers.
+ * Pure string splitting — no Date/timezone involved.
+ */
+export const parseDateParts = (
+  dateStr: string,
+): { year: number; month: number; day: number } => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return { year: y, month: m, day: d };
+};
+
+/**
+ * Format { year, month, day } back to YYYY-MM-DD string.
+ */
+export const fmtDateParts = (year: number, month: number, day: number): string =>
+  `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+/**
+ * Add months to a YYYY-MM-DD date string using dayjs (handles month overflow).
+ * Returns YYYY-MM-DD string.
+ */
+export const addMonthsToStr = (dateStr: string, months: number): string =>
+  dayjs(dateStr).add(months, 'month').format('YYYY-MM-DD');
+
+/**
+ * Compute difference in calendar days between two YYYY-MM-DD strings.
+ * Result is (end - start) in days.
+ */
+export const diffDaysStr = (startStr: string, endStr: string): number =>
+  dayjs(endStr).diff(dayjs(startStr), 'day');
+
 /** Re-export dayjs (with utc + timezone plugins already applied) */
 export { dayjs };

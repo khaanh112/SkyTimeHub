@@ -4,6 +4,7 @@ import { Roles } from '@/modules/authorization/decorators/roles.decorator';
 import { UserRole } from '@/common';
 import { HolidayCalendarService, HolidayResponse } from '../services/holiday-calendar.service';
 import { SaveHolidayCalendarDto } from '../dto/holiday-calendar.dto';
+import { diffDaysStr } from '@/common/utils/date.util';
 
 @ApiBearerAuth()
 @Controller('settings/holiday-calendar')
@@ -36,9 +37,7 @@ export class HolidayCalendarController {
     // Calculate total days from the saved holidays
     let totalDays = 0;
     for (const holiday of holidays) {
-      const start = new Date(holiday.startDate);
-      const end = new Date(holiday.endDate);
-      totalDays += Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      totalDays += diffDaysStr(holiday.startDate, holiday.endDate) + 1;
     }
 
     return { holidays, totalDays };
