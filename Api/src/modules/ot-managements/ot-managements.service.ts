@@ -6,6 +6,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In, Brackets, EntityManager } from 'typeorm';
 import { OtPlan } from '@/entities/ot-plan.entity';
@@ -1088,6 +1089,24 @@ export class OtManagementsService {
       throw new BadRequestException('Can only check in for approved plans');
     }
 
+    // AC-01: Cannot check in before the planned start time
+    const now = new Date();
+    if (now < planEmp.startTime) {
+      throw new BadRequestException('Too early to check in. The OT session has not started yet.');
+    }
+
+    // AC-02: Cannot check in after the planned end time → auto-set MISSED
+    if (now > planEmp.endTime) {
+      const pendingForMiss = await this.otCheckinRepo.findOne({
+        where: { otPlanEmployeeId: planEmp.id, status: OtCheckinStatus.PENDING },
+      });
+      if (pendingForMiss) {
+        pendingForMiss.status = OtCheckinStatus.MISSED;
+        await this.otCheckinRepo.save(pendingForMiss);
+      }
+      throw new BadRequestException('The OT window has ended. Your attendance has been marked as Missed.');
+    }
+
     let checkin = await this.otCheckinRepo.findOne({
       where: { otPlanEmployeeId: planEmp.id, status: OtCheckinStatus.PENDING },
     });
@@ -1121,7 +1140,7 @@ export class OtManagementsService {
   async checkout(userId: number, dto: CheckoutDto) {
     const checkin = await this.otCheckinRepo.findOne({
       where: { id: dto.checkinId },
-      relations: ['otPlanEmployee'],
+      relations: ['otPlanEmployee', 'otPlanEmployee.otPlan'],
     });
     if (!checkin) throw new NotFoundException('Check-in record not found');
     if (checkin.otPlanEmployee.employeeId !== userId) {
@@ -1140,9 +1159,32 @@ export class OtManagementsService {
       checkin.checkInAt!,
       checkin.checkOutAt,
     );
-    checkin.workOutput = dto.workOutput || null;
-    checkin.compensatoryMethod = dto.compensatoryMethod || null;
+    checkin.workOutput = dto.workOutput;
+    checkin.compensatoryMethod = dto.compensatoryMethod;
     await this.otCheckinRepo.save(checkin);
+
+    // AC-05: Notify department leader (Approver) to review and confirm
+    const planEmp = checkin.otPlanEmployee;
+    const plan = planEmp.otPlan;
+    const empUser = await this.userRepo.findOne({ where: { id: userId } });
+    if (plan.approverId && empUser) {
+      const VN_TZ = 'Asia/Ho_Chi_Minh';
+      const durationMinutes = checkin.actualDurationMinutes ?? 0;
+      const emailIds = await this.notificationsService.enqueueOtCheckoutSubmittedNotification(
+        Number(checkin.id),
+        plan.approverId,
+        {
+          employeeName: empUser.username,
+          planTitle: plan.title,
+          checkInAt: dayjs(checkin.checkInAt).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
+          checkOutAt: dayjs(checkin.checkOutAt).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
+          actualDuration: `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`,
+          workOutput: checkin.workOutput ?? '',
+          otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+        },
+      );
+      this.notificationsService.triggerImmediateSend(emailIds);
+    }
 
     return { success: true, data: checkin };
   }
@@ -1332,13 +1374,18 @@ export class OtManagementsService {
       // ── Phase G: Notify employee ──────────────────────────
       this.logger.log(`[approveCheckin] Phase G: empUser=${empUser?.id}`);
       if (empUser) {
+        const leaderUser = await this.userRepo.findOne({ where: { id: userId } });
+        const VN_TZ = 'Asia/Ho_Chi_Minh';
         const emailIds = await this.notificationsService.enqueueOtCheckinConfirmedNotification(
           Number(checkin.id),
           planEmp.employeeId,
           {
             employeeName: empUser.username,
-            otPlanTitle: plan.title,
-            otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+            planTitle: plan.title,
+            confirmedBy: leaderUser?.username ?? '',
+            otDate: vnDateStr(effectiveCheckIn),
+            confirmedAt: dayjs(new Date()).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
+            otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
           },
           manager,
         );
@@ -1412,13 +1459,19 @@ export class OtManagementsService {
 
       // AC-06: Notify employee
       if (empUser) {
+        const leaderUser = await this.userRepo.findOne({ where: { id: userId } });
+        const VN_TZ = 'Asia/Ho_Chi_Minh';
         const emailIds = await this.notificationsService.enqueueOtCheckinRejectedNotification(
           Number(checkin.id),
           planEmp.employeeId,
           {
             employeeName: empUser.username,
-            otPlanTitle: plan.title,
-            otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+            planTitle: plan.title,
+            rejectedBy: leaderUser?.username ?? '',
+            otDate: vnDateStr(checkin.checkInAt ?? new Date()),
+            rejectedAt: dayjs(new Date()).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
+            rejectedReason: reason,
+            otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
           },
           manager,
         );
@@ -1434,6 +1487,87 @@ export class OtManagementsService {
   //  ─── EMPLOYEE OT SUMMARY ───────────────────────────────────
   async getEmployeeOtSummary(employeeId: number) {
     return this.otBalanceService.getEmployeeSummary(employeeId);
+  }
+
+  // ─── CRON: AUTO-MARK MISSED ────────────────────────────────
+  // AC-02 : Employees who never checked in after their OT window ends
+  // are automatically marked as MISSED every 30 minutes.
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async autoMarkMissed() {
+    this.logger.log('[autoMarkMissed] Running auto-missed check');
+    const now = new Date();
+    const pendingCheckins = await this.otCheckinRepo
+      .createQueryBuilder('c')
+      .innerJoin('c.otPlanEmployee', 'pe')
+      .innerJoin('pe.otPlan', 'plan')
+      .where('c.status = :status', { status: OtCheckinStatus.PENDING })
+      .andWhere('pe.endTime < :now', { now })
+      .andWhere('plan.status = :planStatus', { planStatus: OtPlanStatus.APPROVED })
+      .getMany();
+
+    if (pendingCheckins.length > 0) {
+      this.logger.log(`[autoMarkMissed] Marking ${pendingCheckins.length} checkin(s) as MISSED`);
+      for (const c of pendingCheckins) {
+        c.status = OtCheckinStatus.MISSED;
+      }
+      await this.otCheckinRepo.save(pendingCheckins);
+    }
+  }
+
+  // ─── CRON: AUTO-CHECKOUT ───────────────────────────────────
+  // AC-03: If an employee checked in but did not check out within
+  // planDuration + 2 hours, the system auto-checks them out at checkInAt + planDuration.
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async autoCheckout() {
+    this.logger.log('[autoCheckout] Running auto-checkout check');
+    const now = new Date();
+    const checkedInRecords = await this.otCheckinRepo.find({
+      where: { status: OtCheckinStatus.CHECKED_IN },
+      relations: ['otPlanEmployee', 'otPlanEmployee.otPlan'],
+    });
+
+    const VN_TZ = 'Asia/Ho_Chi_Minh';
+    const autoCheckoutIds: number[] = [];
+
+    for (const checkin of checkedInRecords) {
+      if (!checkin.checkInAt) continue;
+      const planEmp = checkin.otPlanEmployee;
+      const thresholdMs = planEmp.durationMinutes * 60 * 1000 + 2 * 60 * 60 * 1000;
+      const autoCheckoutThreshold = new Date(checkin.checkInAt.getTime() + thresholdMs);
+      if (now <= autoCheckoutThreshold) continue;
+
+      // Auto check-out at checkInAt + planDuration
+      const autoCheckoutTime = new Date(checkin.checkInAt.getTime() + planEmp.durationMinutes * 60 * 1000);
+      checkin.checkOutAt = autoCheckoutTime;
+      checkin.actualDurationMinutes = planEmp.durationMinutes;
+      checkin.workOutput = 'System auto-checkout. No work output provided.';
+      checkin.compensatoryMethod = OtCompensatoryMethod.PAID;
+      checkin.status = OtCheckinStatus.CHECKED_OUT;
+      await this.otCheckinRepo.save(checkin);
+      this.logger.log(`[autoCheckout] Auto-checked out checkin id=${checkin.id} for planEmp id=${planEmp.id}`);
+
+      // AC-05: Notify employee
+      const empUser = await this.userRepo.findOne({ where: { id: planEmp.employeeId } });
+      if (empUser) {
+        const emailIds = await this.notificationsService.enqueueOtAutoCheckoutNotification(
+          Number(checkin.id),
+          planEmp.employeeId,
+          {
+            employeeName: empUser.username,
+            planTitle: planEmp.otPlan.title,
+            checkInAt: dayjs(checkin.checkInAt).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
+            checkOutAt: dayjs(autoCheckoutTime).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
+            actualDuration: `${Math.floor(planEmp.durationMinutes / 60)}h ${planEmp.durationMinutes % 60}m`,
+            otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+          },
+        );
+        autoCheckoutIds.push(...emailIds);
+      }
+    }
+
+    if (autoCheckoutIds.length > 0) {
+      this.notificationsService.triggerImmediateSend(autoCheckoutIds);
+    }
   }
 
   // ─── EXPORT ─────────────────────────────────────────────────

@@ -23,6 +23,8 @@ import {
   OtPlanDetailPage,
   AssignedOtDetailPage,
   AdminAssignedOtDetailPage,
+  LeaveReportPage,
+  OtReportPage,
 } from './pages';
 import ImportUsersPage from './pages/ImportUsersPage';
 
@@ -161,6 +163,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/leave-requests/report"
+        element={
+          <ProtectedRoute>
+            <LeaveReportPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/leave-requests/:id"
         element={
           <ProtectedRoute>
@@ -215,6 +225,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <AdminAssignedOtDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ot-management/report"
+        element={
+          <ProtectedRoute>
+            <OtReportPage />
           </ProtectedRoute>
         }
       />

@@ -344,8 +344,8 @@ const LeaveRequestManagementPage = () => {
             </button>
           ) : (
             <button
+              onClick={() => navigate('/leave-requests/report')}
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-              title="Export report (coming soon)"
             >
               <FileText className="w-4 h-4" />
               Report

@@ -15,6 +15,7 @@ import { CalendarOverride } from '@entities/calendar-override.entity';
 import { UserApprover } from '@entities/user_approver.entity';
 import { User } from '@entities/users.entity';
 import { LeaveRequestAttachment } from '@entities/leave-request-attachment.entity';
+import { CompBalanceTransaction } from '@entities/comp-balance-transaction.entity';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
 import { StorageModule } from '@modules/storage/storage.module';
 
@@ -33,6 +34,7 @@ import { StorageModule } from '@modules/storage/storage.module';
       UserApprover,
       User,
       LeaveRequestAttachment,
+      CompBalanceTransaction,
     ]),
     NotificationsModule,
     StorageModule,

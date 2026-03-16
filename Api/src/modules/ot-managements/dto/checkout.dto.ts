@@ -1,6 +1,6 @@
-import { IsInt, IsOptional, IsString, IsEnum, Min } from 'class-validator';
+import { IsInt, IsString, IsEnum, Min, MaxLength, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { OtCompensatoryMethod } from '@/common/enums/ot-compensatory-method.enum';
 
 export class CheckoutDto {
@@ -9,15 +9,15 @@ export class CheckoutDto {
   @IsInt()
   checkinId: number;
 
-  @ApiPropertyOptional({ description: 'Work output description' })
-  @IsOptional()
+  @ApiProperty({ description: 'Work output description (required, 1–1000 chars)', example: 'Completed API integration task' })
   @IsString()
-  workOutput?: string;
+  @MinLength(1)
+  @MaxLength(1000)
+  workOutput: string;
 
-  @ApiPropertyOptional({ enum: OtCompensatoryMethod, description: 'Compensation method' })
-  @IsOptional()
+  @ApiProperty({ enum: OtCompensatoryMethod, description: 'Compensation method (required)', example: OtCompensatoryMethod.PAID })
   @IsEnum(OtCompensatoryMethod)
-  compensatoryMethod?: OtCompensatoryMethod;
+  compensatoryMethod: OtCompensatoryMethod;
 
   @ApiProperty({ example: 1, description: 'Version for optimistic locking' })
   @Type(() => Number)

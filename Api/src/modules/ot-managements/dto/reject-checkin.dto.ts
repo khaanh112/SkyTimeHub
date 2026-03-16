@@ -10,7 +10,7 @@ export class RejectCheckinDto {
 
   @ApiProperty({ example: 'Hours do not match time records', description: 'Rejection reason' })
   @IsString()
-  @Length(5, 500)
+  @Length(1, 500)
   rejectedReason: string;
 
   @ApiProperty({ example: 1, description: 'Version for optimistic locking' })

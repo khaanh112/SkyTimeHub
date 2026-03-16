@@ -21,6 +21,7 @@ import {
   FileText,
   Eye,
   Calendar,
+  BarChart2,
 } from 'lucide-react';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -575,6 +576,13 @@ const OTManagementPage = () => {
           {/* Action Buttons */}
           {view === 'management' && (
             <>
+              <button
+                onClick={() => navigate('/ot-management/report')}
+                className="inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+              >
+                <BarChart2 className="w-4 h-4" />
+                OT Hours Report
+              </button>
               <button
                 onClick={handleExport}
                 className="inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"

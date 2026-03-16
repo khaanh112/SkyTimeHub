@@ -12,39 +12,10 @@ import {
   Info,
   Upload,
   X,
-  Plus,
   AlertTriangle,
   FileText,
   CheckCircle,
 } from 'lucide-react';
-
-// ── Time slots for compensatory working plan (30-min increments, full 24h) ──
-const TIME_SLOTS = (() => {
-  const slots = [];
-  for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 30) {
-      slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-    }
-  }
-  return slots;
-})();
-
-const formatCompDuration = (startDate, startTime, endDate, endTime) => {
-  if (!startDate || !startTime || !endDate || !endTime) return '';
-  const [sh, sm] = startTime.split(':').map(Number);
-  const [eh, em] = endTime.split(':').map(Number);
-  const s = new Date(startDate);
-  s.setHours(sh, sm, 0, 0);
-  const e = new Date(endDate);
-  e.setHours(eh, em, 0, 0);
-  const totalMinutes = Math.round((e - s) / (1000 * 60));
-  if (totalMinutes <= 0) return '';
-  const hours = Math.floor(totalMinutes / 60);
-  const mins = totalMinutes % 60;
-  if (hours === 0) return `${mins}m`;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h${mins}m`;
-};
 
 // ── Custom Dropdown Component ──────────────────────────────────────────
 const CustomDropdown = ({ value, options, onChange, placeholder = 'Select...', className = '' }) => {
@@ -184,6 +155,8 @@ const CreateLeaveRequestPage = () => {
   // Dynamic leave types fetched from API
   const [leaveCategories, setLeaveCategories] = useState([]);
   const [loadingTypes, setLoadingTypes] = useState(true);
+  // Comp leave balance (fetched when COMPENSATORY category is selected)
+  const [compBalance, setCompBalance] = useState(null);
 
   const [formData, setFormData] = useState({
     leaveCategory: '',   // category code (e.g. 'ANNUAL')
@@ -195,9 +168,6 @@ const CreateLeaveRequestPage = () => {
     reason: '',
     workSolution: '',
     ccUserIds: [],
-    // Compensatory-specific
-    compensationMethod: 'fund', // 'fund' | 'working_plan'
-    compensatoryPlans: [{ startDate: '', startTime: '08:30', endDate: '', endTime: '17:30' }],
     // Parental Leave-specific
     numberOfChildren: 1,
     childbirthMethod: 'natural', // 'natural' | 'c_section'
@@ -521,29 +491,6 @@ const CreateLeaveRequestPage = () => {
     }
   };
 
-  // ── Compensatory Plan helpers ──
-  const addCompensatoryPlan = () => {
-    setFormData((prev) => ({
-      ...prev,
-      compensatoryPlans: [...prev.compensatoryPlans, { startDate: '', startTime: '08:30', endDate: '', endTime: '17:30' }],
-    }));
-  };
-
-  const updateCompensatoryPlan = (index, field, value) => {
-    setFormData((prev) => {
-      const plans = [...prev.compensatoryPlans];
-      plans[index] = { ...plans[index], [field]: value };
-      return { ...prev, compensatoryPlans: plans };
-    });
-  };
-
-  const removeCompensatoryPlan = (index) => {
-    setFormData((prev) => ({
-      ...prev,
-      compensatoryPlans: prev.compensatoryPlans.filter((_, i) => i !== index),
-    }));
-  };
-
   // ── Attachment helpers ──
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
@@ -590,6 +537,23 @@ const CreateLeaveRequestPage = () => {
     formData.reason.trim().length >= 5;
 
   const requestHours = totalDuration ? totalDuration * 8 : 0;
+
+  // ── Fetch comp balance when COMPENSATORY category is selected ──
+  useEffect(() => {
+    if (!isCompensatory) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await leaveRequestService.getBalanceSummary();
+        const items = res.data || res || [];
+        const comp = Array.isArray(items) ? items.find((b) => b.leaveTypeCode === 'COMPENSATORY_LEAVE') : null;
+        if (!cancelled) setCompBalance(comp || null);
+      } catch {
+        // Balance fetch failure is non-critical
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isCompensatory]);
 
   // Section numbering
   let sectionIndex = 0;
@@ -931,141 +895,43 @@ const CreateLeaveRequestPage = () => {
             </div>
           </div>
 
-          {/* ──────── Section: Compensation Method (Compensatory only) ──────── */}
+          {/* ──────── Section: Compensatory Leave Balance (Compensatory only) ──────── */}
           {isCompensatory && (
             <div>
               <div className="flex items-center gap-2.5 mb-5">
                 <div className="flex items-center justify-center w-7 h-7 bg-blue-600 text-white rounded-full text-sm font-bold">
                   {nextSection()}
                 </div>
-                <h3 className="text-base font-bold text-gray-900">Compensation Method</h3>
+                <h3 className="text-base font-bold text-gray-900">Compensatory Leave Balance</h3>
               </div>
 
-              <div className="space-y-5">
-                {/* Option 1: Use Compensatory Fund */}
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="compensationMethod"
-                    value="fund"
-                    checked={formData.compensationMethod === 'fund'}
-                    onChange={() => setFormData({ ...formData, compensationMethod: 'fund' })}
-                    className="mt-1 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <div className="flex-1">
-                    <span className="text-sm font-medium text-gray-900">Use Compensatory Fund</span>
-                    <div className="mt-1.5 text-sm text-gray-600 space-y-0.5">
-                      <p>This request: {requestHours} hours</p>
-                    </div>
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2.5 text-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Available Balance</span>
+                  <span className="font-semibold text-gray-900">
+                    {compBalance != null ? `${Number(compBalance.remaining ?? 0).toFixed(2)} Hours` : '—'}
+                  </span>
+                </div>
+                {compBalance?.pendingDays != null && compBalance.pendingDays > 0 && (
+                  <div className="flex justify-between items-center text-xs text-amber-700">
+                    <span>Pending Requests</span>
+                    <span>{Number(compBalance.pendingDays).toFixed(2)} Hours</span>
                   </div>
-                </label>
-
-                {/* Option 2: Register Compensatory Working Plan */}
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="compensationMethod"
-                    value="working_plan"
-                    checked={formData.compensationMethod === 'working_plan'}
-                    onChange={() => setFormData({ ...formData, compensationMethod: 'working_plan' })}
-                    className="mt-1 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="text-sm font-medium text-gray-900">Register Compensatory Working Plan</span>
-                </label>
-
-                {formData.compensationMethod === 'working_plan' && (
-                  <div className="ml-7 space-y-4">
-                    {formData.compensatoryPlans.map((plan, idx) => (
-                      <div key={idx} className="p-4 border border-gray-200 rounded-lg bg-gray-50/50 space-y-3">
-                        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto_auto_auto] gap-3 items-end">
-                          {/* Start Date */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                              Start <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="date"
-                              value={plan.startDate}
-                              onChange={(e) => updateCompensatoryPlan(idx, 'startDate', e.target.value)}
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                            />
-                          </div>
-                          {/* Start Time */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">&nbsp;</label>
-                            <select
-                              value={plan.startTime}
-                              onChange={(e) => updateCompensatoryPlan(idx, 'startTime', e.target.value)}
-                              className="w-24 px-2 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                            >
-                              {TIME_SLOTS.map((t) => (
-                                <option key={t} value={t}>{t}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {/* End Date */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                              End <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="date"
-                              value={plan.endDate}
-                              onChange={(e) => updateCompensatoryPlan(idx, 'endDate', e.target.value)}
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                              min={plan.startDate || undefined}
-                            />
-                          </div>
-                          {/* End Time */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">&nbsp;</label>
-                            <select
-                              value={plan.endTime}
-                              onChange={(e) => updateCompensatoryPlan(idx, 'endTime', e.target.value)}
-                              className="w-24 px-2 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                            >
-                              {TIME_SLOTS.map((t) => {
-                                // If same day, only show times after start time
-                                if (plan.startDate && plan.endDate && plan.startDate === plan.endDate) {
-                                  return t > plan.startTime ? <option key={t} value={t}>{t}</option> : null;
-                                }
-                                return <option key={t} value={t}>{t}</option>;
-                              })}
-                            </select>
-                          </div>
-                          {/* Total Duration */}
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Duration</label>
-                            <div className="px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 font-medium min-h-10.5 flex items-center min-w-20 whitespace-nowrap">
-                              {formatCompDuration(plan.startDate, plan.startTime, plan.endDate, plan.endTime)}
-                            </div>
-                          </div>
-                          {/* Actions */}
-                          <div className="flex items-center gap-1">
-                            {formData.compensatoryPlans.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeCompensatoryPlan(idx)}
-                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Remove"
-                              >
-                                <X className="w-5 h-5" />
-                              </button>
-                            )}
-                            {idx === formData.compensatoryPlans.length - 1 && (
-                              <button
-                                type="button"
-                                onClick={addCompensatoryPlan}
-                                className="p-2 text-blue-600 hover:bg-blue-50 border border-blue-300 rounded-lg transition-colors"
-                                title="Add another plan"
-                              >
-                                <Plus className="w-5 h-5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                )}
+                <div className="flex justify-between items-center border-t border-blue-200 pt-2">
+                  <span className="text-gray-600">This Request</span>
+                  <span className="font-semibold text-blue-700">−{Number(requestHours).toFixed(2)} Hours</span>
+                </div>
+                {compBalance != null && (
+                  <div className="flex justify-between items-center font-medium">
+                    <span className="text-gray-700">Balance After</span>
+                    <span className={
+                      Number(compBalance.remaining ?? 0) - requestHours < 0
+                        ? 'text-red-600'
+                        : 'text-green-700'
+                    }>
+                      {(Number(compBalance.remaining ?? 0) - requestHours).toFixed(2)} Hours
+                    </span>
                   </div>
                 )}
               </div>

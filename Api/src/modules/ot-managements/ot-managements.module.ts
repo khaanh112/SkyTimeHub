@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { OtManagementsController } from './ot-managements.controller';
 import { OtManagementsService } from './ot-managements.service';
 import { OtBalanceService } from './ot-balance.service';
+import { OtReportService } from './ot-report.service';
 import { OtPlan } from '@/entities/ot-plan.entity';
 import { OtPlanEmployee } from '@/entities/ot-plan-employee.entity';
 import { OtCheckin } from '@/entities/ot-checkin.entity';
@@ -36,7 +37,7 @@ import { NotificationsModule } from '@/modules/notifications/notifications.modul
     NotificationsModule,
   ],
   controllers: [OtManagementsController],
-  providers: [OtManagementsService, OtBalanceService],
-  exports: [OtManagementsService, OtBalanceService],
+  providers: [OtManagementsService, OtBalanceService, OtReportService],
+  exports: [OtManagementsService, OtBalanceService, OtReportService],
 })
 export class OtManagementsModule {}

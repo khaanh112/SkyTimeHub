@@ -174,6 +174,8 @@ export class NotificationsService implements OnModuleDestroy {
       { type: EmailType.OT_ASSIGNMENT_CANCELLED, file: 'ot-assignment-cancelled.hbs' },
       { type: EmailType.OT_CHECKIN_CONFIRMED, file: 'ot-checkin-confirmed.hbs' },
       { type: EmailType.OT_CHECKIN_REJECTED, file: 'ot-checkin-rejected.hbs' },
+      { type: EmailType.OT_CHECKOUT_SUBMITTED, file: 'ot-checkout-submitted.hbs' },
+      { type: EmailType.OT_AUTO_CHECKOUT, file: 'ot-auto-checkout.hbs' },
       { type: EmailType.NONE, file: 'none.hbs' },
     ];
 
@@ -303,9 +305,13 @@ export class NotificationsService implements OnModuleDestroy {
       case EmailType.OT_ASSIGNMENT_CANCELLED:
         return '[Notice] Your OT assignment canceled';
       case EmailType.OT_CHECKIN_REJECTED:
-        return 'Check-in OT bị từ chối';
+        return '[Rejected] Your actual OT hours';
       case EmailType.OT_CHECKIN_CONFIRMED:
-        return 'Check-in OT đã được xác nhận';
+        return '[Confirmed] Your actual OT hours';
+      case EmailType.OT_CHECKOUT_SUBMITTED:
+        return `[Action Required] Overtime Confirmation – ${context.employeeName || ''}`;
+      case EmailType.OT_AUTO_CHECKOUT:
+        return '[System Alert] Automatic OT Check-out Recorded';
       case EmailType.NONE:
         return 'Thông báo từ SkyTimeHub';
 
@@ -964,8 +970,11 @@ export class NotificationsService implements OnModuleDestroy {
     employeeId: number,
     context: {
       employeeName: string;
-      otPlanTitle: string;
-      otAssignmentUrl: string;
+      planTitle: string;
+      confirmedBy: string;
+      otDate: string;
+      confirmedAt: string;
+      otPlanUrl: string;
     },
     manager?: EntityManager,
   ): Promise<number[]> {
@@ -1006,8 +1015,12 @@ export class NotificationsService implements OnModuleDestroy {
     employeeId: number,
     context: {
       employeeName: string;
-      otPlanTitle: string;
-      otAssignmentUrl: string;
+      planTitle: string;
+      rejectedBy: string;
+      otDate: string;
+      rejectedAt: string;
+      rejectedReason?: string;
+      otPlanUrl: string;
     },
     manager?: EntityManager,
   ): Promise<number[]> {
@@ -1032,6 +1045,99 @@ export class NotificationsService implements OnModuleDestroy {
 
     const savedEmail = await repo.save(emailQueue);
     this.logger.log(`✅ OT checkin rejected notification queued for checkin ${checkinId}, employee ${employeeId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
+
+  /**
+   * Enqueue OT checkout submitted notification to department leader (Approver).
+   * Triggered after employee manually checks out.
+   */
+  async enqueueOtCheckoutSubmittedNotification(
+    checkinId: number,
+    leaderId: number,
+    context: {
+      employeeName: string;
+      planTitle: string;
+      checkInAt: string;
+      checkOutAt: string;
+      actualDuration: string;
+      workOutput: string;
+      otAssignmentUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-checkout-submitted-${checkinId}-${leaderId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: leaderId,
+      type: EmailType.OT_CHECKOUT_SUBMITTED,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: checkinId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT checkout submitted notification queued for checkin ${checkinId}, leader ${leaderId}`);
+
+    if (!manager) {
+      setImmediate(() => this.trySendImmediately(savedEmail.id));
+    }
+
+    return [savedEmail.id];
+  }
+
+  /**
+   * Enqueue OT auto-checkout notification to Employee.
+   * Triggered when the system auto-checks out an employee.
+   */
+  async enqueueOtAutoCheckoutNotification(
+    checkinId: number,
+    employeeId: number,
+    context: {
+      employeeName: string;
+      planTitle: string;
+      checkInAt: string;
+      checkOutAt: string;
+      actualDuration: string;
+      otAssignmentUrl: string;
+    },
+    manager?: EntityManager,
+  ): Promise<number[]> {
+    const repo = manager ? manager.getRepository(EmailQueue) : this.emailQueueRepository;
+    const idempotencyKey = `ot-auto-checkout-${checkinId}-${employeeId}`;
+
+    const existing = await repo.findOne({ where: { idempotencyKey } });
+    if (existing) return [];
+
+    const emailQueue = repo.create({
+      recipientUserId: employeeId,
+      type: EmailType.OT_AUTO_CHECKOUT,
+      referenceKind: EmailReferenceKind.OT_REQUEST,
+      referenceId: checkinId,
+      idempotencyKey,
+      context,
+      status: EmailStatus.PENDING,
+      attemptCount: 0,
+      maxAttempts: 3,
+      nextRetryAt: new Date(),
+    });
+
+    const savedEmail = await repo.save(emailQueue);
+    this.logger.log(`✅ OT auto-checkout notification queued for checkin ${checkinId}, employee ${employeeId}`);
 
     if (!manager) {
       setImmediate(() => this.trySendImmediately(savedEmail.id));

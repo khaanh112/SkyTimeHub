@@ -642,6 +642,21 @@ export class LeaveRequestsService {
         queryRunner.manager,
       );
 
+      // If old request was COMPENSATORY: release its RESERVE in comp_balance_transactions
+      if (leaveRequest.requestedLeaveTypeId) {
+        const oldLeaveType = await queryRunner.manager.findOne(LeaveType, {
+          where: { id: leaveRequest.requestedLeaveTypeId },
+          relations: ['category'],
+        });
+        if (oldLeaveType?.category?.code === LeaveCategoryEnum.COMPENSATORY) {
+          await this.leaveBalanceService.writeCompLeaveReleaseCredit(
+            queryRunner.manager,
+            userId,
+            requestId,
+          );
+        }
+      }
+
       const originalVersion = leaveRequest.version;
 
       // Update fields
@@ -831,6 +846,26 @@ export class LeaveRequestsService {
         queryRunner.manager,
       );
 
+      // If COMPENSATORY, debit comp_balance_transactions
+      if (leaveRequest.requestedLeaveTypeId) {
+        const reqLeaveType = await queryRunner.manager.findOne(LeaveType, {
+          where: { id: leaveRequest.requestedLeaveTypeId },
+          relations: ['category'],
+        });
+        if (reqLeaveType?.category?.code === LeaveCategoryEnum.COMPENSATORY) {
+          const totalDays = (leaveRequest.items || []).reduce(
+            (sum, item) => sum + Number(item.amountDays),
+            0,
+          );
+          await this.leaveBalanceService.writeCompLeaveApprovalDebit(
+            queryRunner.manager,
+            leaveRequest.userId,
+            leaveRequest.id,
+            totalDays,
+          );
+        }
+      }
+
       // Load recipients and enqueue email INSIDE the transaction (transactional outbox)
       const recipients = await queryRunner.manager
         .getRepository(LeaveRequestNotificationRecipient)
@@ -939,6 +974,21 @@ export class LeaveRequestsService {
         queryRunner.manager,
       );
 
+      // If COMPENSATORY: also release the RESERVE in comp_balance_transactions
+      if (leaveRequest.requestedLeaveTypeId) {
+        const reqLeaveType = await queryRunner.manager.findOne(LeaveType, {
+          where: { id: leaveRequest.requestedLeaveTypeId },
+          relations: ['category'],
+        });
+        if (reqLeaveType?.category?.code === LeaveCategoryEnum.COMPENSATORY) {
+          await this.leaveBalanceService.writeCompLeaveReleaseCredit(
+            queryRunner.manager,
+            leaveRequest.userId,
+            leaveRequest.id,
+          );
+        }
+      }
+
       // Enqueue email notification INSIDE the transaction (transactional outbox)
       emailIds = await this.notificationsService.enqueueLeaveRequestRejectedNotification(
         leaveRequest.id,
@@ -1029,6 +1079,26 @@ export class LeaveRequestsService {
           leaveRequest.items || [],
           queryRunner.manager,
         );
+
+        // If COMPENSATORY, refund comp_balance_transactions
+        if (leaveRequest.requestedLeaveTypeId) {
+          const reqLeaveType = await queryRunner.manager.findOne(LeaveType, {
+            where: { id: leaveRequest.requestedLeaveTypeId },
+            relations: ['category'],
+          });
+          if (reqLeaveType?.category?.code === LeaveCategoryEnum.COMPENSATORY) {
+            const totalDays = (leaveRequest.items || []).reduce(
+              (sum, item) => sum + Number(item.amountDays),
+              0,
+            );
+            await this.leaveBalanceService.writeCompLeaveRefundCredit(
+              queryRunner.manager,
+              leaveRequest.userId,
+              leaveRequest.id,
+              totalDays,
+            );
+          }
+        }
       } else {
         // Before approve (PENDING) → CREDIT RELEASE (reverses RESERVE debits)
         await this.leaveBalanceService.releaseReserveForRejection(
@@ -1036,6 +1106,21 @@ export class LeaveRequestsService {
           leaveRequest.id,
           queryRunner.manager,
         );
+
+        // If COMPENSATORY: also release the RESERVE in comp_balance_transactions
+        if (leaveRequest.requestedLeaveTypeId) {
+          const reqLeaveType = await queryRunner.manager.findOne(LeaveType, {
+            where: { id: leaveRequest.requestedLeaveTypeId },
+            relations: ['category'],
+          });
+          if (reqLeaveType?.category?.code === LeaveCategoryEnum.COMPENSATORY) {
+            await this.leaveBalanceService.writeCompLeaveReleaseCredit(
+              queryRunner.manager,
+              leaveRequest.userId,
+              leaveRequest.id,
+            );
+          }
+        }
       }
 
       // Enqueue email notification INSIDE the transaction (transactional outbox)
@@ -1140,7 +1225,7 @@ export class LeaveRequestsService {
           code: lt.code,
           name: lt.name,
           requiresDocument: lt.requiresDocument,
-          requiresCompWorkingDate: lt.requiresCompWorkingDate,
+          requiresCompWorkingDate: cat.code === LeaveCategoryEnum.COMPENSATORY ? false : lt.requiresCompWorkingDate,
         })),
       };
     });

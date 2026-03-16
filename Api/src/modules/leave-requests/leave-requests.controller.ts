@@ -14,7 +14,10 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
+import * as XLSX from 'xlsx';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import {
@@ -228,6 +231,153 @@ export class LeaveRequestsController {
     const year = body.year || vnYear();
     const annualDays = body.annualDays || 12;
     return this.leaveBalanceService.initializeYearlyBalance(year, annualDays);
+  }
+
+  // ── Leave Report ─────────────────────────────────────────────────────────
+
+  @Get('report/departments')
+  @ApiOperation({ summary: 'Get all departments for leave report filter (HR/Admin only)' })
+  async getReportDepartments(@Request() req: AuthenticatedRequest) {
+    if (req.user.role !== 'hr' && req.user.role !== 'admin') {
+      throw new ForbiddenException('Only HR/Admin can access this');
+    }
+    return this.leaveBalanceService.getDepartments();
+  }
+
+  @Get('report/export')
+  @ApiOperation({ summary: 'Export leave days report as Excel (HR/Admin only)' })
+  async exportLeaveReport(
+    @Query('year') year: string,
+    @Query('month') month: string,
+    @Query('departmentId') departmentId: string,
+    @Request() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    if (req.user.role !== 'hr' && req.user.role !== 'admin') {
+      throw new ForbiddenException('Only HR/Admin can export this report');
+    }
+    const yearNum = year ? parseInt(year, 10) : vnYear();
+    const monthNum = month ? parseInt(month, 10) : undefined;
+    const deptId = departmentId ? parseInt(departmentId, 10) : undefined;
+
+    const { rows, hasPending } = await this.leaveBalanceService.getLeaveReport({
+      year: yearNum,
+      month: monthNum,
+      departmentId: deptId,
+    });
+
+    if (hasPending) {
+      res.status(400).json({ message: 'Cannot export: there are pending leave requests in the selected period.' });
+      return;
+    }
+
+    // Format DD/MM/YYYY
+    const fmtDate = (s: string | null) => {
+      if (!s) return '';
+      const [y, m, d] = s.split('-');
+      return `${d}/${m}/${y}`;
+    };
+    const fmtNum = (v: number | null) => (v === null ? '--' : v);
+    const CONTRACT_LABELS: Record<string, string> = {
+      intern: 'Internship',
+      probation: 'Probation',
+      official: 'Official',
+    };
+
+    // Build Excel with merged headers
+    const wb = XLSX.utils.book_new();
+
+    // Header row 1 (group labels)
+    const h1 = [
+      'No.', 'Employee ID', 'Full Name', 'Department',
+      'Join Date', 'Contract Signed', 'Contract Type',
+      'Paid Leave', '', '',
+      'Unpaid Leave', '', '',
+      'Policy Leave', 'Social Benefits Leave',
+    ];
+    // Header row 2 (sub-labels)
+    const h2 = [
+      '', '', '', '', '', '', '',
+      'Total', 'Used', 'Remaining',
+      'Total', 'Used', 'Remaining',
+      'Used', 'Used',
+    ];
+
+    const dataRows = rows.map((r) => [
+      r.no,
+      r.employeeId,
+      r.fullName,
+      r.department,
+      fmtDate(r.joinDate),
+      fmtDate(r.contractSignedDate),
+      r.contractType ? (CONTRACT_LABELS[r.contractType] ?? r.contractType) : '',
+      fmtNum(r.paidLeaveTotal),
+      fmtNum(r.paidLeaveUsed),
+      fmtNum(r.paidLeaveRemaining),
+      fmtNum(r.unpaidLeaveTotal),
+      r.unpaidLeaveUsed,
+      fmtNum(r.unpaidLeaveRemaining),
+      r.policyLeaveUsed,
+      r.socialLeaveUsed,
+    ]);
+
+    const wsData = [h1, h2, ...dataRows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Merge group header cells
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },   // No.
+      { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } },   // Employee ID
+      { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } },   // Full Name
+      { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } },   // Department
+      { s: { r: 0, c: 4 }, e: { r: 1, c: 4 } },   // Join Date
+      { s: { r: 0, c: 5 }, e: { r: 1, c: 5 } },   // Contract Signed
+      { s: { r: 0, c: 6 }, e: { r: 1, c: 6 } },   // Contract Type
+      { s: { r: 0, c: 7 }, e: { r: 0, c: 9 } },   // Paid Leave (3 cols)
+      { s: { r: 0, c: 10 }, e: { r: 0, c: 12 } }, // Unpaid Leave (3 cols)
+      { s: { r: 0, c: 13 }, e: { r: 1, c: 13 } }, // Policy Leave
+      { s: { r: 0, c: 14 }, e: { r: 1, c: 14 } }, // Social Leave
+    ];
+
+    // Column widths
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 12 }, { wch: 24 }, { wch: 20 },
+      { wch: 12 }, { wch: 16 }, { wch: 12 },
+      { wch: 8 }, { wch: 8 }, { wch: 10 },
+      { wch: 8 }, { wch: 8 }, { wch: 10 },
+      { wch: 13 }, { wch: 18 },
+    ];
+
+    const periodLabel = monthNum
+      ? `${String(monthNum).padStart(2, '0')}-${yearNum}`
+      : `${yearNum}`;
+    XLSX.utils.book_append_sheet(wb, ws, 'Leave Report');
+
+    const buffer: Buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="leave-report-${periodLabel}.xlsx"`);
+    res.send(buffer);
+  }
+
+  @Get('report')
+  @ApiOperation({ summary: 'Get leave days report (HR/Admin only)' })
+  async getLeaveReport(
+    @Query('year') year: string,
+    @Query('month') month: string,
+    @Query('departmentId') departmentId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    if (req.user.role !== 'hr' && req.user.role !== 'admin') {
+      throw new ForbiddenException('Only HR/Admin can view this report');
+    }
+    const yearNum = year ? parseInt(year, 10) : vnYear();
+    const monthNum = month ? parseInt(month, 10) : undefined;
+    const deptId = departmentId ? parseInt(departmentId, 10) : undefined;
+    return this.leaveBalanceService.getLeaveReport({
+      year: yearNum,
+      month: monthNum,
+      departmentId: deptId,
+    });
   }
 
   @Get(':id')

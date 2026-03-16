@@ -146,6 +146,63 @@ const otService = {
     link.remove();
     window.URL.revokeObjectURL(url);
   },
+
+  // ── OT Hours Report ──────────────────────────────────────
+
+  getReportDepartments: async () => {
+    const response = await api.get('/ot-plans/report/departments');
+    return response.data;
+  },
+
+  getOtReportHasPending: async (params = {}) => {
+    const query = {};
+    if (params.year) query.year = params.year;
+    if (params.month) query.month = params.month;
+    if (params.departmentId) query.departmentId = params.departmentId;
+    const response = await api.get('/ot-plans/report/has-pending', { params: query });
+    return response.data;
+  },
+
+  getOtDetailsReport: async (params = {}) => {
+    const query = {};
+    if (params.year) query.year = params.year;
+    if (params.month) query.month = params.month;
+    if (params.departmentId) query.departmentId = params.departmentId;
+    if (params.page) query.page = params.page;
+    if (params.pageSize) query.pageSize = params.pageSize;
+    const response = await api.get('/ot-plans/report/details', { params: query });
+    return response.data;
+  },
+
+  getOtSummaryReport: async (params = {}) => {
+    const query = {};
+    if (params.year) query.year = params.year;
+    if (params.month) query.month = params.month;
+    if (params.departmentId) query.departmentId = params.departmentId;
+    if (params.page) query.page = params.page;
+    if (params.pageSize) query.pageSize = params.pageSize;
+    const response = await api.get('/ot-plans/report/summary', { params: query });
+    return response.data;
+  },
+
+  exportOtReport: async (params = {}) => {
+    const query = {};
+    if (params.year) query.year = params.year;
+    if (params.month) query.month = params.month;
+    if (params.departmentId) query.departmentId = params.departmentId;
+    const response = await api.get('/ot-plans/report/export', {
+      params: query,
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `ot-hours-report-${vnTodayStr()}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export default otService;

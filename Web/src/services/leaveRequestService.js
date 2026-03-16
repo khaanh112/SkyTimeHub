@@ -99,6 +99,48 @@ const leaveRequestService = {
     const response = await api.get(`/leave-requests/attachments/${attachmentId}/url`);
     return response.data; // { url, originalFilename }
   },
+
+  // ── Leave Report ──────────────────────────────────────────────────────────
+
+  // Get all departments for report filter
+  getReportDepartments: async () => {
+    const response = await api.get('/leave-requests/report/departments');
+    return response.data; // [{ id, name }]
+  },
+
+  // Get leave days report data
+  // params: { year?, month?, departmentId? }
+  getLeaveReport: async (params = {}) => {
+    const query = {};
+    if (params.year)         query.year         = params.year;
+    if (params.month)        query.month        = params.month;
+    if (params.departmentId) query.departmentId = params.departmentId;
+    const response = await api.get('/leave-requests/report', { params: query });
+    return response.data; // { rows: [...], hasPending: boolean }
+  },
+
+  // Export leave days report as Excel – triggers file download
+  // params: { year?, month?, departmentId? }
+  exportLeaveReport: async (params = {}) => {
+    const query = {};
+    if (params.year)         query.year         = params.year;
+    if (params.month)        query.month        = params.month;
+    if (params.departmentId) query.departmentId = params.departmentId;
+    const response = await api.get('/leave-requests/report/export', {
+      params: query,
+      responseType: 'blob',
+    });
+    // Trigger browser download
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    const month = params.month ? String(params.month).padStart(2, '0') + '-' : '';
+    link.setAttribute('download', `leave-report-${month}${params.year ?? new Date().getFullYear()}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export default leaveRequestService;

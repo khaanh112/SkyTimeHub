@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { LeaveBalanceTransaction } from '@entities/leave-balance-transaction.entity';
@@ -31,6 +31,9 @@ import {
 import { LeaveCategory } from '@/common/enums/leave-category.enum';
 import { BALANCE_TYPE_CODES } from '@/common/enums/balance_leavetype.enum';
 import { ContractType } from '@/common/enums/contract-type.enum';
+import { CompBalanceTransaction } from '@entities/comp-balance-transaction.entity';
+import { CompTxDirection } from '@/common/enums/comp-tx-direction.enum';
+import { CompTxSource } from '@/common/enums/comp-tx-source.enum';
 import {
   vnMonth,
   dayjs,
@@ -99,6 +102,8 @@ export class LeaveBalanceService {
     private userRepo: Repository<User>,
     @InjectRepository(LeaveRequestItem)
     private leaveRequestItemRepo: Repository<LeaveRequestItem>,
+    @InjectRepository(CompBalanceTransaction)
+    private compBalanceTxRepo: Repository<CompBalanceTransaction>,
     private dataSource: DataSource,
   ) {}
 
@@ -123,6 +128,49 @@ export class LeaveBalanceService {
     const key1 = employeeId;
     const key2 = Number(leaveTypeId) * 10000 + periodYear;
     await manager.query('SELECT pg_advisory_xact_lock($1, $2)', [key1, key2]);
+  }
+
+  /**
+   * Net comp balance in minutes = SUM(CREDIT) − SUM(DEBIT) from comp_balance_transactions.
+   * Covers all source types: OT_CHECKIN_APPROVED credits, LEAVE_RESERVE/LEAVE_APPROVAL debits,
+   * LEAVE_RELEASE/LEAVE_REFUND credits.
+   * When excludeLeaveRequestId is provided ALL rows for that source_id are excluded (both
+   * directions) so re-validation during an edit sees a clean slate.
+   */
+  private async getCompNetMinutes(
+    employeeId: number,
+    excludeLeaveRequestId?: number,
+    manager?: EntityManager,
+  ): Promise<number> {
+    const repo = manager
+      ? manager.getRepository(CompBalanceTransaction)
+      : this.compBalanceTxRepo;
+
+    const withExclude = (qb: ReturnType<typeof repo.createQueryBuilder>) => {
+      if (excludeLeaveRequestId) {
+        qb.andWhere('(c.source_id IS NULL OR c.source_id != :excl)', { excl: excludeLeaveRequestId });
+      }
+      return qb;
+    };
+
+    const [creditRow, debitRow] = await Promise.all([
+      withExclude(
+        repo.createQueryBuilder('c')
+          .select('COALESCE(SUM(c.amount_minutes), 0)', 'total')
+          .where('c.employee_id = :id', { id: employeeId })
+          .andWhere('c.direction = :dir', { dir: CompTxDirection.CREDIT }),
+      ).getRawOne(),
+      withExclude(
+        repo.createQueryBuilder('c')
+          .select('COALESCE(SUM(c.amount_minutes), 0)', 'total')
+          .where('c.employee_id = :id', { id: employeeId })
+          .andWhere('c.direction = :dir', { dir: CompTxDirection.DEBIT }),
+      ).getRawOne(),
+    ]);
+
+    const totalCredit = parseInt(creditRow?.total ?? '0', 10);
+    const totalDebit  = parseInt(debitRow?.total  ?? '0', 10);
+    return Math.max(totalCredit - totalDebit, 0);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -287,7 +335,7 @@ export class LeaveBalanceService {
   ): Promise<LeaveValidationResult> {
     const leaveType = await this.getLeaveTypeById(leaveTypeId);
     if (!leaveType) {
-      throw new Error(`Leave type ${leaveTypeId} not found or inactive`);
+      throw new BadRequestException(`Leave type ${leaveTypeId} not found or inactive`);
     }
 
     const policy = await this.getActivePolicy(leaveTypeId, startDate);
@@ -328,7 +376,7 @@ export class LeaveBalanceService {
         );
 
         if (calendarDuration.durationDays <= 0) {
-          throw new Error('Leave duration must be at least 0.5 days');
+          throw new BadRequestException('Leave duration must be at least 0.5 days');
         }
 
         if (calendarDuration.durationDays <= parentalEntitlementDays) {
@@ -379,7 +427,7 @@ export class LeaveBalanceService {
         );
 
         if (duration.durationDays <= 0) {
-          throw new Error('Leave duration must be at least 0.5 days');
+          throw new BadRequestException('Leave duration must be at least 0.5 days');
         }
 
         durationDays = duration.durationDays;
@@ -398,7 +446,7 @@ export class LeaveBalanceService {
       );
 
       if (duration.durationDays <= 0) {
-        throw new Error('Leave duration must be at least 0.5 days');
+        throw new BadRequestException('Leave duration must be at least 0.5 days');
       }
 
       durationDays = duration.durationDays;
@@ -406,7 +454,7 @@ export class LeaveBalanceService {
 
     // Check min duration
     if (policy?.minDurationDays && durationDays < Number(policy.minDurationDays)) {
-      throw new Error(
+      throw new BadRequestException(
         `Minimum leave duration for ${leaveType.name} is ${policy.minDurationDays} days`,
       );
     }
@@ -874,36 +922,17 @@ export class LeaveBalanceService {
     }
 
     // 2d. All other categories (COMPENSATORY, etc.)
-    //     For COMPENSATORY: validate balance is sufficient (non-negative constraint)
     else {
       if (categoryCode === LeaveCategory.COMPENSATORY) {
-        // Check compensatory balance: total entitlement credits - net debits
-        const entitlementResult = await (
-          manager ? manager.getRepository(LeaveBalanceTransaction) : this.balanceTxRepo
-        )
-          .createQueryBuilder('tx')
-          .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
-          .where('tx.employee_id = :employeeId', { employeeId })
-          .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: leaveType.id })
-          .andWhere('tx.period_year = :year', { year: startyear })
-          .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.CREDIT })
-          .andWhere("tx.source_type NOT IN (:...sourceTypes)", { sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] })
-          .getRawOne();
-        const entitlementCredit = parseFloat(entitlementResult?.total ?? '0');
+        // Single source of truth: comp_balance_transactions tracks OT credits,
+        // RESERVE debits (pending), APPROVAL debits (approved), RELEASE/REFUND credits.
+        // getCompNetMinutes already deducts pending RESERVE rows → no separate pending query needed.
+        const netCompMinutes = await this.getCompNetMinutes(employeeId, excludeRequestId, manager);
+        const availableDays = netCompMinutes / 480;
 
-        const usedDays = await this.getUsedDays(
-          employeeId,
-          leaveType.id,
-          startyear,
-          excludeRequestId,
-          manager,
-        );
-        const compBalance = Math.max(entitlementCredit - usedDays, 0);
-
-        if (remainingDays > compBalance) {
-          throw new Error(
-            `Insufficient compensatory leave balance. Available: ${compBalance} day(s), requested: ${remainingDays} day(s). ` +
-              `You must accumulate OT hours before requesting compensatory leave.`,
+        if (remainingDays > availableDays) {
+          throw new BadRequestException(
+            `Insufficient compensatory leave balance. Available: ${(availableDays * 8).toFixed(2)} hour(s), requested: ${(remainingDays * 8).toFixed(2)} hour(s).`,
           );
         }
       }
@@ -1133,6 +1162,16 @@ export class LeaveBalanceService {
       );
     }
 
+    // For COMPENSATORY leave: mirror the reservation in comp_balance_transactions.
+    // This makes comp_balance_transactions the single source of truth for comp balance.
+    const compItem = finalValidation.items.find(
+      (i) => i.leaveTypeCode === BALANCE_TYPE_CODES.COMPENSATORY_LEAVE,
+    );
+    if (compItem) {
+      const minutes = Math.round(Number(compItem.amountDays) * 480);
+      await this.writeCompLeaveReserveDebit(manager, employeeId, leaveRequestId, minutes);
+    }
+
     return finalValidation;
   }
 
@@ -1277,6 +1316,148 @@ export class LeaveBalanceService {
     await repo.save(transactions);
     this.logger.log(
       `[refundBalanceForCancellation] Leave #${leaveRequestId}: ${transactions.length} REFUND credit(s)`,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Comp-balance write helpers  (comp_balance_transactions)
+  // RESERVE → APPROVAL lifecycle mirrors leave_balance_transactions
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * RESERVE: written when a comp leave request is SUBMITTED (PENDING).
+   * Immediately reduces the available balance so subsequent requests cannot
+   * double-book the same OT minutes.
+   */
+  async writeCompLeaveReserveDebit(
+    manager: EntityManager,
+    employeeId: number,
+    leaveRequestId: number,
+    minutes: number,
+  ): Promise<void> {
+    if (minutes <= 0) return;
+    await manager.getRepository(CompBalanceTransaction).save({
+      employeeId,
+      direction: CompTxDirection.DEBIT,
+      amountMinutes: minutes,
+      sourceType: CompTxSource.LEAVE_RESERVE,
+      sourceId: leaveRequestId,
+      note: `Compensatory leave request #${leaveRequestId} submitted – pending`,
+    });
+    this.logger.log(
+      `[writeCompLeaveReserveDebit] Leave #${leaveRequestId}: −${minutes} min reserved`,
+    );
+  }
+
+  /**
+   * APPROVAL: converts the existing RESERVE DEBIT → APPROVAL DEBIT in-place.
+   * Falls back to inserting a fresh DEBIT(LEAVE_APPROVAL) for legacy rows that
+   * were created before this flow existed (no RESERVE row present).
+   */
+  async writeCompLeaveApprovalDebit(
+    manager: EntityManager,
+    employeeId: number,
+    leaveRequestId: number,
+    durationDays: number,
+  ): Promise<void> {
+    const repo = manager.getRepository(CompBalanceTransaction);
+
+    // Try in-place RESERVE → APPROVAL conversion (new flow)
+    const updated = await repo
+      .createQueryBuilder()
+      .update(CompBalanceTransaction)
+      .set({
+        sourceType: CompTxSource.LEAVE_APPROVAL,
+        note: `Compensatory leave request #${leaveRequestId} approved`,
+      })
+      .where('employee_id = :emp', { emp: employeeId })
+      .andWhere('source_id = :src',  { src: leaveRequestId })
+      .andWhere('source_type = :res', { res: CompTxSource.LEAVE_RESERVE })
+      .andWhere('direction = :dir',   { dir: CompTxDirection.DEBIT })
+      .execute();
+
+    if ((updated.affected ?? 0) > 0) {
+      this.logger.log(
+        `[writeCompLeaveApprovalDebit] Leave #${leaveRequestId}: RESERVE → APPROVAL`,
+      );
+      return;
+    }
+
+    // Legacy fallback: no RESERVE row found → insert a plain APPROVAL debit
+    const minutes = Math.round(durationDays * 480);
+    if (minutes <= 0) return;
+    await repo.save({
+      employeeId,
+      direction: CompTxDirection.DEBIT,
+      amountMinutes: minutes,
+      sourceType: CompTxSource.LEAVE_APPROVAL,
+      sourceId: leaveRequestId,
+      note: `Compensatory leave request #${leaveRequestId} approved (legacy)`,
+    });
+    this.logger.log(
+      `[writeCompLeaveApprovalDebit] Leave #${leaveRequestId}: −${minutes} min APPROVAL (legacy insert)`,
+    );
+  }
+
+  /**
+   * RELEASE: written when a PENDING comp leave is REJECTED or CANCELLED.
+   * Finds the matching RESERVE DEBIT and inserts a mirroring CREDIT to zero it out.
+   */
+  async writeCompLeaveReleaseCredit(
+    manager: EntityManager,
+    employeeId: number,
+    leaveRequestId: number,
+  ): Promise<void> {
+    const repo = manager.getRepository(CompBalanceTransaction);
+    const reserveRow = await repo.findOne({
+      where: {
+        employeeId,
+        sourceId: leaveRequestId,
+        sourceType: CompTxSource.LEAVE_RESERVE,
+        direction: CompTxDirection.DEBIT,
+      },
+    });
+    if (!reserveRow) {
+      this.logger.warn(
+        `[writeCompLeaveReleaseCredit] No RESERVE found for leave #${leaveRequestId} – nothing to release`,
+      );
+      return;
+    }
+    await repo.save({
+      employeeId,
+      direction: CompTxDirection.CREDIT,
+      amountMinutes: reserveRow.amountMinutes,
+      sourceType: CompTxSource.LEAVE_RELEASE,
+      sourceId: leaveRequestId,
+      note: `Compensatory leave request #${leaveRequestId} cancelled/rejected – reserve released`,
+    });
+    this.logger.log(
+      `[writeCompLeaveReleaseCredit] Leave #${leaveRequestId}: +${reserveRow.amountMinutes} min released`,
+    );
+  }
+
+  /**
+   * REFUND: written when an APPROVED comp leave is CANCELLED.
+   * Restores the approved minutes back to the employee's balance.
+   */
+  async writeCompLeaveRefundCredit(
+    manager: EntityManager,
+    employeeId: number,
+    leaveRequestId: number,
+    durationDays: number,
+  ): Promise<void> {
+    const minutes = Math.round(durationDays * 480);
+    if (minutes <= 0) return;
+    await manager.getRepository(CompBalanceTransaction).save({
+      employeeId,
+      direction: CompTxDirection.CREDIT,
+      amountMinutes: minutes,
+      sourceType: CompTxSource.LEAVE_REFUND,
+      sourceId: leaveRequestId,
+      note: `Compensatory leave request #${leaveRequestId} cancelled – balance refunded`,
+    });
+    this.logger.log(
+      `[writeCompLeaveRefundCredit] Leave #${leaveRequestId}: +${minutes} min refunded`,
     );
   }
 
@@ -1744,7 +1925,19 @@ export class LeaveBalanceService {
       `[getEmployeeBalanceSummary] employee=${employeeId} month=${effectiveMonth} year=${year} leaveTypes=${leaveTypes.map((l) => l.code).join(',')}`,
     );
 
-    const result = [];
+    const result: {
+      leaveTypeId: number;
+      leaveTypeCode: string;
+      leaveTypeName: string;
+      categoryCode: string;
+      categoryName: string;
+      unit: 'days' | 'hours';
+      used: number;
+      remaining: number;
+      pendingDays: number;
+      annualLimit: number | null;
+      monthlyAccrual: number | null;
+    }[] = [];
 
     for (const lt of leaveTypes) {
       const policy = await this.getActivePolicy(lt.id, `${year}-01-01`);
@@ -1853,17 +2046,40 @@ export class LeaveBalanceService {
           monthlyAccrual: null,
         });
       } else {
-        // COMP (and any future types): entitlementCredit − netDebit
-        const entitlementResult = await this.balanceTxRepo
-          .createQueryBuilder('tx')
-          .select('COALESCE(SUM(tx.amount_days), 0)', 'total')
-          .where('tx.employee_id = :employeeId', { employeeId })
-          .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
-          .andWhere('tx.period_year = :year', { year })
-          .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
-          .andWhere('tx.source_type NOT IN (:...excludeSourceTypes)', { excludeSourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] })
-          .getRawOne();
-        const entitlementCredit = parseFloat(entitlementResult?.total ?? '0');
+        // COMP: single source of truth is comp_balance_transactions (all-time, no yearly reset)
+        const netCompMinutes = await this.getCompNetMinutes(employeeId);
+
+        // Used = only approved comp leaves (LEAVE_APPROVAL debits), not pending RESERVE debits
+        // Pending = net LEAVE_RESERVE debits (submitted but not yet approved/rejected)
+        const [approvalRow, reserveRow, releaseRow] = await Promise.all([
+          this.compBalanceTxRepo
+            .createQueryBuilder('c')
+            .select('COALESCE(SUM(c.amount_minutes), 0)', 'total')
+            .where('c.employee_id = :id', { id: employeeId })
+            .andWhere('c.direction = :dir', { dir: CompTxDirection.DEBIT })
+            .andWhere('c.source_type = :src', { src: CompTxSource.LEAVE_APPROVAL })
+            .getRawOne(),
+          this.compBalanceTxRepo
+            .createQueryBuilder('c')
+            .select('COALESCE(SUM(c.amount_minutes), 0)', 'total')
+            .where('c.employee_id = :id', { id: employeeId })
+            .andWhere('c.direction = :dir', { dir: CompTxDirection.DEBIT })
+            .andWhere('c.source_type = :src', { src: CompTxSource.LEAVE_RESERVE })
+            .getRawOne(),
+          this.compBalanceTxRepo
+            .createQueryBuilder('c')
+            .select('COALESCE(SUM(c.amount_minutes), 0)', 'total')
+            .where('c.employee_id = :id', { id: employeeId })
+            .andWhere('c.direction = :dir', { dir: CompTxDirection.CREDIT })
+            .andWhere('c.source_type = :src', { src: CompTxSource.LEAVE_RELEASE })
+            .getRawOne(),
+        ]);
+
+        const usedMinutes    = parseInt(approvalRow?.total ?? '0', 10);
+        const pendingMinutes = Math.max(
+          parseInt(reserveRow?.total ?? '0', 10) - parseInt(releaseRow?.total ?? '0', 10),
+          0,
+        );
 
         result.push({
           leaveTypeId: Number(lt.id),
@@ -1871,11 +2087,11 @@ export class LeaveBalanceService {
           leaveTypeName: lt.name,
           categoryCode: lt.category?.code ?? '',
           categoryName: lt.category?.name ?? '',
-          unit,
-          used: netDebit,
-          remaining: Math.max(entitlementCredit - netDebit, 0),
-          pendingDays,
-          annualLimit: policy?.annualLimitDays ? Number(policy.annualLimitDays) : null,
+          unit: 'hours',
+          used: Math.round((usedMinutes    / 60) * 100) / 100,
+          remaining: Math.round((netCompMinutes / 60) * 100) / 100,
+          pendingDays: Math.round((pendingMinutes / 60) * 100) / 100,
+          annualLimit: null,
           monthlyAccrual: null,
         });
       }
@@ -1886,4 +2102,175 @@ export class LeaveBalanceService {
     );
     return result;
   }
+
+  // ─── Leave Report ─────────────────────────────────────────────────────────
+
+  async getDepartments(): Promise<{ id: number; name: string }[]> {
+    return this.dataSource.query(`SELECT id, name FROM departments ORDER BY name`);
+  }
+
+  async getLeaveReport(params: {
+    year: number;
+    month?: number;
+    departmentId?: number;
+  }): Promise<{ rows: LeaveReportRow[]; hasPending: boolean }> {
+    const { year, month, departmentId } = params;
+
+    // 1. Load active users with department
+    const users = await this.userRepo.find({
+      where: {
+        status: UserStatus.ACTIVE,
+        ...(departmentId ? { departmentId } : {}),
+      },
+      relations: ['department'],
+      order: { departmentId: 'ASC' },
+    });
+
+    if (users.length === 0) return { rows: [], hasPending: false };
+
+    const userIds = users.map((u) => u.id);
+
+    // 2. Batch: net approved days by employee + leave type + category
+    //    "Net approved" = APPROVAL debits minus REFUND/RELEASE credits (for cancelled-after-approval cases)
+    const usedRows: {
+      employee_id: string;
+      leave_type_code: string;
+      category_code: string;
+      used_days: string;
+    }[] = await this.dataSource.query(
+      `SELECT
+         lbt.employee_id,
+         lt.code  AS leave_type_code,
+         lc.code  AS category_code,
+         SUM(CASE WHEN lbt.direction = 'DEBIT'  THEN lbt.amount_days
+                  WHEN lbt.direction = 'CREDIT' THEN -lbt.amount_days
+                  ELSE 0 END)::float AS used_days
+       FROM leave_balance_transactions lbt
+       JOIN leave_types lt       ON lt.id  = lbt.leave_type_id
+       JOIN leave_categories lc  ON lc.id  = lt.category_id
+       WHERE lbt.source_type IN ('APPROVAL','REFUND','RELEASE')
+         AND lbt.period_year = $1
+         ${month ? 'AND lbt.period_month <= $3' : ''}
+         AND lbt.employee_id = ANY($2)
+       GROUP BY lbt.employee_id, lt.code, lc.code`,
+      month ? [year, userIds, month] : [year, userIds],
+    );
+
+    // 3. Batch: paid leave credit allocation per employee (accruals up to month)
+    const paidAllocRows: { employee_id: string; total_days: string }[] =
+      await this.dataSource.query(
+        `SELECT lbt.employee_id, SUM(lbt.amount_days)::float AS total_days
+         FROM leave_balance_transactions lbt
+         JOIN leave_types lt ON lt.id = lbt.leave_type_id
+         WHERE lbt.direction = 'CREDIT'
+           AND lbt.source_type = 'MONTHLY_ACCRUAL'
+           AND lbt.period_year = $1
+           ${month ? 'AND lbt.period_month <= $3' : ''}
+           AND lt.code = 'PAID_LEAVE'
+           AND lbt.employee_id = ANY($2)
+         GROUP BY lbt.employee_id`,
+        month ? [year, userIds, month] : [year, userIds],
+      );
+
+    // 4. Check for any pending leave requests touching this period/department
+    const pendingArgs: unknown[] = [year];
+    const monthClause = month ? `AND lri.period_month = $${pendingArgs.push(month)}` : '';
+    const deptClause = departmentId
+      ? `AND u.department_id = $${pendingArgs.push(departmentId)}`
+      : '';
+
+    const pendingRows: { cnt: string }[] = await this.dataSource.query(
+      `SELECT COUNT(DISTINCT lr.id)::text AS cnt
+       FROM leave_requests lr
+       JOIN leave_request_items lri ON lri.leave_request_id = lr.id
+       JOIN users u                 ON u.id = lr.user_id
+       WHERE lr.status = 'pending'
+         AND lri.period_year = $1
+         ${monthClause}
+         ${deptClause}`,
+      pendingArgs,
+    );
+    const hasPending = parseInt(pendingRows[0]?.cnt ?? '0', 10) > 0;
+
+    // 5. Build index maps
+    const paidAllocByEmp = new Map<number, number>();
+    for (const r of paidAllocRows) {
+      paidAllocByEmp.set(Number(r.employee_id), Number(r.total_days));
+    }
+
+    // usedByEmpType: empId -> { leaveTypeCode: netDays }
+    // usedByEmpCat:  empId -> { categoryCode: netDays }
+    const usedByEmpType = new Map<number, Map<string, number>>();
+    const usedByEmpCat = new Map<number, Map<string, number>>();
+    for (const r of usedRows) {
+      const empId = Number(r.employee_id);
+      const days = Math.max(Number(r.used_days), 0);
+
+      let typeMap = usedByEmpType.get(empId);
+      if (!typeMap) { typeMap = new Map(); usedByEmpType.set(empId, typeMap); }
+      typeMap.set(r.leave_type_code, (typeMap.get(r.leave_type_code) ?? 0) + days);
+
+      let catMap = usedByEmpCat.get(empId);
+      if (!catMap) { catMap = new Map(); usedByEmpCat.set(empId, catMap); }
+      catMap.set(r.category_code, (catMap.get(r.category_code) ?? 0) + days);
+    }
+
+    // 6. Build report rows
+    const UNPAID_LIMIT = 30;
+    const rows: LeaveReportRow[] = users.map((user, idx) => {
+      const isOfficial = user.contractType === ContractType.OFFICIAL;
+      const typeMap = usedByEmpType.get(user.id) ?? new Map<string, number>();
+      const catMap = usedByEmpCat.get(user.id) ?? new Map<string, number>();
+
+      const paidUsed   = typeMap.get('PAID_LEAVE') ?? 0;
+      const unpaidUsed = (typeMap.get('UNPAID_LEAVE') ?? 0) + (typeMap.get('SYS_UNPAID_LEAVE') ?? 0);
+      const paidTotal  = paidAllocByEmp.get(user.id) ?? 0;
+      const policyUsed = catMap.get('POLICY') ?? 0;
+      const socialUsed = catMap.get('SOCIAL') ?? 0;
+
+      return {
+        no: idx + 1,
+        userId: user.id,
+        employeeId: user.employeeId ?? '',
+        fullName: user.username ?? user.email,
+        department: user.department?.name ?? '',
+        joinDate: user.joinDate
+          ? dayjs(user.joinDate).format('YYYY-MM-DD')
+          : null,
+        contractSignedDate: user.officialContractDate
+          ? dayjs(user.officialContractDate).format('YYYY-MM-DD')
+          : null,
+        contractType: user.contractType ?? null,
+        paidLeaveTotal:     isOfficial ? paidTotal                : null,
+        paidLeaveUsed:      isOfficial ? paidUsed                 : null,
+        paidLeaveRemaining: isOfficial ? paidTotal - paidUsed     : null,
+        unpaidLeaveTotal:     isOfficial ? UNPAID_LIMIT           : null,
+        unpaidLeaveUsed:      unpaidUsed,
+        unpaidLeaveRemaining: isOfficial ? UNPAID_LIMIT - unpaidUsed : null,
+        policyLeaveUsed: policyUsed,
+        socialLeaveUsed: socialUsed,
+      };
+    });
+
+    return { rows, hasPending };
+  }
+}
+
+export interface LeaveReportRow {
+  no: number;
+  userId: number;
+  employeeId: string;
+  fullName: string;
+  department: string;
+  joinDate: string | null;
+  contractSignedDate: string | null;
+  contractType: string | null;
+  paidLeaveTotal: number | null;
+  paidLeaveUsed: number | null;
+  paidLeaveRemaining: number | null;
+  unpaidLeaveTotal: number | null;
+  unpaidLeaveUsed: number;
+  unpaidLeaveRemaining: number | null;
+  policyLeaveUsed: number;
+  socialLeaveUsed: number;
 }

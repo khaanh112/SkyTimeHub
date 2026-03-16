@@ -23,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { OtManagementsService } from './ot-managements.service';
 import { OtBalanceService } from './ot-balance.service';
+import { OtReportService } from './ot-report.service';
 import { CreateOtPlanDto } from './dto/create-ot-plan.dto';
 import { UpdateOtPlanDto } from './dto/update-ot-plan.dto';
 import { ListOtPlansQueryDto } from './dto/list-ot-plans-query.dto';
@@ -32,6 +33,7 @@ import { CheckinDto } from './dto/checkin.dto';
 import { CheckoutDto } from './dto/checkout.dto';
 import { ApproveCheckinDto } from './dto/approve-checkin.dto';
 import { RejectCheckinDto } from './dto/reject-checkin.dto';
+import { OtReportQueryDto } from './dto/ot-report-query.dto';
 import { AuthenticatedRequest } from '@/common/interfaces/authenticated-request.interface';
 import { vnTodayStr, vnYear, vnMonth } from '@/common/utils/date.util';
 
@@ -44,6 +46,7 @@ export class OtManagementsController {
   constructor(
     private readonly otService: OtManagementsService,
     private readonly otBalanceService: OtBalanceService,
+    private readonly otReportService: OtReportService,
   ) {}
 
   // ── Static routes MUST come before :id routes ──
@@ -161,6 +164,45 @@ export class OtManagementsController {
   @ApiResponse({ status: 404, description: 'Assignment not found.' })
   async getOtPlanEmployeeDetail(@Param('id', ParseIntPipe) id: number) {
     return this.otService.getOtPlanEmployeeDetail(id);
+  }
+
+  // ── Report routes (static, before :id) ──
+
+  @Get('report/departments')
+  @ApiOperation({ summary: 'List departments for OT report filter' })
+  async getReportDepartments() {
+    return this.otReportService.getDepartments();
+  }
+
+  @Get('report/has-pending')
+  @ApiOperation({ summary: 'Check if there are unconfirmed OT records in the given scope' })
+  async reportHasPending(@Query() query: OtReportQueryDto) {
+    return this.otReportService.checkHasPending(query);
+  }
+
+  @Get('report/details')
+  @ApiOperation({ summary: 'OT Hours – Details report (per checkin item, paginated)' })
+  async getOtDetailsReport(@Query() query: OtReportQueryDto) {
+    return this.otReportService.getOtDetailsReport(query);
+  }
+
+  @Get('report/summary')
+  @ApiOperation({ summary: 'OT Hours – Summary report (aggregated per employee, paginated)' })
+  async getOtSummaryReport(@Query() query: OtReportQueryDto) {
+    return this.otReportService.getOtSummaryReport(query);
+  }
+
+  @Get('report/export')
+  @ApiOperation({ summary: 'Export OT report as xlsx (Details + Summary sheets)' })
+  async exportOtReport(@Query() query: OtReportQueryDto, @Res() res: Response) {
+    const buf = await this.otReportService.exportOtReport(query);
+    const filename = `ot-hours-report-${vnTodayStr()}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buf.length),
+    });
+    res.send(buf);
   }
 
   // ── CRUD routes ──
