@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { otService } from '../services';
 import { LoadingSpinner, Modal } from '../components';
@@ -137,6 +137,22 @@ const OtPlanDetailPage = () => {
   useEffect(() => {
     fetchPlan();
   }, [id]);
+
+  const groupedEmployees = useMemo(() => {
+    const map = new Map();
+    for (const emp of plan?.employees || []) {
+      const empId = emp.employeeId || emp.employee?.id;
+      if (!map.has(empId)) {
+        map.set(empId, {
+          employeeId: empId,
+          name: emp.employee?.username || emp.employeeName || '—',
+          tasks: [],
+        });
+      }
+      map.get(empId).tasks.push(emp);
+    }
+    return [...map.values()];
+  }, [plan?.employees]);
 
   // ── Plan-level actions ─────────────────────────────────────
 
@@ -385,7 +401,7 @@ const OtPlanDetailPage = () => {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Employees</label>
-              <p className="text-sm text-gray-900">{plan.employees?.length || 0} employee(s)</p>
+              <p className="text-sm text-gray-900">{groupedEmployees.length} employee{groupedEmployees.length !== 1 ? 's' : ''} · {plan.employees?.length || 0} task{(plan.employees?.length || 0) !== 1 ? 's' : ''}</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Created</label>
@@ -438,95 +454,107 @@ const OtPlanDetailPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {(plan.employees || []).map((emp, idx) => {
-                const checkin = emp.checkins?.[0] || emp.checkin;
-                const isCurrentEmployee = emp.employeeId === currentUser?.id || emp.employee?.id === currentUser?.id;
-                return (
-                  <tr key={emp.id || idx} className="hover:bg-gray-50/50">
-                    <td className="px-6 py-4 text-sm text-gray-500 font-medium">{idx + 1}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
+              {groupedEmployees.map((group, empIdx) => (
+                <Fragment key={group.employeeId}>
+                  {/* Employee group header row */}
+                  <tr className="bg-gray-50/70 border-t-2 border-gray-200">
+                    <td colSpan={20} className="px-6 py-2.5">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 text-xs font-semibold">
-                          {(emp.employee?.username || emp.employeeName || 'U').charAt(0).toUpperCase()}
+                        <span className="text-xs text-gray-400 font-medium w-5 text-center">{empIdx + 1}</span>
+                        <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 text-xs font-semibold">
+                          {group.name.charAt(0).toUpperCase()}
                         </div>
-                        <span>{emp.employee?.username || emp.employeeName || '—'}</span>
+                        <span className="text-sm font-semibold text-gray-800">{group.name}</span>
+                        {group.tasks.length > 1 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                            {group.tasks.length} tasks
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{fmtDateTime(emp.startTime)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{fmtDateTime(emp.endTime)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">{fmtMinutes(emp.durationMinutes)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 max-w-[200px] truncate">{emp.plannedTask}</td>
-                    {isApproved && (
-                      <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">
-                          {checkin?.actualDurationMinutes != null ? fmtMinutes(checkin.actualDurationMinutes) : '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {checkin ? <CheckinStatusBadge status={checkin.status} /> : <span className="text-gray-400 text-sm">—</span>}
-                        </td>
-                        {permissions?.canManageCheckins && (
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              {/* Employee can check in */}
-                              {isCurrentEmployee && checkin?.status === 'pending' && (
-                                <button
-                                  onClick={() => handleCheckin(emp.id)}
-                                  disabled={submitting}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
-                                  title="Check In"
-                                >
-                                  <Play className="w-3 h-3" /> Check In
-                                </button>
-                              )}
-                              {/* Employee can check out */}
-                              {isCurrentEmployee && checkin?.status === 'checked_in' && (
-                                <button
-                                  onClick={() => handleCheckoutOpen(checkin)}
-                                  disabled={submitting}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-600 rounded text-xs font-medium hover:bg-purple-100 transition-colors disabled:opacity-50"
-                                  title="Check Out"
-                                >
-                                  <Square className="w-3 h-3" /> Check Out
-                                </button>
-                              )}
-                              {/* Leader can approve/reject checked_out */}
-                              {!isCurrentEmployee && checkin?.status === 'checked_out' && (
-                                <>
-                                  <button
-                                    onClick={() => handleApproveCheckin(checkin)}
-                                    disabled={submitting}
-                                    className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-600 rounded text-xs font-medium hover:bg-green-100 transition-colors disabled:opacity-50"
-                                    title="Approve"
-                                  >
-                                    <CheckCircle className="w-3 h-3" /> Approve
-                                  </button>
-                                  <button
-                                    onClick={() => handleRejectCheckin(checkin)}
-                                    disabled={submitting}
-                                    className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100 transition-colors disabled:opacity-50"
-                                    title="Reject"
-                                  >
-                                    <XCircle className="w-3 h-3" /> Reject
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        )}
-                      </>
-                    )}
-                    <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => navigate(`/ot-management/${plan.id}/employees/${emp.id}`)}
-                        className="inline-flex items-center justify-center w-7 h-7 rounded-full text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                        title="View detail"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                    </td>
                   </tr>
-                );
-              })}
+                  {/* Task rows */}
+                  {group.tasks.map((emp, taskIdx) => {
+                    const checkin = emp.checkins?.[0] || emp.checkin;
+                    const isCurrentEmployee = emp.employeeId === currentUser?.id || emp.employee?.id === currentUser?.id;
+                    return (
+                      <tr key={emp.id || taskIdx} className="hover:bg-gray-50/50">
+                        <td className="px-6 py-4 text-xs text-gray-400 font-medium">└ {taskIdx + 1}</td>
+                        <td className="px-6 py-4"></td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{fmtDateTime(emp.startTime)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{fmtDateTime(emp.endTime)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">{fmtMinutes(emp.durationMinutes)}</td>
+                        <td className="px-6 py-4 text-sm text-gray-700 max-w-[200px] truncate">{emp.plannedTask}</td>
+                        {isApproved && (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">
+                              {checkin?.actualDurationMinutes != null ? fmtMinutes(checkin.actualDurationMinutes) : '—'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {checkin ? <CheckinStatusBadge status={checkin.status} /> : <span className="text-gray-400 text-sm">—</span>}
+                            </td>
+                            {permissions?.canManageCheckins && (
+                              <td className="px-6 py-4 whitespace-nowrap text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  {isCurrentEmployee && checkin?.status === 'pending' && (
+                                    <button
+                                      onClick={() => handleCheckin(emp.id)}
+                                      disabled={submitting}
+                                      className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs font-medium hover:bg-blue-100 transition-colors disabled:opacity-50"
+                                      title="Check In"
+                                    >
+                                      <Play className="w-3 h-3" /> Check In
+                                    </button>
+                                  )}
+                                  {isCurrentEmployee && checkin?.status === 'checked_in' && (
+                                    <button
+                                      onClick={() => handleCheckoutOpen(checkin)}
+                                      disabled={submitting}
+                                      className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-600 rounded text-xs font-medium hover:bg-purple-100 transition-colors disabled:opacity-50"
+                                      title="Check Out"
+                                    >
+                                      <Square className="w-3 h-3" /> Check Out
+                                    </button>
+                                  )}
+                                  {!isCurrentEmployee && checkin?.status === 'checked_out' && (
+                                    <>
+                                      <button
+                                        onClick={() => handleApproveCheckin(checkin)}
+                                        disabled={submitting}
+                                        className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-600 rounded text-xs font-medium hover:bg-green-100 transition-colors disabled:opacity-50"
+                                        title="Approve"
+                                      >
+                                        <CheckCircle className="w-3 h-3" /> Approve
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectCheckin(checkin)}
+                                        disabled={submitting}
+                                        className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100 transition-colors disabled:opacity-50"
+                                        title="Reject"
+                                      >
+                                        <XCircle className="w-3 h-3" /> Reject
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+                          </>
+                        )}
+                        <td className="px-6 py-4 text-center">
+                          <button
+                            onClick={() => navigate(`/ot-management/${plan.id}/employees/${emp.id}`)}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title="View detail"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>

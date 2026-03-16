@@ -101,6 +101,10 @@ export class User {
   @Column({ name: 'official_contract_date', type: 'date', nullable: true })
   officialContractDate: Date;
 
+  @ApiPropertyOptional({ example: '2024-12-31', description: 'Leave accrual start date' })
+  @Column({ name: 'leave_accrual_start_date', type: 'date', nullable: true })
+  leaveAccrualStartDate: Date;
+
   @Exclude()
   @Column({ name: 'activation_token', nullable: true })
   activationToken: string;

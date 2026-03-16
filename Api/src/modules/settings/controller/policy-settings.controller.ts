@@ -4,7 +4,7 @@ import { Roles } from '@/modules/authorization/decorators/roles.decorator';
 import { UserRole } from '@/common';
 import { PolicySettingsService } from '../services/policy-settings.service';
 import { OtPolicyDto, OtPolicyResponseDto } from '../dto/ot-policy.dto';
-import { LeavePolicyDto, LeavePolicyResponseDto } from '../dto/leave-policy.dto';
+
 
 @ApiBearerAuth()
 @ApiTags('Settings')
@@ -29,20 +29,4 @@ export class PolicySettingsController {
     return this.policySettingsService.saveOtPolicy(dto);
   }
 
-  // ── Leave Policy ───────────────────────────────────────────
-
-  @ApiOperation({ summary: 'Get leave policy settings' })
-  @ApiResponse({ status: 200, type: LeavePolicyResponseDto })
-  @Get('leave-policy')
-  async getLeavePolicy(): Promise<LeavePolicyResponseDto> {
-    return this.policySettingsService.getLeavePolicy();
-  }
-
-  @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Save leave policy settings (admin only)' })
-  @ApiResponse({ status: 200, type: LeavePolicyResponseDto })
-  @Put('leave-policy')
-  async saveLeavePolicy(@Body() dto: LeavePolicyDto): Promise<LeavePolicyResponseDto> {
-    return this.policySettingsService.saveLeavePolicy(dto);
-  }
 }

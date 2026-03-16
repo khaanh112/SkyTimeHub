@@ -35,6 +35,15 @@ const fmtMinutes = (minutes) => {
   return `${h}h${m}m`;
 };
 
+const fmtExecutionDate = (value) => {
+  if (!value) return '—';
+  if (typeof value === 'string' && value.includes(' - ')) {
+    const [from, to] = value.split(' - ');
+    return `${fmtDate(from)} - ${fmtDate(to)}`;
+  }
+  return fmtDate(value);
+};
+
 // ── Status Badge ────────────────────────────────────────────────────────
 
 const StatusBadge = ({ status, rejectedReason, checkinInfo }) => {
@@ -870,7 +879,7 @@ const OTManagementPage = () => {
                           </td>
                         )}
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                          {fmtDate(plan.executionDate)}
+                          {fmtExecutionDate(plan.executionDate)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                           {plan.employeeCount ?? plan.employees?.length ?? '—'}

@@ -199,6 +199,25 @@ export class LeaveRequestsController {
     return this.leaveBalanceService.getEmployeeBalanceSummary(req.user.id, month, year);
   }
 
+  @Get('employee-balance-summary/:employeeId')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get leave balance summary for a specific employee',
+    description:
+      'Returns credit, debit and remaining balance for each leave type for the specified employee. If month is provided, returns balance up to that month (monthly accrual cap applied).',
+  })
+  @ApiResponse({ status: 200, description: 'Balance summary retrieved successfully.' })
+  async getEmployeeBalanceSummary(
+    @Request() req: AuthenticatedRequest,
+    @Param('employeeId') employeeId: number,
+    @Query() q: BalanceSummaryQueryDto,
+  ) {
+    const year = q.year ?? vnYear();
+    const month = q.month ?? vnMonth();
+
+    return this.leaveBalanceService.getEmployeeBalanceSummary(employeeId, month, year);
+  }
+
   // thủ công chưa cronjob
   @Post('admin/initialize-balance')
   @ApiOperation({

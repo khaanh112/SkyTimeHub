@@ -8,7 +8,6 @@ import settingsService from '../services/settingsService';
 import { dayjs, vnYear } from '../utils/date';
 
 const TABS = [
-  { key: 'leave-policy', label: 'Leave Policy' },
   { key: 'ot-policy', label: 'OT Policy' },
   { key: 'holiday-calendar', label: 'Holiday Calendar' },
 ];
@@ -59,123 +58,11 @@ const SettingsPage = () => {
 
       {/* Tab Content */}
       {activeTab === 'holiday-calendar' && <HolidayCalendarTab />}
-      {activeTab === 'leave-policy' && <LeavePolicyTab />}
       {activeTab === 'ot-policy' && <OtPolicyTab />}
     </div>
   );
 };
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Leave Policy Tab
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-const LeavePolicyTab = () => {
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [minCompLeaveDurationHours, setMinCompLeaveDurationHours] = useState(4);
-  const [original, setOriginal] = useState(4);
-
-  const fetchPolicy = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await settingsService.getLeavePolicy();
-      const val = data.minCompLeaveDurationHours ?? 4;
-      setMinCompLeaveDurationHours(val);
-      setOriginal(val);
-    } catch {
-      // defaults remain
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchPolicy();
-  }, [fetchPolicy]);
-
-  const handleSave = async () => {
-    if (minCompLeaveDurationHours < 0) {
-      toast.error('Value must be 0 or greater.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const data = await settingsService.saveLeavePolicy({ minCompLeaveDurationHours });
-      const val = data.minCompLeaveDurationHours ?? minCompLeaveDurationHours;
-      setMinCompLeaveDurationHours(val);
-      setOriginal(val);
-      toast.success('Leave policy saved successfully!');
-    } catch {
-      // error toast handled by interceptor
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setMinCompLeaveDurationHours(original);
-  };
-
-  const hasChanges = minCompLeaveDurationHours !== original;
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">Compensatory Leave Configuration</h2>
-
-        <div className="max-w-md">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Min Duration per Request
-          </label>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              min="0"
-              step="0.5"
-              value={minCompLeaveDurationHours}
-              onChange={(e) => setMinCompLeaveDurationHours(Number(e.target.value))}
-              className="border border-gray-300 rounded-lg px-4 py-2.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <span className="text-sm text-gray-500">Hours</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Action buttons */}
-      <div className="flex justify-end space-x-3 mt-6">
-        <button
-          onClick={handleCancel}
-          disabled={!hasChanges}
-          className="px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={saving || !hasChanges}
-          className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saving ? (
-            <span className="flex items-center gap-2">
-              <LoadingSpinner size="sm" />
-              Saving...
-            </span>
-          ) : (
-            'Save Changes'
-          )}
-        </button>
-      </div>
-    </div>
-  );
-};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // OT Policy Tab

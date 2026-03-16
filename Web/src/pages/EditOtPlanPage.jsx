@@ -16,12 +16,11 @@ import {
   Info,
 } from 'lucide-react';
 
-// ── Employee Dropdown with OT summary tooltip ────────────────────────
+// ── Employee Dropdown ────────────────────────────────────────────────
 
 const EmployeeSelector = ({ value, users, onChange, excludeIds }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [tooltip, setTooltip] = useState(null);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -39,26 +38,27 @@ const EmployeeSelector = ({ value, users, onChange, excludeIds }) => {
 
   const selected = users.find((u) => u.id === value);
 
-  const handleHover = async (userId) => {
-    try {
-      const summary = await otService.getEmployeeOtSummary(userId);
-      setTooltip({ userId, ...summary });
-    } catch {
-      setTooltip(null);
-    }
-  };
-
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors min-h-[46px]"
       >
-        <span className={selected ? 'text-gray-900' : 'text-gray-400'}>
-          {selected ? selected.username : 'Search by Name or Email...'}
-        </span>
-        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        {selected ? (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+              {selected.username?.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <div className="text-sm font-medium text-gray-900 truncate">{selected.username}</div>
+              {selected.email && <div className="text-xs text-gray-400 truncate">{selected.email}</div>}
+            </div>
+          </div>
+        ) : (
+          <span className="text-gray-400">Search by Name or Email...</span>
+        )}
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ml-1 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
@@ -78,24 +78,65 @@ const EmployeeSelector = ({ value, users, onChange, excludeIds }) => {
             filtered.map((u) => (
               <div
                 key={u.id}
-                className="relative px-3 py-2.5 cursor-pointer hover:bg-gray-50 text-sm text-gray-700 flex items-center justify-between"
+                className="px-3 py-2.5 cursor-pointer hover:bg-gray-50 text-sm text-gray-700"
                 onClick={() => { onChange(u.id); setIsOpen(false); setSearch(''); }}
-                onMouseEnter={() => handleHover(u.id)}
-                onMouseLeave={() => setTooltip(null)}
               >
                 <span>{u.username} <span className="text-gray-400 text-xs">({u.email})</span></span>
-                {tooltip && tooltip.userId === u.id && (
-                  <div className="absolute right-0 top-full mt-1 z-50 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg w-56">
-                    <div className="font-semibold mb-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" /> OT Summary</div>
-                    <div className="space-y-1">
-                      <div className="flex justify-between"><span>Today:</span><span>{tooltip.todayHours ?? 0}h</span></div>
-                      <div className="flex justify-between"><span>This Month:</span><span>{tooltip.monthHours ?? 0}h</span></div>
-                      <div className="flex justify-between"><span>This Year:</span><span>{tooltip.yearHours ?? 0}h</span></div>
-                    </div>
-                  </div>
-                )}
               </div>
             ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── OT Summary Tooltip ───────────────────────────────────────────────
+
+const EmployeeOtTooltip = ({ employeeId }) => {
+  const [show, setShow] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleEnter = async () => {
+    setShow(true);
+    if (summary !== null) return;
+    setLoading(true);
+    try {
+      const data = await otService.getEmployeeOtSummary(employeeId);
+      setSummary(data);
+    } catch {
+      setSummary({});
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative flex-shrink-0" onMouseEnter={handleEnter} onMouseLeave={() => setShow(false)}>
+      <Info className="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer transition-colors" />
+      {show && (
+        <div className="absolute left-6 top-0 z-50 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg w-52 pointer-events-none">
+          <div className="font-semibold mb-1.5 flex items-center gap-1.5">
+            <Clock className="w-3 h-3" /> OT Summary
+          </div>
+          {loading ? (
+            <div className="text-gray-400">Loading...</div>
+          ) : (
+            <div className="space-y-1">
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300">OT hours today:</span>
+                <span className="font-medium">{summary?.otHoursToday ?? 0}h</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300">OT hours this month:</span>
+                <span className="font-medium">{summary?.otHoursThisMonth ?? 0}h</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300">OT hours this year:</span>
+                <span className="font-medium">{summary?.otHoursThisYear ?? 0}h</span>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -256,14 +297,19 @@ const EditOtPlanPage = () => {
           title: data.title || '',
           description: data.description || '',
         });
-        const emps = (data.employees || []).map((e) => ({
+        // Load flat rows directly from plan.employees (one row per task slot)
+        const rows = (data.employees || []).map((e) => ({
           key: nextKey.current++,
           employeeId: e.employeeId || e.employee?.id,
           startTime: toLocalDatetime(e.startTime),
           endTime: toLocalDatetime(e.endTime),
           plannedTask: e.plannedTask || '',
         }));
-        setEmployees(emps.length > 0 ? emps : [{ key: nextKey.current++, employeeId: null, startTime: '', endTime: '', plannedTask: '' }]);
+        setEmployees(
+          rows.length > 0
+            ? rows
+            : [{ key: nextKey.current++, employeeId: null, startTime: '', endTime: '', plannedTask: '' }],
+        );
       } catch (error) {
         console.error('Error fetching OT plan:', error);
         toast.error('Failed to load OT plan');
@@ -274,9 +320,9 @@ const EditOtPlanPage = () => {
     })();
   }, [id]);
 
-  // Compute total duration
-  const totalMinutes = employees.reduce((sum, emp) => {
-    const d = calcDurationMinutes(emp.startTime, emp.endTime);
+  // Compute total duration across all rows
+  const totalMinutes = employees.reduce((sum, e) => {
+    const d = calcDurationMinutes(e.startTime, e.endTime);
     return sum + (d || 0);
   }, 0);
 
@@ -292,9 +338,7 @@ const EditOtPlanPage = () => {
   };
 
   const updateEmployee = (key, field, value) => {
-    setEmployees((prev) =>
-      prev.map((e) => (e.key === key ? { ...e, [field]: value } : e))
-    );
+    setEmployees((prev) => prev.map((e) => (e.key === key ? { ...e, [field]: value } : e)));
   };
 
   const isFormValid =
@@ -309,18 +353,24 @@ const EditOtPlanPage = () => {
         e.plannedTask.trim().length > 0,
     );
 
-  const buildPayload = (acknowledge = false) => ({
-    title: formData.title.trim(),
-    description: formData.description?.trim() || undefined,
-    acknowledgeBalanceExceeded: acknowledge,
-    employees: employees.map((emp) => ({
-      employeeId: emp.employeeId,
-      startTime: `${emp.startTime}:00+07:00`,
-      endTime: `${emp.endTime}:00+07:00`,
-      plannedTask: emp.plannedTask.trim(),
-    })),
-    version: plan.version,
-  });
+  const buildPayload = (acknowledge = false) => {
+    // Group flat rows by employeeId into the nested API shape
+    const empMap = new Map();
+    for (const row of employees) {
+      if (!empMap.has(row.employeeId)) empMap.set(row.employeeId, { employeeId: row.employeeId, tasks: [] });
+      empMap.get(row.employeeId).tasks.push({
+        startTime: `${row.startTime}:00+07:00`,
+        endTime: `${row.endTime}:00+07:00`,
+        plannedTask: row.plannedTask.trim(),
+      });
+    }
+    return {
+      title: formData.title.trim(),
+      description: formData.description?.trim() || undefined,
+      acknowledgeBalanceExceeded: acknowledge,
+      employees: [...empMap.values()],
+    };
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -331,29 +381,23 @@ const EditOtPlanPage = () => {
     }
 
     for (let i = 0; i < employees.length; i++) {
-      const emp = employees[i];
-      if (!emp.employeeId) {
-        toast.error(`Employee ${i + 1}: Please select an employee`);
+      const row = employees[i];
+      if (!row.employeeId) {
+        toast.error(`Row ${i + 1}: Please select an employee`);
         return;
       }
-      if (!emp.startTime || !emp.endTime) {
-        toast.error(`Employee ${i + 1}: Start and end times are required`);
+      if (!row.startTime || !row.endTime) {
+        toast.error(`Row ${i + 1}: Start and end times are required`);
         return;
       }
-      if (new Date(emp.endTime) <= new Date(emp.startTime)) {
-        toast.error(`Employee ${i + 1}: End time must be after start time`);
+      if (new Date(row.endTime) <= new Date(row.startTime)) {
+        toast.error(`Row ${i + 1}: End time must be after start time`);
         return;
       }
-      if (!emp.plannedTask || emp.plannedTask.trim().length < 1) {
-        toast.error(`Employee ${i + 1}: Planned task is required`);
+      if (!row.plannedTask || row.plannedTask.trim().length < 1) {
+        toast.error(`Row ${i + 1}: Planned task is required`);
         return;
       }
-    }
-
-    const ids = employees.map((e) => e.employeeId);
-    if (new Set(ids).size !== ids.length) {
-      toast.error('Duplicate employees are not allowed');
-      return;
     }
 
     try {
@@ -527,97 +571,117 @@ const EditOtPlanPage = () => {
               <h3 className="text-base font-semibold text-gray-900">Employee Details</h3>
               <span className="text-xs text-gray-500">({employees.length} employee{employees.length > 1 ? 's' : ''})</span>
             </div>
-            <button
-              type="button"
-              onClick={addEmployee}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add Employee
-            </button>
           </div>
-          <div className="p-6">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[5%]">#</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[22%]">Employee <span className="text-red-500">*</span></th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[18%]">Start Time <span className="text-red-500">*</span></th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[18%]">End Time <span className="text-red-500">*</span></th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[10%]">Duration</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[22%]">Planned Task <span className="text-red-500">*</span></th>
-                    <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-[5%]"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {employees.map((emp, idx) => {
-                    const dur = calcDurationMinutes(emp.startTime, emp.endTime);
-                    return (
-                      <tr key={emp.key} className="hover:bg-gray-50/50">
-                        <td className="px-3 py-3 text-sm text-gray-500 font-medium">{idx + 1}</td>
-                        <td className="px-3 py-3">
-                          {loadingUsers ? (
-                            <div className="text-sm text-gray-400">Loading...</div>
-                          ) : (
-                            <EmployeeSelector
-                              value={emp.employeeId}
-                              users={users}
-                              onChange={(id) => updateEmployee(emp.key, 'employeeId', id)}
-                              excludeIds={selectedEmployeeIds.filter((id) => id !== emp.employeeId)}
+          <div className="p-6 space-y-4">
+            {employees.map((emp, empIdx) => (
+              <div key={emp.key} className="border border-gray-200 rounded-lg overflow-hidden">
+                {/* Employee header */}
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-3">
+                  <span className="text-sm font-semibold text-gray-500 w-6 text-center flex-shrink-0">
+                    {empIdx + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    {loadingUsers ? (
+                      <div className="text-sm text-gray-400">Loading...</div>
+                    ) : (
+                      <EmployeeSelector
+                        value={emp.employeeId}
+                        users={users}
+                        onChange={(id) => updateEmployee(emp.key, 'employeeId', id)}
+                        excludeIds={selectedEmployeeIds.filter((id) => id !== emp.employeeId)}
+                      />
+                    )}
+                  </div>
+                  {emp.employeeId && (
+                    <EmployeeOtTooltip key={emp.employeeId} employeeId={emp.employeeId} />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => addTask(emp.key)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1.5 rounded border border-blue-200 hover:border-blue-400 transition-colors flex-shrink-0"
+                  >
+                    <Plus className="w-3 h-3" /> Add Task
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeEmployee(emp.key)}
+                    disabled={employees.length === 1}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
+                    title={employees.length === 1 ? 'At least one employee is required' : 'Remove employee'}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                {/* Task sub-table */}
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/40">
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase w-10">Task</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase w-[22%]">Start Time <span className="text-red-400">*</span></th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase w-[22%]">End Time <span className="text-red-400">*</span></th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase w-20">Duration</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Planned Task <span className="text-red-400">*</span></th>
+                      <th className="px-4 py-2 w-10" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {emp.tasks.map((task, taskIdx) => {
+                      const dur = calcDurationMinutes(task.startTime, task.endTime);
+                      return (
+                        <tr key={task.key} className="hover:bg-gray-50/40">
+                          <td className="px-4 py-2.5 text-xs text-gray-400 font-medium text-center">{taskIdx + 1}</td>
+                          <td className="px-4 py-2.5">
+                            <DateTimePicker
+                              value={task.startTime}
+                              onChange={(v) => updateTask(emp.key, task.key, 'startTime', v)}
                             />
-                          )}
-                        </td>
-                        <td className="px-3 py-3">
-                          <DateTimePicker
-                            value={emp.startTime}
-                            onChange={(v) => updateEmployee(emp.key, 'startTime', v)}
-                          />
-                        </td>
-                        <td className="px-3 py-3">
-                          <DateTimePicker
-                            value={emp.endTime}
-                            onChange={(v) => updateEmployee(emp.key, 'endTime', v)}
-                            minDate={emp.startTime ? emp.startTime.split('T')[0] : undefined}
-                          />
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 font-medium text-center">
-                            {dur ? fmtMinutes(dur) : '—'}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <input
-                            type="text"
-                            value={emp.plannedTask}
-                            onChange={(e) => updateEmployee(emp.key, 'plannedTask', e.target.value)}
-                            placeholder="e.g. Fix Bug #123"
-                            maxLength={150}
-                            className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="px-3 py-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => removeEmployee(emp.key)}
-                            disabled={employees.length === 1}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent"
-                            title={employees.length === 1 ? 'Please add at least one employee to submit the plan.' : 'Remove employee'}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <DateTimePicker
+                              value={task.endTime}
+                              onChange={(v) => updateTask(emp.key, task.key, 'endTime', v)}
+                              minDate={task.startTime ? task.startTime.split('T')[0] : undefined}
+                            />
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 font-medium text-center">
+                              {dur ? fmtMinutes(dur) : '—'}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <input
+                              type="text"
+                              value={task.plannedTask}
+                              onChange={(e) => updateTask(emp.key, task.key, 'plannedTask', e.target.value)}
+                              placeholder="e.g. Fix Bug #123"
+                              maxLength={150}
+                              className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeTask(emp.key, task.key)}
+                              disabled={emp.tasks.length === 1}
+                              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                              title={emp.tasks.length === 1 ? 'At least one task is required' : 'Remove task'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ))}
 
+            {/* Add employee button */}
             <button
               type="button"
               onClick={addEmployee}
-              className="mt-4 w-full py-2.5 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2.5 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors flex items-center justify-center gap-2"
             >
               <Plus className="w-4 h-4" />
               Add Another Employee

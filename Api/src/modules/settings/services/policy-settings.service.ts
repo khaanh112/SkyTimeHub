@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SystemSetting } from '@/entities/system-setting.entity';
 import { OtPolicyDto, OtPolicyResponseDto } from '../dto/ot-policy.dto';
-import { LeavePolicyDto, LeavePolicyResponseDto } from '../dto/leave-policy.dto';
+
 
 /** Default values applied when no DB row exists yet */
 const OT_POLICY_DEFAULTS: OtPolicyResponseDto = {
@@ -13,12 +13,10 @@ const OT_POLICY_DEFAULTS: OtPolicyResponseDto = {
   maxOtHoursPerYear: 200,
 };
 
-const LEAVE_POLICY_DEFAULTS: LeavePolicyResponseDto = {
-  minCompLeaveDurationHours: 4,
-};
+
 
 const CATEGORY_OT = 'ot_policy';
-const CATEGORY_LEAVE = 'leave_policy';
+
 
 @Injectable()
 export class PolicySettingsService {
@@ -85,34 +83,6 @@ export class PolicySettingsService {
     return this.getOtPolicy();
   }
 
-  // ── Leave Policy ───────────────────────────────────────────
-
-  async getLeavePolicy(): Promise<LeavePolicyResponseDto> {
-    const rows = await this.settingRepo.find({ where: { category: CATEGORY_LEAVE } });
-    const map = new Map(rows.map((r) => [r.key, r.value]));
-
-    return {
-      minCompLeaveDurationHours: this.toNumber(
-        map.get('min_comp_leave_duration_hours'),
-        LEAVE_POLICY_DEFAULTS.minCompLeaveDurationHours,
-      ),
-    };
-  }
-
-  async saveLeavePolicy(dto: LeavePolicyDto): Promise<LeavePolicyResponseDto> {
-    this.logger.log('Saving leave policy settings');
-
-    const entries: { key: string; value: string; description: string }[] = [
-      {
-        key: 'min_comp_leave_duration_hours',
-        value: String(dto.minCompLeaveDurationHours),
-        description: 'Min compensatory leave duration per request (hours)',
-      },
-    ];
-
-    await this.upsertSettings(CATEGORY_LEAVE, entries);
-    return this.getLeavePolicy();
-  }
 
   // ── Helpers ────────────────────────────────────────────────
 

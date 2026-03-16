@@ -1,0 +1,474 @@
+@startuml Leave Request - Submit Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title Leave Request - Submit Flow
+
+actor Employee
+participant "Frontend\n(CreateLeaveRequestPage)" as FE
+participant "LeaveRequestsController" as Ctrl
+participant "LeaveRequestsService" as LRS
+participant "LeaveBalanceService" as LBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Submit Leave Request ==
+Employee -> FE: Fill form & submit
+activate FE
+
+FE -> Ctrl: POST /leave-requests\n(CreateLeaveRequestDto)
+activate Ctrl
+
+Ctrl -> LRS: createLeaveRequest(userId, dto)
+activate LRS
+
+LRS -> DB: Find User & UserApprover
+DB --> LRS: User, Approver
+
+alt No Approver Assigned
+    LRS --> Ctrl: BadRequestException
+    Ctrl --> FE: 400 Error
+    FE --> Employee: "No approver assigned"
+else Has Approver
+    LRS -> DB: Find LeaveType
+    DB --> LRS: LeaveType
+
+    alt LeaveType not found
+        LRS --> Ctrl: NotFoundException
+        Ctrl --> FE: 404 Error
+        FE --> Employee: "Leave type not found"
+    else LeaveType exists
+        == Balance Validation ==
+        LRS -> LBS: validateLeaveRequest(employee, items, leaveType)
+        activate LBS
+
+        LBS -> DB: Get balance transactions
+        DB --> LBS: Transactions
+
+        LBS -> LBS: Calculate remaining balance
+
+        alt Insufficient Balance
+            LBS --> LRS: { valid: false, message }
+            LRS --> Ctrl: BadRequestException
+            Ctrl --> FE: 400 Error
+            FE --> Employee: "Insufficient balance"
+        else Balance OK
+            LBS --> LRS: { valid: true }
+            deactivate LBS
+
+            == Create Leave Request ==
+            LRS -> DB: BEGIN TRANSACTION
+
+            LRS -> DB: Insert LeaveRequest
+            DB --> LRS: LeaveRequest entity
+
+            LRS -> DB: Insert LeaveRequestItems
+            DB --> LRS: Items saved
+
+            LRS -> DB: Insert NotificationRecipients\n(Approver, HR, CC)
+            DB --> LRS: Recipients saved
+
+            alt Social Leave with Attachment
+                LRS -> DB: Link LeaveRequestAttachment
+                DB --> LRS: Attachment linked
+            end
+
+            == Reserve Balance ==
+            LRS -> LBS: writeReserveDebit(employee, items, leaveRequest)
+            activate LBS
+            LBS -> DB: Insert balance_transactions\n(RESERVE DEBIT)
+            DB --> LBS: Balance reserved
+            deactivate LBS
+
+            == Enqueue Notifications (in transaction) ==
+            LRS -> NS: enqueueLeaveRequestCreatedNotification(\nrecipients, context, manager)
+            activate NS
+            NS -> DB: INSERT email_queue records\n(PENDING status)
+            DB --> NS: Email IDs
+            NS --> LRS: emailIds[]
+            deactivate NS
+
+            LRS -> DB: COMMIT
+
+            == Trigger Immediate Send (after commit) ==
+            LRS -> NS: triggerImmediateSend(emailIds)
+            activate NS
+            note right: Fire-and-forget:\nsend emails to\n- Approver\n- HR\n- CC recipients
+            NS --> LRS: (async)
+            deactivate NS
+
+            LRS --> Ctrl: LeaveRequestDetailsDto
+            deactivate LRS
+            Ctrl --> FE: 201 Created
+            deactivate Ctrl
+            FE --> Employee: "Request submitted"
+            deactivate FE
+        end
+    end
+end
+
+@enduml
+
+@startuml Leave Request - Approve Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title Leave Request - Approve Flow
+
+actor Approver
+participant "Frontend\n(LeaveRequestDetailPage)" as FE
+participant "LeaveRequestsController" as Ctrl
+participant "LeaveRequestsService" as LRS
+participant "LeaveBalanceService" as LBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Approve Leave Request ==
+Approver -> FE: Click "Approve"
+activate FE
+
+FE -> Ctrl: PATCH /leave-requests/:id/approve\n(version)
+activate Ctrl
+
+Ctrl -> LRS: approveLeaveRequest(id, approverId, version)
+activate LRS
+
+LRS -> DB: Find LeaveRequest with relations
+DB --> LRS: LeaveRequest
+
+alt Not Found
+    LRS --> Ctrl: NotFoundException
+    Ctrl --> FE: 404 Error
+    FE --> Approver: "Request not found"
+else Request Found
+    alt Not Approver
+        LRS --> Ctrl: ForbiddenException
+        Ctrl --> FE: 403 Error
+        FE --> Approver: "You are not the approver"
+    else Is Approver
+        alt Status not PENDING
+            LRS --> Ctrl: BadRequestException
+            Ctrl --> FE: 400 Error
+            FE --> Approver: "Request cannot be approved"
+        else Status is PENDING
+            alt Version Conflict
+                LRS --> Ctrl: ConflictException
+                Ctrl --> FE: 409 Conflict
+                FE --> Approver: "Request was modified.\nPlease refresh."
+            else Version OK
+                == Update Balance ==
+                LRS -> DB: BEGIN TRANSACTION
+
+                LRS -> LBS: writeApprovalDebit(employee, items, leaveRequest)
+                activate LBS
+                LBS -> DB: UPDATE balance_transactions\nRESERVE → APPROVAL
+                DB --> LBS: Balance updated
+                deactivate LBS
+
+                == Update Request ==
+                LRS -> DB: UPDATE leave_request\nSET status = APPROVED\napprovedAt = now\nversion++
+                DB --> LRS: Request updated
+
+                == Enqueue Notifications (in transaction) ==
+                LRS -> NS: enqueueLeaveRequestApprovedNotification(\nrecipients, context, manager)
+                activate NS
+                NS -> DB: INSERT email_queue records\n(PENDING status)
+                DB --> NS: Email IDs
+                NS --> LRS: emailIds[]
+                deactivate NS
+
+                LRS -> DB: COMMIT
+
+                == Trigger Immediate Send (after commit) ==
+                LRS -> NS: triggerImmediateSend(emailIds)
+                activate NS
+                note right: Fire-and-forget:\nsend emails to\n- Employee\n- HR\n- CC recipients
+                NS --> LRS: (async)
+                deactivate NS
+
+                LRS --> Ctrl: LeaveRequestDetailsDto
+                deactivate LRS
+                Ctrl --> FE: 200 OK
+                deactivate Ctrl
+                FE --> Approver: "Request approved"
+                deactivate FE
+            end
+        end
+    end
+end
+
+@enduml
+
+@startuml Leave Request - Reject Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title Leave Request - Reject Flow
+
+actor Approver
+participant "Frontend\n(LeaveRequestDetailPage)" as FE
+participant "LeaveRequestsController" as Ctrl
+participant "LeaveRequestsService" as LRS
+participant "LeaveBalanceService" as LBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Reject Leave Request ==
+Approver -> FE: Enter rejection reason\n& click "Reject"
+activate FE
+
+FE -> Ctrl: PATCH /leave-requests/:id/reject\n(rejectedReason, version)
+activate Ctrl
+
+Ctrl -> LRS: rejectLeaveRequest(id, approverId,\nrejectedReason, version)
+activate LRS
+
+LRS -> DB: Find LeaveRequest with relations
+DB --> LRS: LeaveRequest
+
+alt Not Found or Not Approver or Status not PENDING
+    LRS --> Ctrl: Error (404/403/400)
+    Ctrl --> FE: Error
+    FE --> Approver: Error message
+else All Validations Pass
+    alt Version Conflict
+        LRS --> Ctrl: ConflictException
+        Ctrl --> FE: 409 Conflict
+        FE --> Approver: "Request was modified.\nPlease refresh."
+    else Version OK
+        == Release/Refund Balance ==
+        LRS -> DB: BEGIN TRANSACTION
+
+        LRS -> LBS: writeReleaseCredit(employee, items, leaveRequest)
+        activate LBS
+        note right: Release if still RESERVE,\nor Refund if already APPROVAL
+        LBS -> DB: INSERT balance_transactions\n(RELEASE/REFUND CREDIT)
+        DB --> LBS: Balance released
+        deactivate LBS
+
+        == Update Request ==
+        LRS -> DB: UPDATE leave_request\nSET status = REJECTED\nrejectedReason = ...\nrejectedAt = now\nversion++
+        DB --> LRS: Request updated
+
+        == Enqueue Notifications (in transaction) ==
+        LRS -> NS: enqueueLeaveRequestRejectedNotification(\nrecipients, context, manager)
+        activate NS
+        NS -> DB: INSERT email_queue records\n(PENDING status)
+        DB --> NS: Email IDs
+        NS --> LRS: emailIds[]
+        deactivate NS
+
+        LRS -> DB: COMMIT
+
+        == Trigger Immediate Send (after commit) ==
+        LRS -> NS: triggerImmediateSend(emailIds)
+        activate NS
+        note right: Fire-and-forget:\nsend emails to\n- Employee\n- HR\n- CC recipients
+        NS --> LRS: (async)
+        deactivate NS
+
+        LRS --> Ctrl: LeaveRequestDetailsDto
+        deactivate LRS
+        Ctrl --> FE: 200 OK
+        deactivate Ctrl
+        FE --> Approver: "Request rejected"
+        deactivate FE
+    end
+end
+
+@enduml
+
+@startuml Leave Request - Update Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title Leave Request - Update Flow
+
+actor Employee
+participant "Frontend\n(EditLeaveRequestPage)" as FE
+participant "LeaveRequestsController" as Ctrl
+participant "LeaveRequestsService" as LRS
+participant "LeaveBalanceService" as LBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Update Leave Request ==
+Employee -> FE: Modify form & submit
+activate FE
+
+FE -> Ctrl: PUT /leave-requests/:id\n(UpdateLeaveRequestDto)
+activate Ctrl
+
+Ctrl -> LRS: updateLeaveRequest(id, userId, dto)
+activate LRS
+
+LRS -> DB: Find LeaveRequest
+DB --> LRS: LeaveRequest
+
+alt Not Found or Not Owner
+    LRS --> Ctrl: Error (404/403)
+    Ctrl --> FE: Error
+    FE --> Employee: Error message
+else Is Owner
+    alt Status not PENDING
+        LRS --> Ctrl: BadRequestException
+        Ctrl --> FE: 400 Error
+        FE --> Employee: "Only pending requests\ncan be updated"
+    else Status is PENDING
+        alt Version Conflict
+            LRS --> Ctrl: ConflictException
+            Ctrl --> FE: 409 Conflict
+            FE --> Employee: "Request was modified.\nPlease refresh."
+        else Version OK
+            == Re-validate Balance ==
+            LRS -> LBS: validateLeaveRequest(employee, newItems, leaveType)
+            activate LBS
+            LBS -> LBS: Calculate new required balance\n(excluding current reserved)
+
+            alt Insufficient Balance
+                LBS --> LRS: { valid: false, message }
+                LRS --> Ctrl: BadRequestException
+                Ctrl --> FE: 400 Error
+                FE --> Employee: "Insufficient balance"
+            else Balance OK
+                LBS --> LRS: { valid: true }
+                deactivate LBS
+
+                == Update Request ==
+                LRS -> DB: BEGIN TRANSACTION
+
+                LRS -> DB: UPDATE leave_request fields
+                DB --> LRS: Request updated
+
+                LRS -> DB: DELETE old LeaveRequestItems
+                DB --> LRS: Deleted
+
+                LRS -> DB: INSERT new LeaveRequestItems
+                DB --> LRS: Items saved
+
+                LRS -> DB: DELETE old balance_transactions\n(RESERVE DEBIT)
+                DB --> LRS: Deleted
+
+                LRS -> LBS: writeReserveDebit(employee, newItems, leaveRequest)
+                activate LBS
+                LBS -> DB: INSERT new balance_transactions\n(RESERVE DEBIT)
+                DB --> LBS: Balance reserved
+                deactivate LBS
+
+                alt Attachment changed
+                    LRS -> DB: UPDATE attachment link
+                    DB --> LRS: Updated
+                end
+
+                == Enqueue Notifications (in transaction) ==
+                LRS -> NS: enqueueLeaveRequestUpdatedNotification(\nrecipients, context, manager)
+                activate NS
+                NS -> DB: INSERT email_queue records\n(PENDING status)
+                DB --> NS: Email IDs
+                NS --> LRS: emailIds[]
+                deactivate NS
+
+                LRS -> DB: COMMIT
+
+                == Trigger Immediate Send (after commit) ==
+                LRS -> NS: triggerImmediateSend(emailIds)
+                activate NS
+                note right: Fire-and-forget:\nsend emails to\n- Approver\n- HR\n- CC recipients
+                NS --> LRS: (async)
+                deactivate NS
+
+                LRS --> Ctrl: LeaveRequestDetailsDto
+                deactivate LRS
+                Ctrl --> FE: 200 OK
+                deactivate Ctrl
+                FE --> Employee: "Request updated"
+                deactivate FE
+            end
+        end
+    end
+end
+
+@enduml
+
+@startuml Leave Request - Cancel Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title Leave Request - Cancel Flow
+
+actor Employee
+participant "Frontend\n(LeaveRequestDetailPage)" as FE
+participant "LeaveRequestsController" as Ctrl
+participant "LeaveRequestsService" as LRS
+participant "LeaveBalanceService" as LBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Cancel Leave Request ==
+Employee -> FE: Click "Cancel Request"
+activate FE
+
+FE -> Ctrl: PATCH /leave-requests/:id/cancel
+activate Ctrl
+
+Ctrl -> LRS: cancelLeaveRequest(id, userId)
+activate LRS
+
+LRS -> DB: Find LeaveRequest
+DB --> LRS: LeaveRequest
+
+alt Not Found or Not Owner
+    LRS --> Ctrl: Error (404/403)
+    Ctrl --> FE: Error
+    FE --> Employee: Error message
+else Is Owner
+    alt Status not PENDING
+        LRS --> Ctrl: BadRequestException
+        Ctrl --> FE: 400 Error
+        FE --> Employee: "Only pending requests\ncan be cancelled"
+    else Status is PENDING
+        == Release Balance ==
+        LRS -> DB: BEGIN TRANSACTION
+
+        LRS -> LBS: writeReleaseCredit(employee, items, leaveRequest)
+        activate LBS
+        LBS -> DB: INSERT balance_transactions\n(RELEASE CREDIT)
+        DB --> LBS: Balance released
+        deactivate LBS
+
+        == Update Request ==
+        LRS -> DB: UPDATE leave_request\nSET status = CANCELLED\nversion++
+        DB --> LRS: Request updated
+
+        == Enqueue Notifications (in transaction) ==
+        LRS -> NS: enqueueLeaveRequestCancelledNotification(\nrecipients, context, manager)
+        activate NS
+        NS -> DB: INSERT email_queue records\n(PENDING status)
+        DB --> NS: Email IDs
+        NS --> LRS: emailIds[]
+        deactivate NS
+
+        LRS -> DB: COMMIT
+
+        == Trigger Immediate Send (after commit) ==
+        LRS -> NS: triggerImmediateSend(emailIds)
+        activate NS
+        note right: Fire-and-forget:\nsend emails to\n- Approver\n- HR\n- CC recipients
+        NS --> LRS: (async)
+        deactivate NS
+
+        LRS --> Ctrl: LeaveRequestDetailsDto
+        deactivate LRS
+        Ctrl --> FE: 200 OK
+        deactivate Ctrl
+        FE --> Employee: "Request cancelled"
+        deactivate FE
+    end
+end
+
+@enduml

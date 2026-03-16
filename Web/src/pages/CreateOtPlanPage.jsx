@@ -15,12 +15,11 @@ import {
   Info,
 } from 'lucide-react';
 
-// ── Employee Dropdown with OT summary tooltip ────────────────────────
+// ── Employee Dropdown ────────────────────────────────────────────────
 
 const EmployeeSelector = ({ value, users, onChange, excludeIds }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [tooltip, setTooltip] = useState(null);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -38,26 +37,27 @@ const EmployeeSelector = ({ value, users, onChange, excludeIds }) => {
 
   const selected = users.find((u) => u.id === value);
 
-  const handleHover = async (userId) => {
-    try {
-      const summary = await otService.getEmployeeOtSummary(userId);
-      setTooltip({ userId, ...summary });
-    } catch {
-      setTooltip(null);
-    }
-  };
-
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors min-h-[46px]"
       >
-        <span className={selected ? 'text-gray-900' : 'text-gray-400'}>
-          {selected ? selected.username : 'Search by Name or Email...'}
-        </span>
-        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        {selected ? (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+              {selected.username?.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <div className="text-sm font-medium text-gray-900 truncate">{selected.username}</div>
+              {selected.email && <div className="text-xs text-gray-400 truncate">{selected.email}</div>}
+            </div>
+          </div>
+        ) : (
+          <span className="text-gray-400">Search by Name or Email...</span>
+        )}
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ml-1 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-60 overflow-y-auto">
@@ -77,24 +77,65 @@ const EmployeeSelector = ({ value, users, onChange, excludeIds }) => {
             filtered.map((u) => (
               <div
                 key={u.id}
-                className="relative px-3 py-2.5 cursor-pointer hover:bg-gray-50 text-sm text-gray-700 flex items-center justify-between"
+                className="px-3 py-2.5 cursor-pointer hover:bg-gray-50 text-sm text-gray-700"
                 onClick={() => { onChange(u.id); setIsOpen(false); setSearch(''); }}
-                onMouseEnter={() => handleHover(u.id)}
-                onMouseLeave={() => setTooltip(null)}
               >
                 <span>{u.username} <span className="text-gray-400 text-xs">({u.email})</span></span>
-                {tooltip && tooltip.userId === u.id && (
-                  <div className="absolute right-0 top-full mt-1 z-50 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg w-56">
-                    <div className="font-semibold mb-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" /> OT Summary</div>
-                    <div className="space-y-1">
-                      <div className="flex justify-between"><span>Today:</span><span>{tooltip.todayHours ?? 0}h</span></div>
-                      <div className="flex justify-between"><span>This Month:</span><span>{tooltip.monthHours ?? 0}h</span></div>
-                      <div className="flex justify-between"><span>This Year:</span><span>{tooltip.yearHours ?? 0}h</span></div>
-                    </div>
-                  </div>
-                )}
               </div>
             ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── OT Summary Tooltip ───────────────────────────────────────────────
+
+const EmployeeOtTooltip = ({ employeeId }) => {
+  const [show, setShow] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleEnter = async () => {
+    setShow(true);
+    if (summary !== null) return;
+    setLoading(true);
+    try {
+      const data = await otService.getEmployeeOtSummary(employeeId);
+      setSummary(data);
+    } catch {
+      setSummary({});
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative flex-shrink-0" onMouseEnter={handleEnter} onMouseLeave={() => setShow(false)}>
+      <Info className="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer transition-colors" />
+      {show && (
+        <div className="absolute left-6 top-0 z-50 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg w-52 pointer-events-none">
+          <div className="font-semibold mb-1.5 flex items-center gap-1.5">
+            <Clock className="w-3 h-3" /> OT Summary
+          </div>
+          {loading ? (
+            <div className="text-gray-400">Loading...</div>
+          ) : (
+            <div className="space-y-1">
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300">OT hours today:</span>
+                <span className="font-medium">{summary?.otHoursToday ?? 0}h</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300">OT hours this month:</span>
+                <span className="font-medium">{summary?.otHoursThisMonth ?? 0}h</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300">OT hours this year:</span>
+                <span className="font-medium">{summary?.otHoursThisYear ?? 0}h</span>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -245,9 +286,9 @@ const CreateOtPlanPage = () => {
     })();
   }, [currentUser?.departmentId]);
 
-  // Compute total duration
-  const totalMinutes = employees.reduce((sum, emp) => {
-    const d = calcDurationMinutes(emp.startTime, emp.endTime);
+  // Compute total duration across all rows
+  const totalMinutes = employees.reduce((sum, e) => {
+    const d = calcDurationMinutes(e.startTime, e.endTime);
     return sum + (d || 0);
   }, 0);
 
@@ -263,9 +304,7 @@ const CreateOtPlanPage = () => {
   };
 
   const updateEmployee = (key, field, value) => {
-    setEmployees((prev) =>
-      prev.map((e) => (e.key === key ? { ...e, [field]: value } : e))
-    );
+    setEmployees((prev) => prev.map((e) => (e.key === key ? { ...e, [field]: value } : e)));
   };
 
   const isFormValid =
@@ -280,52 +319,51 @@ const CreateOtPlanPage = () => {
         e.plannedTask.trim().length > 0,
     );
 
-  const buildPayload = (acknowledge = false) => ({
-    title: formData.title.trim(),
-    description: formData.description?.trim() || undefined,
-    acknowledgeBalanceExceeded: acknowledge,
-    employees: employees.map((emp) => ({
-      employeeId: emp.employeeId,
-      startTime: `${emp.startTime}:00+07:00`,
-      endTime: `${emp.endTime}:00+07:00`,
-      plannedTask: emp.plannedTask.trim(),
-    })),
-  });
+  const buildPayload = (acknowledge = false) => {
+    // Group flat rows by employeeId into the nested API shape
+    const empMap = new Map();
+    for (const row of employees) {
+      if (!empMap.has(row.employeeId)) empMap.set(row.employeeId, { employeeId: row.employeeId, tasks: [] });
+      empMap.get(row.employeeId).tasks.push({
+        startTime: `${row.startTime}:00+07:00`,
+        endTime: `${row.endTime}:00+07:00`,
+        plannedTask: row.plannedTask.trim(),
+      });
+    }
+    return {
+      title: formData.title.trim(),
+      description: formData.description?.trim() || undefined,
+      acknowledgeBalanceExceeded: acknowledge,
+      employees: [...empMap.values()],
+    };
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validations
     if (!formData.title || formData.title.trim().length < 1) {
       toast.error('Title is required');
       return;
     }
 
     for (let i = 0; i < employees.length; i++) {
-      const emp = employees[i];
-      if (!emp.employeeId) {
-        toast.error(`Employee ${i + 1}: Please select an employee`);
+      const row = employees[i];
+      if (!row.employeeId) {
+        toast.error(`Row ${i + 1}: Please select an employee`);
         return;
       }
-      if (!emp.startTime || !emp.endTime) {
-        toast.error(`Employee ${i + 1}: Start and end times are required`);
+      if (!row.startTime || !row.endTime) {
+        toast.error(`Row ${i + 1}: Start and end times are required`);
         return;
       }
-      if (new Date(emp.endTime) <= new Date(emp.startTime)) {
-        toast.error(`Employee ${i + 1}: End time must be after start time`);
+      if (new Date(row.endTime) <= new Date(row.startTime)) {
+        toast.error(`Row ${i + 1}: End time must be after start time`);
         return;
       }
-      if (!emp.plannedTask || emp.plannedTask.trim().length < 1) {
-        toast.error(`Employee ${i + 1}: Planned task is required`);
+      if (!row.plannedTask || row.plannedTask.trim().length < 1) {
+        toast.error(`Row ${i + 1}: Planned task is required`);
         return;
       }
-    }
-
-    // Check for duplicate employees
-    const ids = employees.map((e) => e.employeeId);
-    if (new Set(ids).size !== ids.length) {
-      toast.error('Duplicate employees are not allowed');
-      return;
     }
 
     try {
@@ -365,8 +403,6 @@ const CreateOtPlanPage = () => {
       setSubmitting(false);
     }
   };
-
-  const selectedEmployeeIds = employees.map((e) => e.employeeId).filter(Boolean);
 
   return (
     <div className="w-full">
@@ -450,7 +486,7 @@ const CreateOtPlanPage = () => {
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white rounded-full text-sm font-semibold">2</div>
               <h3 className="text-base font-semibold text-gray-900">Employee Details</h3>
-              <span className="text-xs text-gray-500">({employees.length} employee{employees.length > 1 ? 's' : ''})</span>
+              <span className="text-xs text-gray-500">({employees.length} row{employees.length > 1 ? 's' : ''})</span>
             </div>
             <button
               type="button"
@@ -467,11 +503,11 @@ const CreateOtPlanPage = () => {
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[5%]">#</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[22%]">Employee <span className="text-red-500">*</span></th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[18%]">Start Time <span className="text-red-500">*</span></th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[18%]">End Time <span className="text-red-500">*</span></th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[10%]">Duration</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[22%]">Planned Task <span className="text-red-500">*</span></th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[24%]">Employee Info <span className="text-red-500">*</span></th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[18%]">Start <span className="text-red-500">*</span></th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[18%]">End <span className="text-red-500">*</span></th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-[8%]">Duration</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Planned Task <span className="text-red-500">*</span></th>
                     <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-[5%]"></th>
                   </tr>
                 </thead>
@@ -482,16 +518,23 @@ const CreateOtPlanPage = () => {
                       <tr key={emp.key} className="hover:bg-gray-50/50">
                         <td className="px-3 py-3 text-sm text-gray-500 font-medium">{idx + 1}</td>
                         <td className="px-3 py-3">
-                          {loadingUsers ? (
-                            <div className="text-sm text-gray-400">Loading...</div>
-                          ) : (
-                            <EmployeeSelector
-                              value={emp.employeeId}
-                              users={users}
-                              onChange={(id) => updateEmployee(emp.key, 'employeeId', id)}
-                              excludeIds={selectedEmployeeIds.filter((id) => id !== emp.employeeId)}
-                            />
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex-1 min-w-0">
+                              {loadingUsers ? (
+                                <div className="text-sm text-gray-400">Loading...</div>
+                              ) : (
+                                <EmployeeSelector
+                                  value={emp.employeeId}
+                                  users={users}
+                                  onChange={(id) => updateEmployee(emp.key, 'employeeId', id)}
+                                  excludeIds={[]}
+                                />
+                              )}
+                            </div>
+                            {emp.employeeId && (
+                              <EmployeeOtTooltip key={emp.employeeId} employeeId={emp.employeeId} />
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-3">
                           <DateTimePicker
@@ -507,7 +550,7 @@ const CreateOtPlanPage = () => {
                           />
                         </td>
                         <td className="px-3 py-3">
-                          <div className="px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 font-medium text-center">
+                          <div className="px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 font-medium text-center min-w-[60px]">
                             {dur ? fmtMinutes(dur) : '—'}
                           </div>
                         </td>
@@ -526,8 +569,8 @@ const CreateOtPlanPage = () => {
                             type="button"
                             onClick={() => removeEmployee(emp.key)}
                             disabled={employees.length === 1}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent"
-                            title={employees.length === 1 ? 'Please add at least one employee to submit the plan.' : 'Remove employee'}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={employees.length === 1 ? 'At least one row is required' : 'Remove row'}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -539,7 +582,6 @@ const CreateOtPlanPage = () => {
               </table>
             </div>
 
-            {/* Add employee button (bottom) */}
             <button
               type="button"
               onClick={addEmployee}

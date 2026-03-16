@@ -12,11 +12,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class CreateOtPlanEmployeeDto {
-  @ApiProperty({ example: 5, description: 'Employee user ID' })
-  @IsInt()
-  employeeId: number;
-
+export class CreateOtPlanTaskDto {
   @ApiProperty({
     example: '2026-03-08T11:30:00.000Z',
     description: 'Planned start time (ISO 8601)',
@@ -32,6 +28,19 @@ export class CreateOtPlanEmployeeDto {
   @IsString()
   @Length(1, 150)
   plannedTask: string;
+}
+
+export class CreateOtPlanEmployeeDto {
+  @ApiProperty({ example: 5, description: 'Employee user ID' })
+  @IsInt()
+  employeeId: number;
+
+  @ApiProperty({ type: [CreateOtPlanTaskDto], description: 'Task slots for this employee' })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @ArrayMinSize(1)
+  @Type(() => CreateOtPlanTaskDto)
+  tasks: CreateOtPlanTaskDto[];
 }
 
 export class CreateOtPlanDto {

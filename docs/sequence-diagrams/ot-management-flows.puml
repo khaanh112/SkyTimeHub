@@ -1,0 +1,867 @@
+@startuml OT Management - Create Plan Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Create Plan Flow
+
+actor Leader
+participant "Frontend\n(CreateOtPlanPage)" as FE
+participant "OtManagementsController" as Ctrl
+participant "OtManagementsService" as OTS
+participant "OtBalanceService" as OBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Create OT Plan ==
+Leader -> FE: Fill form (title, employees,\nstartTime, endTime, etc.)
+activate FE
+
+FE -> Ctrl: POST /ot-plans\n(CreateOtPlanDto)
+activate Ctrl
+
+Ctrl -> OTS: createOtPlan(userId, dto)
+activate OTS
+
+OTS -> DB: Find User (creator) + Department
+DB --> OTS: User + Department
+
+alt User not found or not department leader
+    OTS --> Ctrl: ForbiddenException
+    Ctrl --> FE: 403 Error
+    FE --> Leader: "Only department leaders\ncan create OT plans"
+else User is department leader
+
+    == Auto-assign Approver ==
+    OTS -> DB: Find User with role = ADMIN
+    DB --> OTS: Admin user
+
+    alt No Admin user found
+        OTS --> Ctrl: BadRequestException
+        Ctrl --> FE: 400 Error
+        FE --> Leader: "No admin user found\nto assign as approver"
+    else Admin user exists
+        OTS -> OTS: approverId = admin.id
+
+        == Validate Employees ==
+        OTS -> DB: Find selected employees
+        DB --> OTS: Employees[]
+
+        alt Some employees not in leader's department
+            OTS --> Ctrl: ForbiddenException
+            Ctrl --> FE: 403 Error
+            FE --> Leader: "Employees do not belong\nto your department"
+        else All employees valid
+
+            == Validate Employee Balance (Parallel) ==
+        loop for each employee
+            OTS -> OBS: validateEmployeeOtBalance(employee, startTime, endTime)
+            activate OBS
+            OBS -> OBS: Calculate planned duration
+            OBS -> DB: SUM ot_balance_transactions\nfor employee
+            DB --> OBS: Current balance
+            OBS -> OBS: Check if balance sufficient
+
+            alt Insufficient balance
+                OBS --> OTS: { valid: false, message }
+                OTS --> Ctrl: BadRequestException
+                Ctrl --> FE: 400 Error
+                FE --> Leader: "Employee X has\ninsufficient OT balance"
+            else Balance OK
+                OBS --> OTS: { valid: true }
+                deactivate OBS
+            end
+        end
+
+        == Create OT Plan ==
+        OTS -> DB: BEGIN TRANSACTION
+
+        OTS -> DB: INSERT ot_plan\n(title, description, departmentId,\ncreatedBy, approverId, status=PENDING)
+        DB --> OTS: OtPlan entity
+
+        loop for each employee task
+            OTS -> DB: INSERT ot_plan_employee\n(otPlanId, employeeId,\nstartTime, endTime, plannedTask)
+            DB --> OTS: OtPlanEmployee entity
+        end
+
+        == Enqueue Notification (in transaction) ==
+        OTS -> NS: enqueueOtPlanSubmittedNotification(\napprover, context, manager)
+        activate NS
+        NS -> DB: INSERT email_queue record\n(PENDING status)
+        DB --> NS: Email ID
+        NS --> OTS: emailIds[]
+        deactivate NS
+
+        OTS -> DB: COMMIT
+
+        == Trigger Immediate Send (after commit) ==
+        OTS -> NS: triggerImmediateSend(emailIds)
+        activate NS
+        note right: Fire-and-forget:\nsend email to Approver\n"[Action Required] OT Plan Approval"
+        NS --> OTS: (async)
+        deactivate NS
+
+        OTS --> Ctrl: OtPlanDetailsDto
+        deactivate OTS
+        Ctrl --> FE: 201 Created
+        deactivate Ctrl
+        FE --> Leader: "OT Plan created"
+        deactivate FE
+    end
+end
+
+@enduml
+
+@startuml OT Management - Approve Plan Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Approve Plan Flow
+
+actor Approver
+participant "Frontend\n(OtPlanDetailPage)" as FE
+participant "OtManagementsController" as Ctrl
+participant "OtManagementsService" as OTS
+participant "OtBalanceService" as OBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Approve OT Plan ==
+Approver -> FE: Click "Approve"
+activate FE
+
+FE -> Ctrl: PATCH /ot-plans/:id/approve\n(version)
+activate Ctrl
+
+Ctrl -> OTS: approveOtPlan(id, approverId, version)
+activate OTS
+
+OTS -> DB: Find OtPlan with employees
+DB --> OTS: OtPlan
+
+alt Not Found
+    OTS --> Ctrl: NotFoundException
+    Ctrl --> FE: 404 Error
+    FE --> Approver: "Plan not found"
+else Plan Found
+    alt Not Approver
+        OTS --> Ctrl: ForbiddenException
+        Ctrl --> FE: 403 Error
+        FE --> Approver: "You are not the approver"
+    else Is Approver
+        alt Status not PENDING
+            OTS --> Ctrl: BadRequestException
+            Ctrl --> FE: 400 Error
+            FE --> Approver: "Plan cannot be approved"
+        else Status is PENDING
+            alt Version Conflict
+                OTS --> Ctrl: ConflictException
+                Ctrl --> FE: 409 Conflict
+                FE --> Approver: "Plan was modified.\nPlease refresh."
+            else Version OK
+                == Update OT Plan ==
+                OTS -> DB: BEGIN TRANSACTION
+
+                OTS -> DB: UPDATE ot_plan\nSET status = APPROVED\napprovedAt = now\nversion++
+                DB --> OTS: Plan updated
+
+                == Create PENDING_APPROVAL Balance ==
+                loop for each employee
+                    OTS -> OBS: writeOtPendingApproval(employee, plan)
+                    activate OBS
+                    note right: Source = OT_PLAN_APPROVED
+                    OBS -> DB: INSERT ot_balance_transaction\n(DEBIT, source=OT_PLAN_APPROVED,\nattributedDate=plan.date,\ndays=planned_duration)
+                    DB --> OBS: Transaction created
+                    deactivate OBS
+                end
+
+                == Enqueue Notifications (in transaction) ==
+                OTS -> DB: Batch load employee users
+                DB --> OTS: Employees[]
+
+                loop for each employee
+                    OTS -> NS: enqueueOtAssignmentApprovedNotification(\nemployee, context, manager)
+                    activate NS
+                    NS -> DB: INSERT email_queue record
+                    DB --> NS: Email ID
+                    NS --> OTS: emailIds[]
+                    deactivate NS
+                end
+
+                OTS -> DB: COMMIT
+
+                == Trigger Immediate Send (after commit) ==
+                OTS -> NS: triggerImmediateSend(emailIds)
+                activate NS
+                note right: Fire-and-forget:\nsend emails to all employees
+                NS --> OTS: (async)
+                deactivate NS
+
+                OTS --> Ctrl: OtPlanDetailsDto
+                deactivate OTS
+                Ctrl --> FE: 200 OK
+                deactivate Ctrl
+                FE --> Approver: "Plan approved"
+                deactivate FE
+            end
+        end
+    end
+end
+
+@enduml
+
+@startuml OT Management - Reject Plan Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Reject Plan Flow
+
+actor Approver
+participant "Frontend\n(OtPlanDetailPage)" as FE
+participant "OtManagementsController" as Ctrl
+participant "OtManagementsService" as OTS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Reject OT Plan ==
+Approver -> FE: Enter rejection reason\n& click "Reject"
+activate FE
+
+FE -> Ctrl: PATCH /ot-plans/:id/reject\n(rejectedReason, version)
+activate Ctrl
+
+Ctrl -> OTS: rejectOtPlan(id, approverId,\nrejectedReason, version)
+activate OTS
+
+OTS -> DB: Find OtPlan with employees
+DB --> OTS: OtPlan
+
+alt Not Found or Not Approver or Status not PENDING
+    OTS --> Ctrl: Error (404/403/400)
+    Ctrl --> FE: Error
+    FE --> Approver: Error message
+else All Validations Pass
+    alt Version Conflict
+        OTS --> Ctrl: ConflictException
+        Ctrl --> FE: 409 Conflict
+        FE --> Approver: "Plan was modified.\nPlease refresh."
+    else Version OK
+        == Update OT Plan ==
+        OTS -> DB: BEGIN TRANSACTION
+
+        OTS -> DB: UPDATE ot_plan\nSET status = REJECTED\nrejectedReason = ...\nrejectedAt = now\nversion++
+        DB --> OTS: Plan updated
+
+        == Enqueue Notifications (in transaction) ==
+        OTS -> DB: Batch load employee users
+        DB --> OTS: Employees[]
+
+        loop for each employee
+            OTS -> NS: enqueueOtPlanRejectedNotification(\nemployee, context, manager)
+            activate NS
+            NS -> DB: INSERT email_queue record
+            DB --> NS: Email ID
+            NS --> OTS: emailIds[]
+            deactivate NS
+        end
+
+        OTS -> DB: COMMIT
+
+        == Trigger Immediate Send (after commit) ==
+        OTS -> NS: triggerImmediateSend(emailIds)
+        activate NS
+        note right: Fire-and-forget:\nsend emails to all employees
+        NS --> OTS: (async)
+        deactivate NS
+
+        OTS --> Ctrl: OtPlanDetailsDto
+        deactivate OTS
+        Ctrl --> FE: 200 OK
+        deactivate Ctrl
+        FE --> Approver: "Plan rejected"
+        deactivate FE
+    end
+end
+
+@enduml
+
+@startuml OT Management - Cancel Plan Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Cancel Plan Flow
+
+actor Creator
+participant "Frontend\n(OtPlanDetailPage)" as FE
+participant "OtManagementsController" as Ctrl
+participant "OtManagementsService" as OTS
+participant "OtBalanceService" as OBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Cancel OT Plan ==
+Creator -> FE: Click "Cancel Plan"
+activate FE
+
+FE -> Ctrl: PATCH /ot-plans/:id/cancel
+activate Ctrl
+
+Ctrl -> OTS: cancelOtPlan(id, userId)
+activate OTS
+
+OTS -> DB: Find OtPlan with employees
+DB --> OTS: OtPlan
+
+alt Not Found
+    OTS --> Ctrl: NotFoundException
+    Ctrl --> FE: 404 Error
+    FE --> Creator: "Plan not found"
+else Plan Found
+    alt Not Creator
+        OTS --> Ctrl: ForbiddenException
+        Ctrl --> FE: 403 Error
+        FE --> Creator: "Only creator can cancel"
+    else Is Creator
+        alt Status is COMPLETED or CANCELLED
+            OTS --> Ctrl: BadRequestException
+            Ctrl --> FE: 400 Error
+            FE --> Creator: "Plan cannot be cancelled"
+        else Status allows cancellation
+            == Update OT Plan ==
+            OTS -> DB: BEGIN TRANSACTION
+
+            OTS -> DB: UPDATE ot_plan\nSET status = CANCELLED
+            DB --> OTS: Plan updated
+
+            alt Plan was APPROVED (has PENDING_APPROVAL balance)
+                == Refund PENDING_APPROVAL Balance ==
+                loop for each employee
+                    OTS -> DB: Find PENDING_APPROVAL transactions
+                    DB --> OTS: Transactions[]
+
+                    OTS -> OBS: writeOtRefund(employee, plan)
+                    activate OBS
+                    note right: Source = OT_PLAN_CANCELLED
+                    OBS -> DB: INSERT ot_balance_transaction\n(CREDIT, source=OT_PLAN_CANCELLED,\ndays=-pending_days)
+                    DB --> OBS: Refund created
+                    deactivate OBS
+                end
+            end
+
+            == Enqueue Notifications (in transaction) ==
+            OTS -> DB: Batch load employee users
+            DB --> OTS: Employees[]
+
+            loop for each employee
+                OTS -> NS: enqueueOtAssignmentCancelledNotification(\nemployee, context, manager)
+                activate NS
+                NS -> DB: INSERT email_queue record
+                DB --> NS: Email ID
+                NS --> OTS: emailIds[]
+                deactivate NS
+            end
+
+            OTS -> NS: enqueueOtPlanCancelledNotification(\napprover, context, manager)
+            activate NS
+            NS -> DB: INSERT email_queue record
+            DB --> NS: Email ID
+            NS --> OTS: emailIds[]
+            deactivate NS
+
+            OTS -> DB: COMMIT
+
+            == Trigger Immediate Send (after commit) ==
+            OTS -> NS: triggerImmediateSend(emailIds)
+            activate NS
+            note right: Fire-and-forget:\nsend emails to employees\nand approver
+            NS --> OTS: (async)
+            deactivate NS
+
+            OTS --> Ctrl: OtPlanDetailsDto
+            deactivate OTS
+            Ctrl --> FE: 200 OK
+            deactivate Ctrl
+            FE --> Creator: "Plan cancelled"
+            deactivate FE
+        end
+    end
+end
+
+@enduml
+
+@startuml OT Management - Checkin Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Checkin Flow
+
+actor Employee
+participant "Frontend\n(MyOtAssignmentPage)" as FE
+participant "OtManagementsController" as Ctrl
+participant "OtManagementsService" as OTS
+database "PostgreSQL" as DB
+
+== Employee Check-in for OT ==
+Employee -> FE: Click "Check In"
+activate FE
+
+FE -> Ctrl: POST /ot-plans/checkin\n(otPlanEmployeeId)
+activate Ctrl
+
+Ctrl -> OTS: checkin(userId, dto)
+activate OTS
+
+OTS -> DB: Find OtPlanEmployee
+DB --> OTS: OtPlanEmployee
+
+alt Not Found
+    OTS --> Ctrl: NotFoundException
+    Ctrl --> FE: 404 Error
+    FE --> Employee: "Assignment not found"
+else Assignment Found
+    alt Not Owner
+        OTS --> Ctrl: ForbiddenException
+        Ctrl --> FE: 403 Error
+        FE --> Employee: "This is not your assignment"
+    else Is Owner
+        alt Plan status not APPROVED
+            OTS --> Ctrl: BadRequestException
+            Ctrl --> FE: 400 Error
+            FE --> Employee: "Plan is not approved"
+        else Plan is APPROVED
+            OTS -> OTS: vnNow = current time in VN
+
+            alt now < planEmployee.startTime (AC-01)
+                OTS --> Ctrl: BadRequestException
+                Ctrl --> FE: 400 Error
+                FE --> Employee: "Cannot check in yet.\nOT starts at {startTime}"
+            else now >= planEmployee.startTime
+                alt now > planEmployee.endTime (AC-02)
+                    OTS -> DB: BEGIN TRANSACTION
+                    OTS -> DB: UPDATE ot_plan_employee\nSET status = MISSED
+                    DB --> OTS: Updated
+                    OTS -> DB: COMMIT
+
+                    OTS --> Ctrl: BadRequestException
+                    Ctrl --> FE: 400 Error
+                    FE --> Employee: "OT period has ended.\nStatus: MISSED"
+                else now within valid window
+                    alt Already checked in
+                        OTS --> Ctrl: BadRequestException
+                        Ctrl --> FE: 400 Error
+                        FE --> Employee: "Already checked in"
+                    else Not checked in yet
+                        == Create Checkin Record ==
+                        OTS -> DB: BEGIN TRANSACTION
+
+                        OTS -> DB: INSERT ot_checkin\n(otPlanEmployeeId, status=PENDING)
+                        DB --> OTS: OtCheckin entity
+
+                        OTS -> DB: UPDATE ot_plan_employee\nSET status = CHECKED_IN
+                        DB --> OTS: Updated
+
+                        OTS -> DB: COMMIT
+
+                        OTS --> Ctrl: OtCheckin
+                        deactivate OTS
+                        Ctrl --> FE: 201 Created
+                        deactivate Ctrl
+                        FE --> Employee: "Checked in successfully"
+                        deactivate FE
+                    end
+                end
+            end
+        end
+    end
+end
+
+@enduml
+
+@startuml OT Management - Checkout Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Checkout Flow
+
+actor Employee
+participant "Frontend\n(MyOtAssignmentPage)" as FE
+participant "OtManagementsController" as Ctrl
+participant "OtManagementsService" as OTS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Employee Check-out from OT ==
+Employee -> FE: Enter work output,\nselect compensatory method,\nclick "Check Out"
+activate FE
+
+FE -> Ctrl: PATCH /ot-plans/checkout\n(otPlanEmployeeId, workOutput,\ncompensatoryMethod)
+activate Ctrl
+
+Ctrl -> OTS: checkout(userId, dto)
+activate OTS
+
+OTS -> DB: Find OtPlanEmployee with checkin
+DB --> OTS: OtPlanEmployee + OtCheckin
+
+alt Not Found or Not Owner
+    OTS --> Ctrl: Error (404/403)
+    Ctrl --> FE: Error
+    FE --> Employee: Error message
+else Is Owner
+    alt Status not CHECKED_IN
+        OTS --> Ctrl: BadRequestException
+        Ctrl --> FE: 400 Error
+        FE --> Employee: "You haven't checked in"
+    else Status is CHECKED_IN
+        alt Missing workOutput or compensatoryMethod
+            OTS --> Ctrl: BadRequestException
+            Ctrl --> FE: 400 Error
+            FE --> Employee: "Please provide all info"
+        else All fields provided
+            == Update Checkin ==
+            OTS -> DB: BEGIN TRANSACTION
+
+            OTS -> DB: UPDATE ot_checkin\nSET status = CHECKED_OUT\nworkOutput = ...\ncompensatoryMethod = ...\nversion++
+            DB --> OTS: Checkin updated
+
+            OTS -> DB: UPDATE ot_plan_employee\nSET status = CHECKED_OUT
+            DB --> OTS: Updated
+
+            OTS -> DB: COMMIT
+
+            == Enqueue Notification (outside transaction) ==
+            OTS -> DB: Find plan.approver
+            DB --> OTS: Approver
+
+            OTS -> NS: enqueueOtCheckoutSubmittedNotification(\napprover, context)
+            activate NS
+            note right: Email subject:\n"[Action Required] Overtime\nConfirmation – {Employee Name}"
+            NS -> DB: INSERT email_queue record
+            DB --> NS: Email ID
+            NS --> OTS: emailIds[]
+            deactivate NS
+
+            OTS -> NS: triggerImmediateSend(emailIds)
+            activate NS
+            note right: Fire-and-forget:\nsend email to Leader/Approver
+            NS --> OTS: (async)
+            deactivate NS
+
+            OTS --> Ctrl: OtCheckin
+            deactivate OTS
+            Ctrl --> FE: 200 OK
+            deactivate Ctrl
+            FE --> Employee: "Checked out.\nWaiting for confirmation."
+            deactivate FE
+        end
+    end
+end
+
+@enduml
+
+@startuml OT Management - Approve Checkin Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Approve Checkin Flow
+
+actor Leader
+participant "Frontend\n(OtPlanDetailPage)" as FE
+participant "OtManagementsController" as Ctrl
+participant "OtManagementsService" as OTS
+participant "DayTypeResolver" as DTR
+participant "SegmentSplitter" as SS
+participant "OtBalanceService" as OBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Leader Approves Checkin ==
+Leader -> FE: Review & adjust times,\nconfirm compensatory method,\nclick "Approve"
+activate FE
+
+FE -> Ctrl: PATCH /ot-plans/checkin/approve\n(checkinId, checkInAt, checkOutAt,\ncompensatoryMethod, version)
+activate Ctrl
+
+Ctrl -> OTS: approveCheckin(leaderId, checkinId,\nversion, adjustment)
+activate OTS
+
+OTS -> DB: Find OtCheckin with relations
+DB --> OTS: OtCheckin + OtPlan + Employee
+
+alt Not Found
+    OTS --> Ctrl: NotFoundException
+    Ctrl --> FE: 404 Error
+    FE --> Leader: "Checkin not found"
+else Checkin Found
+    alt Not Approver
+        OTS --> Ctrl: ForbiddenException
+        Ctrl --> FE: 403 Error
+        FE --> Leader: "You are not the approver"
+    else Is Approver
+        alt Status not CHECKED_OUT
+            OTS --> Ctrl: BadRequestException
+            Ctrl --> FE: 400 Error
+            FE --> Leader: "Employee hasn't\nchecked out yet"
+        else Status is CHECKED_OUT
+            alt Version Conflict
+                OTS --> Ctrl: ConflictException
+                Ctrl --> FE: 409 Conflict
+                FE --> Leader: "Checkin was modified.\nPlease refresh."
+            else Version OK
+                == Build Day Type Cache ==
+                OTS -> DTR: buildDayTypeCache(startDate, endDate+7)
+                activate DTR
+                DTR -> DB: Find calendar_overrides\nIN date range
+                DB --> DTR: Overrides[]
+                DTR -> DTR: Build Map<YYYY-MM-DD, OtDayType>
+                DTR --> OTS: dayTypeCache
+                deactivate DTR
+
+                == Split into Segments ==
+                OTS -> SS: splitIntoSegments(checkInAt, checkOutAt,\ndayTypeCache)
+                activate SS
+                SS -> SS: Detect night/day boundaries\nusing vnHour()
+                SS -> SS: Determine dayType for each segment
+                SS --> OTS: segments[]
+                deactivate SS
+
+                == Update Checkin & Create Balance ==
+                OTS -> DB: BEGIN TRANSACTION
+
+                OTS -> DB: UPDATE ot_checkin\nSET status = LEADER_APPROVED\ncheckInAt = adjusted\ncheckOutAt = adjusted\ncompensatoryMethod = ...\nversion++
+                DB --> OTS: Checkin updated
+
+                OTS -> DB: UPDATE ot_plan_employee\nSET status = COMPLETED
+                DB --> OTS: Updated
+
+                == Enqueue Notification (in transaction) ==
+                loop for each segment
+                    OTS -> DB: INSERT ot_checkin_item\n(checkinId, actualDate,\nstartTime, endTime, duration,\ndayType, compensatoryMethod)
+                    DB --> OTS: Item created
+
+                    alt compensatoryMethod = COMPENSATORY_LEAVE
+                        OTS -> DB: INSERT comp_balance_transaction\n(CREDIT, source=OT_CHECKIN_APPROVED)
+                        DB --> OTS: Comp balance credited
+                    end
+
+                    OTS -> OBS: writeOtApproval(employee, segment)
+                    activate OBS
+                    note right: Source = OT_CHECKIN_CONFIRMED\nConverts PENDING_APPROVAL → APPROVAL
+                    OBS -> DB: UPDATE ot_balance_transaction\nPENDING_APPROVAL → APPROVAL
+                    DB --> OBS: Balance updated
+                    deactivate OBS
+                end
+
+                OTS -> NS: enqueueOtCheckinConfirmedNotification(\nemployee, context, manager)
+                activate NS
+                NS -> DB: INSERT email_queue record
+                DB --> NS: Email ID
+                NS --> OTS: emailIds[]
+                deactivate NS
+
+                OTS -> DB: COMMIT
+
+                == Trigger Immediate Send (after commit) ==
+                OTS -> NS: triggerImmediateSend(emailIds)
+                activate NS
+                note right: Fire-and-forget:\nemail "[Confirmed] Your\nactual OT hours"
+                NS --> OTS: (async)
+                deactivate NS
+
+                OTS --> Ctrl: OtCheckinDetailsDto
+                deactivate OTS
+                Ctrl --> FE: 200 OK
+                deactivate Ctrl
+                FE --> Leader: "Checkin approved"
+                deactivate FE
+            end
+        end
+    end
+end
+
+@enduml
+
+@startuml OT Management - Reject Checkin Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Reject Checkin Flow
+
+actor Leader
+participant "Frontend\n(OtPlanDetailPage)" as FE
+participant "OtManagementsController" as Ctrl
+participant "OtManagementsService" as OTS
+participant "OtBalanceService" as OBS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Leader Rejects Checkin ==
+Leader -> FE: Enter rejection reason\n& click "Reject"
+activate FE
+
+FE -> Ctrl: PATCH /ot-plans/checkin/reject\n(checkinId, rejectedReason, version)
+activate Ctrl
+
+Ctrl -> OTS: rejectCheckin(leaderId, checkinId,\nrejectedReason, version)
+activate OTS
+
+OTS -> DB: Find OtCheckin with relations
+DB --> OTS: OtCheckin + OtPlan + Employee
+
+alt Not Found or Not Approver or Status not CHECKED_OUT
+    OTS --> Ctrl: Error (404/403/400)
+    Ctrl --> FE: Error
+    FE --> Leader: Error message
+else All Validations Pass
+    alt Version Conflict
+        OTS --> Ctrl: ConflictException
+        Ctrl --> FE: 409 Conflict
+        FE --> Leader: "Checkin was modified.\nPlease refresh."
+    else Version OK
+        alt rejectedReason is empty
+            OTS --> Ctrl: BadRequestException
+            Ctrl --> FE: 400 Error
+            FE --> Leader: "Rejection reason required"
+        else Reason provided
+            == Update Checkin & Refund Balance ==
+            OTS -> DB: BEGIN TRANSACTION
+
+            OTS -> DB: UPDATE ot_checkin\nSET status = LEADER_REJECTED\nrejectedReason = ...\nrejectedAt = now\nversion++
+            DB --> OTS: Checkin updated
+
+            OTS -> DB: UPDATE ot_plan_employee\nSET status = APPROVED
+            DB --> OTS: Reset to APPROVED
+
+            == Refund PENDING_APPROVAL Balance ==
+            OTS -> DB: Find PENDING_APPROVAL transactions\nfor this plan
+            DB --> OTS: Transactions[]
+
+            OTS -> OBS: writeOtRefund(employee, plan)
+            activate OBS
+            note right: Source = OT_CHECKIN_REJECTED
+            OBS -> DB: INSERT ot_balance_transaction\n(CREDIT, source=OT_CHECKIN_REJECTED,\ndays=-pending_days)
+            DB --> OBS: Refund created
+            deactivate OBS
+
+        == Enqueue Notification (in transaction) ==
+        OTS -> NS: enqueueOtCheckinRejectedNotification(\nemployee, context, manager)
+        activate NS
+        NS -> DB: INSERT email_queue record
+        DB --> NS: Email ID
+        NS --> OTS: emailIds[]
+        deactivate NS
+
+        OTS -> DB: COMMIT
+
+        == Trigger Immediate Send (after commit) ==
+        OTS -> NS: triggerImmediateSend(emailIds)
+        activate NS
+        note right: Fire-and-forget:\nemail "[Rejected] Your\nactual OT hours"
+        NS --> OTS: (async)
+        deactivate NS
+
+        OTS --> Ctrl: OtCheckinDetailsDto
+            deactivate OTS
+            Ctrl --> FE: 200 OK
+            deactivate Ctrl
+            FE --> Leader: "Checkin rejected"
+            deactivate FE
+        end
+    end
+end
+
+@enduml
+
+@startuml OT Management - Cron Jobs
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title OT Management - Automated Cron Jobs
+
+participant "Cron Scheduler" as Cron
+participant "OtManagementsService" as OTS
+participant "NotificationsService" as NS
+database "PostgreSQL" as DB
+
+== Auto-Mark Missed (Every 30 min) ==
+Cron -> OTS: autoMarkMissed()
+activate OTS
+note right: @Cron('*/30 * * * *')
+
+OTS -> OTS: vnNow = current time in VN
+
+OTS -> DB: Find ot_plan_employees WHERE\nstatus = PENDING AND\nendTime < now
+DB --> OTS: Expired assignments[]
+
+alt No expired assignments
+    OTS --> Cron: Nothing to mark
+else Has expired assignments
+    loop for each expired assignment
+        OTS -> DB: UPDATE ot_plan_employee\nSET status = MISSED
+        DB --> OTS: Updated
+    end
+
+    note right: Logged: {count} assignments\nmarked as MISSED
+end
+deactivate OTS
+
+== Auto-Checkout (Every 30 min) ==
+Cron -> OTS: autoCheckout()
+activate OTS
+note right: @Cron('*/30 * * * *')
+
+OTS -> OTS: vnNow = current time in VN
+
+OTS -> DB: Find ot_checkin WHERE\nstatus = PENDING AND\ncheckInAt + planned_duration + 2h < now
+DB --> OTS: Over-threshold checkins[]
+
+alt No over-threshold checkins
+    OTS --> Cron: Nothing to auto-checkout
+else Has over-threshold checkins
+    loop for each checkin
+        OTS -> DB: BEGIN TRANSACTION
+
+        OTS -> DB: UPDATE ot_checkin\nSET status = CHECKED_OUT\nworkOutput = "Auto checkout"\ncompensatoryMethod = COMPENSATORY_LEAVE\nversion++
+        DB --> OTS: Checkin updated
+
+        OTS -> DB: UPDATE ot_plan_employee\nSET status = CHECKED_OUT
+        DB --> OTS: Updated
+
+        == Enqueue Notifications (in transaction) ==
+        OTS -> NS: enqueueOtAutoCheckoutNotification(\nemployee, context, manager)
+        activate NS
+        NS -> DB: INSERT email_queue record
+        DB --> NS: Email ID
+        NS --> OTS: emailIds[]
+        deactivate NS
+
+        OTS -> NS: enqueueOtCheckoutSubmittedNotification(\napprover, context, manager)
+        activate NS
+        NS -> DB: INSERT email_queue record
+        DB --> NS: Email ID
+        NS --> OTS: emailIds[]
+        deactivate NS
+
+        OTS -> DB: COMMIT
+
+        == Trigger Immediate Send (after commit) ==
+        OTS -> NS: triggerImmediateSend(emailIds)
+        activate NS
+        note right: Fire-and-forget:\nsend emails to employee\nand approver
+        NS --> OTS: (async)
+        deactivate NS
+    end
+
+    note right: Logged: {count} checkins\nauto-checked-out
+end
+deactivate OTS
+
+@enduml

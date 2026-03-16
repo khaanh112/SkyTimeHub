@@ -52,6 +52,13 @@ import {
   dayjs,
 } from '@/common/utils/date.util';
 
+interface FlatTask {
+  employeeId: number;
+  startTime: string;
+  endTime: string;
+  plannedTask: string;
+}
+
 @Injectable()
 export class OtManagementsService {
   private readonly logger = new Logger(OtManagementsService.name);
@@ -121,24 +128,41 @@ export class OtManagementsService {
       );
     }
 
-    // Validate employee start/end times
-    for (const emp of dto.employees) {
-      const start = dayjs(emp.startTime).toDate();
-      const end = dayjs(emp.endTime).toDate();
+    // Guard: same employeeId must not appear twice in dto.employees[]
+    if (new Set(employeeIds).size !== employeeIds.length) {
+      throw new BadRequestException(
+        'Each employee should appear only once; add multiple tasks within their entry.',
+      );
+    }
+
+    // Build flat task list from nested DTO
+    const flatTasks: FlatTask[] = dto.employees.flatMap((e) =>
+      e.tasks.map((t) => ({
+        employeeId: e.employeeId,
+        startTime: t.startTime,
+        endTime: t.endTime,
+        plannedTask: t.plannedTask,
+      })),
+    );
+
+    // Validate task start/end times
+    for (const ft of flatTasks) {
+      const start = dayjs(ft.startTime).toDate();
+      const end = dayjs(ft.endTime).toDate();
       if (end <= start) {
         throw new BadRequestException(
-          `End time must be after start time for employee ${emp.employeeId}`,
+          `End time must be after start time for employee ${ft.employeeId}`,
         );
       }
     }
 
     // ── CC-01: Self-overlap check within this DTO ────────────
     const grouped = new Map<number, { startTime: string; endTime: string; index: number }[]>();
-    for (let i = 0; i < dto.employees.length; i++) {
-      const e = dto.employees[i];
-      const list = grouped.get(e.employeeId) ?? [];
-      list.push({ startTime: e.startTime, endTime: e.endTime, index: i });
-      grouped.set(e.employeeId, list);
+    for (let i = 0; i < flatTasks.length; i++) {
+      const ft = flatTasks[i];
+      const list = grouped.get(ft.employeeId) ?? [];
+      list.push({ startTime: ft.startTime, endTime: ft.endTime, index: i });
+      grouped.set(ft.employeeId, list);
     }
     for (const [empId, rows] of grouped.entries()) {
       for (let a = 0; a < rows.length; a++) {
@@ -160,46 +184,46 @@ export class OtManagementsService {
     }
 
     // ── AC-02: Overlap with existing plans ──────────────────
-    for (const empDto of dto.employees) {
+    for (const ft of flatTasks) {
       const overlappingPlan = await this.otPlanEmpRepo
         .createQueryBuilder('pe')
         .innerJoin('pe.otPlan', 'plan')
-        .where('pe.employeeId = :empId', { empId: empDto.employeeId })
+        .where('pe.employeeId = :empId', { empId: ft.employeeId })
         .andWhere('plan.status IN (:...statuses)', {
           statuses: [OtPlanStatus.PENDING, OtPlanStatus.APPROVED],
         })
-        .andWhere('pe.startTime < :end', { end: dayjs(empDto.endTime).toDate() })
-        .andWhere('pe.endTime > :start', { start: dayjs(empDto.startTime).toDate() })
+        .andWhere('pe.startTime < :end', { end: dayjs(ft.endTime).toDate() })
+        .andWhere('pe.endTime > :start', { start: dayjs(ft.startTime).toDate() })
         .getOne();
       if (overlappingPlan) {
-        const empUser = empUsers.find((u) => u.id === empDto.employeeId);
+        const empUser = empUsers.find((u) => u.id === ft.employeeId);
         throw new AppException(
           ErrorCode.OT_OVERLAP,
-          `Submission failed: The overtime period for ${empUser?.username ?? `employee ${empDto.employeeId}`} overlaps with their scheduled leave or another existing OT plan.`,
+          `Submission failed: The overtime period for ${empUser?.username ?? `employee ${ft.employeeId}`} overlaps with their scheduled leave or another existing OT plan.`,
           409,
         );
       }
     }
 
     // ── AC-02: Overlap with approved leave requests ─────────
-    for (const empDto of dto.employees) {
-      const otStart = dayjs(empDto.startTime).toDate();
-      const otEnd = dayjs(empDto.endTime).toDate();
+    for (const ft of flatTasks) {
+      const otStart = dayjs(ft.startTime).toDate();
+      const otEnd = dayjs(ft.endTime).toDate();
       const otStartDate = vnDateStr(otStart);
       const otEndDate = vnDateStr(otEnd);
 
       const overlappingLeave = await this.leaveRequestRepo
         .createQueryBuilder('lr')
-        .where('lr.userId = :empId', { empId: empDto.employeeId })
+        .where('lr.userId = :empId', { empId: ft.employeeId })
         .andWhere('lr.status = :status', { status: LeaveRequestStatus.APPROVED })
         .andWhere('lr.startDate <= :otEnd', { otEnd: otEndDate })
         .andWhere('lr.endDate >= :otStart', { otStart: otStartDate })
         .getOne();
       if (overlappingLeave) {
-        const empUser = empUsers.find((u) => u.id === empDto.employeeId);
+        const empUser = empUsers.find((u) => u.id === ft.employeeId);
         throw new AppException(
           ErrorCode.OT_OVERLAP,
-          `Submission failed: The overtime period for ${empUser?.username ?? `employee ${empDto.employeeId}`} overlaps with their scheduled leave or another existing OT plan.`,
+          `Submission failed: The overtime period for ${empUser?.username ?? `employee ${ft.employeeId}`} overlaps with their scheduled leave or another existing OT plan.`,
           409,
         );
       }
@@ -207,31 +231,80 @@ export class OtManagementsService {
 
     // ── AC-03: Soft balance warning (daily / monthly / yearly) ─
     if (!dto.acknowledgeBalanceExceeded) {
-      const balanceResults = await Promise.all(
-        dto.employees.map(async (empDto) => {
-          const start = dayjs(empDto.startTime).toDate();
-          const newMinutes = computeDurationMinutes(start, dayjs(empDto.endTime).toDate());
-          const result = await this.otBalanceService.validateOtLimits(
-            empDto.employeeId,
-            start,
-            newMinutes,
-            false, // plan-time check uses conservative non-holiday cap
-          );
-          return { empDto, newMinutes, result };
-        }),
-      );
+      const policy = await this.otBalanceService.getOtPolicy();
+      const balanceViolations: {
+        employeeName: string;
+        violations: string[];
+        employeeId: number;
+        otHoursToday: number;
+        otHoursThisMonth: number;
+        otHoursThisYear: number;
+        dailyLimit: number;
+        monthlyLimit: number;
+        yearlyLimit: number;
+        plannedHours: number;
+      }[] = [];
 
-      const balanceViolations = balanceResults
-        .filter(({ result }) => !result.valid)
-        .map(({ empDto, newMinutes, result }) => {
-          const empUser = empUsers.find((u) => u.id === empDto.employeeId);
-          return {
+      for (const empDto of dto.employees) {
+        const empUser = empUsers.find((u) => u.id === empDto.employeeId);
+        const empFlatTasks = flatTasks
+          .filter((t) => t.employeeId === empDto.employeeId)
+          .map((t) => {
+            const start = dayjs(t.startTime).toDate();
+            const end = dayjs(t.endTime).toDate();
+            return { start, end, minutes: computeDurationMinutes(start, end), dateStr: vnDateStr(start) };
+          });
+
+        // Daily: group by VN date, check each day's total against daily limit
+        const dayMap = new Map<string, { date: Date; mins: number }>();
+        for (const ft of empFlatTasks) {
+          const cur = dayMap.get(ft.dateStr) ?? { date: ft.start, mins: 0 };
+          dayMap.set(ft.dateStr, { date: cur.date, mins: cur.mins + ft.minutes });
+        }
+        const violations: string[] = [];
+        for (const [, { date, mins }] of dayMap) {
+          const dailySummary = await this.otBalanceService.getEmployeeSummary(empDto.employeeId, date);
+          const projected = dailySummary.otHoursToday + mins / 60;
+          if (projected > policy.maxOtHoursPerDay) {
+            violations.push(
+              `Daily OT limit exceeded: ${Math.round(projected * 10) / 10}h / ${policy.maxOtHoursPerDay}h max`,
+            );
+          }
+        }
+
+        // Monthly + yearly: total minutes across all tasks
+        const totalMins = empFlatTasks.reduce((s, t) => s + t.minutes, 0);
+        const mainSummary = await this.otBalanceService.getEmployeeSummary(
+          empDto.employeeId,
+          empFlatTasks[0].start,
+        );
+        const totalAddedHours = totalMins / 60;
+        if (mainSummary.otHoursThisMonth + totalAddedHours > policy.maxOtHoursPerMonth) {
+          violations.push(
+            `Monthly OT limit exceeded: ${Math.round((mainSummary.otHoursThisMonth + totalAddedHours) * 10) / 10}h / ${policy.maxOtHoursPerMonth}h max`,
+          );
+        }
+        if (mainSummary.otHoursThisYear + totalAddedHours > policy.maxOtHoursPerYear) {
+          violations.push(
+            `Yearly OT limit exceeded: ${Math.round((mainSummary.otHoursThisYear + totalAddedHours) * 10) / 10}h / ${policy.maxOtHoursPerYear}h max`,
+          );
+        }
+
+        if (violations.length > 0) {
+          balanceViolations.push({
             employeeName: empUser?.username ?? `Employee ${empDto.employeeId}`,
-            violations: result.violations,
-            ...result.details,
-            plannedHours: Math.round((newMinutes / 60) * 10) / 10,
-          };
-        });
+            violations,
+            employeeId: empDto.employeeId,
+            otHoursToday: mainSummary.otHoursToday,
+            otHoursThisMonth: mainSummary.otHoursThisMonth,
+            otHoursThisYear: mainSummary.otHoursThisYear,
+            dailyLimit: policy.maxOtHoursPerDay,
+            monthlyLimit: policy.maxOtHoursPerMonth,
+            yearlyLimit: policy.maxOtHoursPerYear,
+            plannedHours: Math.round(totalAddedHours * 10) / 10,
+          });
+        }
+      }
 
       if (balanceViolations.length > 0) {
         throw new AppException(
@@ -243,11 +316,11 @@ export class OtManagementsService {
       }
     }
 
-    // Pre-build dayTypeCache covering all employee date ranges + 7 days for carry-over
+    // Pre-build dayTypeCache covering all task date ranges + 7 days for carry-over
     const allDatesCreate: string[] = [];
-    for (const empDto of dto.employees) {
-      const startStr = vnDateStr(dayjs(empDto.startTime).toDate());
-      const endStr = addDaysToStr(vnDateStr(dayjs(empDto.endTime).toDate()), 7);
+    for (const ft of flatTasks) {
+      const startStr = vnDateStr(dayjs(ft.startTime).toDate());
+      const endStr = addDaysToStr(vnDateStr(dayjs(ft.endTime).toDate()), 7);
       for (let d = startStr; d <= endStr; d = addDaysToStr(d, 1)) allDatesCreate.push(d);
     }
     const dayTypeCacheCreate = await buildDayTypeCache(allDatesCreate, this.calendarRepo);
@@ -270,25 +343,25 @@ export class OtManagementsService {
 
       let totalMinutes = 0;
 
-      for (const empDto of dto.employees) {
-        const start = dayjs(empDto.startTime).toDate();
-        const end = dayjs(empDto.endTime).toDate();
+      for (const ft of flatTasks) {
+        const start = dayjs(ft.startTime).toDate();
+        const end = dayjs(ft.endTime).toDate();
         const durationMinutes = computeDurationMinutes(start, end);
 
         const planEmp = manager.create(OtPlanEmployee, {
           otPlanId: savedPlan.id,
-          employeeId: empDto.employeeId,
+          employeeId: ft.employeeId,
           startTime: start,
           endTime: end,
           durationMinutes,
-          plannedTask: empDto.plannedTask,
+          plannedTask: ft.plannedTask,
         });
         const savedPlanEmp = await manager.save(OtPlanEmployee, planEmp);
 
         // ── Balance CREDITs: split with daily + monthly carry-over ──
         const rawSegs = splitIntoSegments(start, end, dayTypeCacheCreate);
         const dailyCarried = applyCarryOver(rawSegs, dayTypeCacheCreate);
-        const monthlyMap = await this.getMonthlyBalanceMap(empDto.employeeId, manager);
+        const monthlyMap = await this.getMonthlyBalanceMap(ft.employeeId, manager);
         const segments = applyMonthlyCarryOver(dailyCarried, monthlyMap, monthlyCapCreate);
 
         for (const seg of segments) {
@@ -296,7 +369,7 @@ export class OtManagementsService {
           await manager.save(
             OtBalanceTransaction,
             manager.create(OtBalanceTransaction, {
-              employeeId: empDto.employeeId,
+              employeeId: ft.employeeId,
               direction: OtBalanceDirection.CREDIT,
               amountMinutes: seg.durationMinutes,
               sourceType: OtBalanceSource.OT_PLAN_CREATED,
@@ -318,6 +391,10 @@ export class OtManagementsService {
 
         totalMinutes += durationMinutes;
       }
+
+      // Update total duration on the plan record
+      savedPlan.totalDurationMinutes = totalMinutes;
+      await manager.save(OtPlan, savedPlan);
       const emailIds = await this.notificationsService.enqueueOtPlanSubmittedNotification(
         savedPlan.id,
         approver.id,
@@ -466,17 +543,20 @@ export class OtManagementsService {
     });
 
     const data = plans.map((plan) => {
-      const empCount = plan.employees?.length || 0;
-      const checkedInCount =
-        plan.employees?.reduce((acc, emp) => {
-          const hasCheckedIn = emp.checkins?.some(
-            (c) =>
-              c.status === OtCheckinStatus.CHECKED_IN ||
-              c.status === OtCheckinStatus.CHECKED_OUT ||
-              c.status === OtCheckinStatus.LEADER_APPROVED,
-          );
-          return acc + (hasCheckedIn ? 1 : 0);
-        }, 0) || 0;
+      // Unique employee count (same employee may have multiple task rows)
+      const uniqueEmpIds = new Set(plan.employees?.map((e) => e.employeeId) ?? []);
+      const empCount = uniqueEmpIds.size;
+      const checkedInEmpIds = new Set<number>();
+      plan.employees?.forEach((emp) => {
+        const hasCheckedIn = emp.checkins?.some(
+          (c) =>
+            c.status === OtCheckinStatus.CHECKED_IN ||
+            c.status === OtCheckinStatus.CHECKED_OUT ||
+            c.status === OtCheckinStatus.LEADER_APPROVED,
+        );
+        if (hasCheckedIn) checkedInEmpIds.add(emp.employeeId);
+      });
+      const checkedInCount = checkedInEmpIds.size;
 
       const earliestStart = plan.employees?.reduce(
         (earliest, emp) => {
@@ -486,10 +566,10 @@ export class OtManagementsService {
         null as Date | null,
       );
 
-      const latestEnd = plan.employees?.reduce(
+      const latestStart = plan.employees?.reduce(
         (latest, emp) => {
-          const et = emp.endTime;
-          return !latest || et > latest ? et : latest;
+          const st = emp.startTime;
+          return !latest || st > latest ? st : latest;
         },
         null as Date | null,
       );
@@ -497,7 +577,7 @@ export class OtManagementsService {
       let executionDate = '';
       if (earliestStart) {
         const startStr = vnDateStr(earliestStart);
-        const endStr = latestEnd ? vnDateStr(latestEnd) : null;
+        const endStr = latestStart ? vnDateStr(latestStart) : null;
         executionDate = endStr && endStr !== startStr ? `${startStr} - ${endStr}` : startStr;
       }
 
@@ -648,37 +728,108 @@ export class OtManagementsService {
       oldEmpIdsByEmployee.set(oldEmp.employeeId, list);
     }
 
+    // Build flat task list from nested DTO
+    const flatTasksUpd: FlatTask[] = dto.employees.flatMap((e) =>
+      e.tasks.map((t) => ({
+        employeeId: e.employeeId,
+        startTime: t.startTime,
+        endTime: t.endTime,
+        plannedTask: t.plannedTask,
+      })),
+    );
+
+    // Validate task start/end times
+    for (const ft of flatTasksUpd) {
+      const start = dayjs(ft.startTime).toDate();
+      const end = dayjs(ft.endTime).toDate();
+      if (end <= start) {
+        throw new BadRequestException(
+          `End time must be after start time for employee ${ft.employeeId}`,
+        );
+      }
+    }
+
     if (!dto.acknowledgeBalanceExceeded) {
       const employeeIds = dto.employees.map((e) => e.employeeId);
       const empUsers = await this.userRepo.findBy({ id: In(employeeIds) });
 
-      const balanceResults = await Promise.all(
-        dto.employees.map(async (empDto) => {
-          const start = dayjs(empDto.startTime).toDate();
-          const newMinutes = computeDurationMinutes(start, dayjs(empDto.endTime).toDate());
-          const excludeIds = oldEmpIdsByEmployee.get(empDto.employeeId) ?? [];
-          const result = await this.otBalanceService.validateOtLimits(
+      const policy = await this.otBalanceService.getOtPolicy();
+      const balanceViolations: {
+        employeeName: string;
+        violations: string[];
+        employeeId: number;
+        otHoursToday: number;
+        otHoursThisMonth: number;
+        otHoursThisYear: number;
+        dailyLimit: number;
+        monthlyLimit: number;
+        yearlyLimit: number;
+        plannedHours: number;
+      }[] = [];
+
+      for (const empDto of dto.employees) {
+        const empUser = empUsers.find((u) => u.id === empDto.employeeId);
+        const excludeIds = oldEmpIdsByEmployee.get(empDto.employeeId) ?? [];
+        const empFlatTasks = flatTasksUpd
+          .filter((t) => t.employeeId === empDto.employeeId)
+          .map((t) => {
+            const start = dayjs(t.startTime).toDate();
+            const end = dayjs(t.endTime).toDate();
+            return { start, end, minutes: computeDurationMinutes(start, end), dateStr: vnDateStr(start) };
+          });
+
+        const dayMap = new Map<string, { date: Date; mins: number }>();
+        for (const ft of empFlatTasks) {
+          const cur = dayMap.get(ft.dateStr) ?? { date: ft.start, mins: 0 };
+          dayMap.set(ft.dateStr, { date: cur.date, mins: cur.mins + ft.minutes });
+        }
+        const violations: string[] = [];
+        for (const [, { date, mins }] of dayMap) {
+          const dailySummary = await this.otBalanceService.getEmployeeSummary(
             empDto.employeeId,
-            start,
-            newMinutes,
-            false,
+            date,
             excludeIds,
           );
-          return { empDto, newMinutes, result };
-        }),
-      );
+          const projected = dailySummary.otHoursToday + mins / 60;
+          if (projected > policy.maxOtHoursPerDay) {
+            violations.push(
+              `Daily OT limit exceeded: ${Math.round(projected * 10) / 10}h / ${policy.maxOtHoursPerDay}h max`,
+            );
+          }
+        }
 
-      const balanceViolations = balanceResults
-        .filter(({ result }) => !result.valid)
-        .map(({ empDto, newMinutes, result }) => {
-          const empUser = empUsers.find((u) => u.id === empDto.employeeId);
-          return {
+        const totalMins = empFlatTasks.reduce((s, t) => s + t.minutes, 0);
+        const mainSummary = await this.otBalanceService.getEmployeeSummary(
+          empDto.employeeId,
+          empFlatTasks[0].start,
+          excludeIds,
+        );
+        const totalAddedHours = totalMins / 60;
+        if (mainSummary.otHoursThisMonth + totalAddedHours > policy.maxOtHoursPerMonth) {
+          violations.push(
+            `Monthly OT limit exceeded: ${Math.round((mainSummary.otHoursThisMonth + totalAddedHours) * 10) / 10}h / ${policy.maxOtHoursPerMonth}h max`,
+          );
+        }
+        if (mainSummary.otHoursThisYear + totalAddedHours > policy.maxOtHoursPerYear) {
+          violations.push(
+            `Yearly OT limit exceeded: ${Math.round((mainSummary.otHoursThisYear + totalAddedHours) * 10) / 10}h / ${policy.maxOtHoursPerYear}h max`,
+          );
+        }
+        if (violations.length > 0) {
+          balanceViolations.push({
             employeeName: empUser?.username ?? `Employee ${empDto.employeeId}`,
-            violations: result.violations,
-            ...result.details,
-            plannedHours: Math.round((newMinutes / 60) * 10) / 10,
-          };
-        });
+            violations,
+            employeeId: empDto.employeeId,
+            otHoursToday: mainSummary.otHoursToday,
+            otHoursThisMonth: mainSummary.otHoursThisMonth,
+            otHoursThisYear: mainSummary.otHoursThisYear,
+            dailyLimit: policy.maxOtHoursPerDay,
+            monthlyLimit: policy.maxOtHoursPerMonth,
+            yearlyLimit: policy.maxOtHoursPerYear,
+            plannedHours: Math.round(totalAddedHours * 10) / 10,
+          });
+        }
+      }
 
       if (balanceViolations.length > 0) {
         throw new AppException(
@@ -690,11 +841,11 @@ export class OtManagementsService {
       }
     }
 
-    // Pre-build dayTypeCache covering all employee date ranges + 7 days for carry-over
+    // Pre-build dayTypeCache covering all task date ranges + 7 days for carry-over
     const allDatesUpdate: string[] = [];
-    for (const empDto of dto.employees) {
-      const startStr = vnDateStr(dayjs(empDto.startTime).toDate());
-      const endStr = addDaysToStr(vnDateStr(dayjs(empDto.endTime).toDate()), 7);
+    for (const ft of flatTasksUpd) {
+      const startStr = vnDateStr(dayjs(ft.startTime).toDate());
+      const endStr = addDaysToStr(vnDateStr(dayjs(ft.endTime).toDate()), 7);
       for (let d = startStr; d <= endStr; d = addDaysToStr(d, 1)) allDatesUpdate.push(d);
     }
     const dayTypeCacheUpdate = await buildDayTypeCache(allDatesUpdate, this.calendarRepo);
@@ -739,31 +890,25 @@ export class OtManagementsService {
 
       let totalMinutes = 0;
 
-      for (const empDto of dto.employees) {
-        const start = dayjs(empDto.startTime).toDate();
-        const end = dayjs(empDto.endTime).toDate();
-        if (end <= start) {
-          throw new BadRequestException(
-            `End time must be after start time for employee ${empDto.employeeId}`,
-          );
-        }
-
+      for (const ft of flatTasksUpd) {
+        const start = dayjs(ft.startTime).toDate();
+        const end = dayjs(ft.endTime).toDate();
         const durationMinutes = computeDurationMinutes(start, end);
 
         const planEmp = manager.create(OtPlanEmployee, {
           otPlanId: id,
-          employeeId: empDto.employeeId,
+          employeeId: ft.employeeId,
           startTime: start,
           endTime: end,
           durationMinutes,
-          plannedTask: empDto.plannedTask,
+          plannedTask: ft.plannedTask,
         });
         const savedPlanEmp = await manager.save(OtPlanEmployee, planEmp);
 
         // ── Balance CREDITs: split with daily + monthly carry-over ──
         const rawSegsUpd = splitIntoSegments(start, end, dayTypeCacheUpdate);
         const dailyCarriedUpd = applyCarryOver(rawSegsUpd, dayTypeCacheUpdate);
-        const monthlyMapUpd = await this.getMonthlyBalanceMap(empDto.employeeId, manager);
+        const monthlyMapUpd = await this.getMonthlyBalanceMap(ft.employeeId, manager);
         const segmentsUpd = applyMonthlyCarryOver(dailyCarriedUpd, monthlyMapUpd, monthlyCapUpdate);
 
         for (const seg of segmentsUpd) {
@@ -771,7 +916,7 @@ export class OtManagementsService {
           await manager.save(
             OtBalanceTransaction,
             manager.create(OtBalanceTransaction, {
-              employeeId: empDto.employeeId,
+              employeeId: ft.employeeId,
               direction: OtBalanceDirection.CREDIT,
               amountMinutes: seg.durationMinutes,
               sourceType: OtBalanceSource.OT_PLAN_CREATED,
@@ -852,8 +997,11 @@ export class OtManagementsService {
         approvedEmailIds.push(...leaderEmailIds);
       }
 
-      // Notify each employee in the plan
+      // Notify each employee in the plan — deduplicate since an employee may have multiple task rows
+      const notifiedEmpIds = new Set<number>();
       for (const emp of plan.employees) {
+        if (notifiedEmpIds.has(emp.employeeId)) continue;
+        notifiedEmpIds.add(emp.employeeId);
         const empUser = planEmpUserMap.get(emp.employeeId);
         if (empUser) {
           const empEmailIds =
@@ -982,7 +1130,7 @@ export class OtManagementsService {
 
     // CC-01: fetch the current admin (BOD) in real-time
     this.logger.log(`[cancelOtPlan] fetching leader/BOD/dept...`);
-    const cancelEmpIds = plan.employees?.map((e) => e.employeeId) ?? [];
+    const cancelEmpIds = [...new Set(plan.employees?.map((e) => e.employeeId) ?? [])];
     const [leader, currentBod, dept, cancelEmpUsers] = await Promise.all([
       this.userRepo.findOne({ where: { id: plan.createdBy } }),
       this.userRepo.findOne({ where: { role: UserRole.ADMIN } }),
@@ -1059,9 +1207,12 @@ export class OtManagementsService {
           cancelledEmailIds.push(...bodEmailIds);
         }
 
-        // Notify employees only if plan was previously Approved
+        // Notify employees only if plan was previously Approved — deduplicate for multi-task employees
         if (wasApproved && plan.employees) {
+          const notifiedCancelEmpIds = new Set<number>();
           for (const emp of plan.employees) {
+            if (notifiedCancelEmpIds.has(emp.employeeId)) continue;
+            notifiedCancelEmpIds.add(emp.employeeId);
             const empUser = cancelEmpUserMap.get(emp.employeeId);
             if (empUser) {
               this.logger.log(`[cancelOtPlan] TX: enqueue employee email empId=${emp.employeeId}`);

@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN leave_accrual_start_date date NULL;
