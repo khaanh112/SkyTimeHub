@@ -119,7 +119,7 @@ export default function LeaveReportPage() {
   const hasPending = reportData?.hasPending ?? false;
 
   return (
-    <div>
+    <div className="min-w-0">
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -136,9 +136,9 @@ export default function LeaveReportPage() {
           <button
             onClick={handleExport}
             disabled={exporting || loading || hasPending}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
               hasPending
-                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
                 : 'bg-green-600 hover:bg-green-700 text-white'
             }`}
           >
@@ -157,14 +157,14 @@ export default function LeaveReportPage() {
       </div>
 
       {/* ── Filters ────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 mb-5 bg-white border border-gray-200 rounded-xl px-5 py-4">
+      <div className="flex flex-wrap items-end gap-4 mb-5 bg-white border border-gray-200 rounded-xl px-5 py-4">
         {/* Department */}
-        <div className="flex flex-col gap-1 min-w-[180px]">
+        <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Department</label>
           <select
             value={filters.departmentId}
             onChange={(e) => handleFilterChange('departmentId', e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[180px]"
           >
             <option value="">All departments</option>
             {departments.map((d) => (
@@ -176,12 +176,12 @@ export default function LeaveReportPage() {
         </div>
 
         {/* Year */}
-        <div className="flex flex-col gap-1 min-w-[110px]">
+        <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Year</label>
           <select
             value={filters.year}
             onChange={(e) => handleFilterChange('year', e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[100px]"
           >
             {YEARS.map((y) => (
               <option key={y} value={String(y)}>{y}</option>
@@ -190,12 +190,12 @@ export default function LeaveReportPage() {
         </div>
 
         {/* Month */}
-        <div className="flex flex-col gap-1 min-w-[140px]">
+        <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Month</label>
           <select
             value={filters.month}
             onChange={(e) => handleFilterChange('month', e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[130px]"
           >
             {MONTHS.map((m) => (
               <option key={m.value} value={m.value}>{m.label}</option>
@@ -205,8 +205,8 @@ export default function LeaveReportPage() {
 
         {hasPending && (
           <div className="flex items-center gap-2 text-amber-600 text-sm ml-auto">
-            <AlertCircle className="w-4 h-4" />
-            <span>There are pending requests in this period — export is disabled.</span>
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>There are pending requests — export is disabled.</span>
           </div>
         )}
       </div>
@@ -223,59 +223,59 @@ export default function LeaveReportPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
+            <table className="min-w-max w-full text-sm border-collapse">
               <thead>
                 {/* Row 1 – group headers */}
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th rowSpan={2} className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">No.</th>
+                  <th rowSpan={2} className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap w-10">No.</th>
                   <th rowSpan={2} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Employee ID</th>
                   <th rowSpan={2} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Full Name</th>
                   <th rowSpan={2} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Department</th>
                   <th rowSpan={2} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Join Date</th>
                   <th rowSpan={2} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Contract Signed</th>
                   <th rowSpan={2} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Contract</th>
-                  <th colSpan={3} className="px-3 py-3 text-center text-xs font-semibold text-blue-600 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Paid Leave</th>
-                  <th colSpan={3} className="px-3 py-3 text-center text-xs font-semibold text-orange-600 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Unpaid Leave</th>
-                  <th rowSpan={2} className="px-3 py-3 text-center text-xs font-semibold text-purple-600 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap">Policy Leave</th>
-                  <th rowSpan={2} className="px-3 py-3 text-center text-xs font-semibold text-teal-600 uppercase tracking-wider whitespace-nowrap">Social Benefits</th>
+                  <th colSpan={3} className="px-3 py-2.5 text-center text-xs font-semibold text-blue-600 uppercase tracking-wider border-r border-gray-200 bg-blue-50/60">Paid Leave</th>
+                  <th colSpan={3} className="px-3 py-2.5 text-center text-xs font-semibold text-orange-600 uppercase tracking-wider border-r border-gray-200 bg-orange-50/60">Unpaid Leave</th>
+                  <th rowSpan={2} className="px-3 py-3 text-center text-xs font-semibold text-purple-600 uppercase tracking-wider border-r border-gray-200 whitespace-nowrap bg-purple-50/40">Policy<br/>Leave</th>
+                  <th rowSpan={2} className="px-3 py-3 text-center text-xs font-semibold text-teal-600 uppercase tracking-wider whitespace-nowrap bg-teal-50/40">Social<br/>Benefits</th>
                 </tr>
                 {/* Row 2 – sub-headers */}
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-3 py-2 text-center text-xs font-medium text-blue-500 border-r border-gray-100 whitespace-nowrap">Total</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-blue-500 border-r border-gray-100 whitespace-nowrap">Used</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-blue-500 border-r border-gray-200 whitespace-nowrap">Remaining</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-orange-500 border-r border-gray-100 whitespace-nowrap">Total</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-orange-500 border-r border-gray-100 whitespace-nowrap">Used</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-orange-500 border-r border-gray-200 whitespace-nowrap">Remaining</th>
+                <tr className="border-b border-gray-200">
+                  <th className="px-3 py-2 text-center text-xs font-medium text-blue-500 border-r border-gray-100 whitespace-nowrap bg-blue-50/40">Total</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-blue-500 border-r border-gray-100 whitespace-nowrap bg-blue-50/40">Used</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-blue-500 border-r border-gray-200 whitespace-nowrap bg-blue-50/40">Remaining</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-orange-500 border-r border-gray-100 whitespace-nowrap bg-orange-50/40">Total</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-orange-500 border-r border-gray-100 whitespace-nowrap bg-orange-50/40">Used</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-orange-500 border-r border-gray-200 whitespace-nowrap bg-orange-50/40">Remaining</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {rows.map((row) => (
                   <tr key={row.userId} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-3 py-3 text-center text-gray-500 border-r border-gray-100">{row.no}</td>
-                    <td className="px-3 py-3 font-mono text-gray-700 border-r border-gray-100 whitespace-nowrap">{row.employeeId || '—'}</td>
+                    <td className="px-3 py-3 text-center text-gray-400 text-xs border-r border-gray-100">{row.no}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-gray-600 border-r border-gray-100 whitespace-nowrap">{row.employeeId || '—'}</td>
                     <td className="px-3 py-3 text-gray-900 font-medium border-r border-gray-100 whitespace-nowrap">{row.fullName}</td>
-                    <td className="px-3 py-3 text-gray-700 border-r border-gray-100 whitespace-nowrap">{deptDisplayName(row.department)}</td>
-                    <td className="px-3 py-3 text-gray-700 border-r border-gray-100 whitespace-nowrap">
+                    <td className="px-3 py-3 text-gray-600 border-r border-gray-100 whitespace-nowrap text-xs">{deptDisplayName(row.department)}</td>
+                    <td className="px-3 py-3 text-gray-600 border-r border-gray-100 whitespace-nowrap text-xs">
                       {row.joinDate ? fmtDate(row.joinDate) : '—'}
                     </td>
-                    <td className="px-3 py-3 text-gray-700 border-r border-gray-100 whitespace-nowrap">
+                    <td className="px-3 py-3 text-gray-600 border-r border-gray-100 whitespace-nowrap text-xs">
                       {row.contractSignedDate ? fmtDate(row.contractSignedDate) : '—'}
                     </td>
-                    <td className="px-3 py-3 text-gray-700 border-r border-gray-100 whitespace-nowrap">
+                    <td className="px-3 py-3 text-gray-600 border-r border-gray-100 whitespace-nowrap text-xs">
                       {row.contractType ? (CONTRACT_LABELS[row.contractType] ?? row.contractType) : '—'}
                     </td>
                     {/* Paid Leave */}
-                    <td className="px-3 py-3 text-center border-r border-gray-100"><Num value={row.paidLeaveTotal} /></td>
-                    <td className="px-3 py-3 text-center border-r border-gray-100"><Num value={row.paidLeaveUsed} /></td>
-                    <td className="px-3 py-3 text-center border-r border-gray-200"><Num value={row.paidLeaveRemaining} /></td>
+                    <td className="px-3 py-3 text-center border-r border-gray-100 bg-blue-50/20"><Num value={row.paidLeaveTotal} /></td>
+                    <td className="px-3 py-3 text-center border-r border-gray-100 bg-blue-50/20"><Num value={row.paidLeaveUsed} /></td>
+                    <td className="px-3 py-3 text-center border-r border-gray-200 bg-blue-50/20"><Num value={row.paidLeaveRemaining} /></td>
                     {/* Unpaid Leave */}
-                    <td className="px-3 py-3 text-center border-r border-gray-100"><Num value={row.unpaidLeaveTotal} /></td>
-                    <td className="px-3 py-3 text-center border-r border-gray-100">{Number(row.unpaidLeaveUsed).toFixed(1)}</td>
-                    <td className="px-3 py-3 text-center border-r border-gray-200"><Num value={row.unpaidLeaveRemaining} /></td>
+                    <td className="px-3 py-3 text-center border-r border-gray-100 bg-orange-50/20"><Num value={row.unpaidLeaveTotal} /></td>
+                    <td className="px-3 py-3 text-center border-r border-gray-100 bg-orange-50/20">{Number(row.unpaidLeaveUsed).toFixed(1)}</td>
+                    <td className="px-3 py-3 text-center border-r border-gray-200 bg-orange-50/20"><Num value={row.unpaidLeaveRemaining} /></td>
                     {/* Policy & Social */}
-                    <td className="px-3 py-3 text-center border-r border-gray-100">{Number(row.policyLeaveUsed).toFixed(1)}</td>
-                    <td className="px-3 py-3 text-center">{Number(row.socialLeaveUsed).toFixed(1)}</td>
+                    <td className="px-3 py-3 text-center border-r border-gray-100 bg-purple-50/20">{Number(row.policyLeaveUsed).toFixed(1)}</td>
+                    <td className="px-3 py-3 text-center bg-teal-50/20">{Number(row.socialLeaveUsed).toFixed(1)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -9,13 +9,20 @@ export class CheckoutDto {
   @IsInt()
   checkinId: number;
 
-  @ApiProperty({ description: 'Work output description (required, 1–1000 chars)', example: 'Completed API integration task' })
+  @ApiProperty({
+    description: 'Work output description (required, 1–1000 chars)',
+    example: 'Completed API integration task',
+  })
   @IsString()
   @MinLength(1)
   @MaxLength(1000)
   workOutput: string;
 
-  @ApiProperty({ enum: OtCompensatoryMethod, description: 'Compensation method (required)', example: OtCompensatoryMethod.PAID })
+  @ApiProperty({
+    enum: OtCompensatoryMethod,
+    description: 'Compensation method (required)',
+    example: OtCompensatoryMethod.PAID,
+  })
   @IsEnum(OtCompensatoryMethod)
   compensatoryMethod: OtCompensatoryMethod;
 

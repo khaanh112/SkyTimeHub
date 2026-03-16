@@ -13,8 +13,8 @@ export interface OtSegment {
   attributedDate: string;
 }
 
-const DAY_START_HOUR = 6;  // 06:00 VN time
-const DAY_END_HOUR   = 22; // 22:00 VN time
+const DAY_START_HOUR = 6; // 06:00 VN time
+const DAY_END_HOUR = 22; // 22:00 VN time
 
 function isNightHour(date: Date): boolean {
   const h = vnHour(date);
@@ -48,8 +48,8 @@ export function splitIntoSegments(
   let cursor = vnStartOfDay(start);
 
   while (cursor.getTime() < end.getTime()) {
-    const sixAm       = vnSetHour(cursor, DAY_START_HOUR);
-    const tenPm       = vnSetHour(cursor, DAY_END_HOUR);
+    const sixAm = vnSetHour(cursor, DAY_START_HOUR);
+    const tenPm = vnSetHour(cursor, DAY_END_HOUR);
     const nextMidnight = vnStartOfDay(new Date(cursor.getTime() + 24 * 60 * 60 * 1000));
 
     for (const b of [sixAm, tenPm, nextMidnight]) {
@@ -65,27 +65,41 @@ export function splitIntoSegments(
 
   for (let i = 0; i < sorted.length - 1; i++) {
     const segStart = sorted[i];
-    const segEnd   = sorted[i + 1];
+    const segEnd = sorted[i + 1];
     const durationMinutes = Math.round((segEnd.getTime() - segStart.getTime()) / 60_000);
     if (durationMinutes <= 0) continue;
 
-    const actualDate  = vnDateStr(segStart);
+    const actualDate = vnDateStr(segStart);
     const baseDayType = resolveDayTypeFromCache(actualDate, dayTypeCache);
-    const night       = isNightHour(segStart);
+    const night = isNightHour(segStart);
 
     let dayType: OtDayType;
     if (night) {
       switch (baseDayType) {
-        case OtDayType.WEEKDAY: dayType = OtDayType.WEEKDAY_NIGHT; break;
-        case OtDayType.WEEKEND: dayType = OtDayType.WEEKEND_NIGHT; break;
-        case OtDayType.HOLIDAY: dayType = OtDayType.HOLIDAY_NIGHT; break;
-        default: dayType = OtDayType.WEEKDAY_NIGHT;
+        case OtDayType.WEEKDAY:
+          dayType = OtDayType.WEEKDAY_NIGHT;
+          break;
+        case OtDayType.WEEKEND:
+          dayType = OtDayType.WEEKEND_NIGHT;
+          break;
+        case OtDayType.HOLIDAY:
+          dayType = OtDayType.HOLIDAY_NIGHT;
+          break;
+        default:
+          dayType = OtDayType.WEEKDAY_NIGHT;
       }
     } else {
       dayType = baseDayType;
     }
 
-    segments.push({ dayType, startTime: segStart, endTime: segEnd, durationMinutes, actualDate, attributedDate: actualDate });
+    segments.push({
+      dayType,
+      startTime: segStart,
+      endTime: segEnd,
+      durationMinutes,
+      actualDate,
+      attributedDate: actualDate,
+    });
   }
 
   return segments;
@@ -141,10 +155,10 @@ export function applyCarryOver(
   for (let di = 0; di < dateOrder.length; di++) {
     const dateStr = dateOrder[di];
     const daySegs = dateMap.get(dateStr)!;
-    const cap     = getDailyCap(dateStr, dayTypeCache);
+    const cap = getDailyCap(dateStr, dayTypeCache);
 
     let accumulated = 0;
-    const kept: OtSegment[]     = [];
+    const kept: OtSegment[] = [];
     const overflow: OtSegment[] = [];
 
     for (const seg of daySegs) {
@@ -166,9 +180,9 @@ export function applyCarryOver(
 
         overflow.push({
           ...seg,
-          startTime:       splitPoint,
+          startTime: splitPoint,
           durationMinutes: seg.durationMinutes - remaining,
-          attributedDate:  addDays(dateStr, 1),
+          attributedDate: addDays(dateStr, 1),
         });
       }
     }
@@ -272,7 +286,7 @@ export function applyMonthlyCarryOver(
     if (remaining <= 0) {
       const nKey = nextMonthKey(key);
       const nDate = firstOfNextMonthDate(key);
-      const overflow = segs.map(s => ({ ...s, attributedDate: nDate }));
+      const overflow = segs.map((s) => ({ ...s, attributedDate: nDate }));
       monthMap.set(key, []);
 
       if (!monthMap.has(nKey)) {
@@ -318,7 +332,7 @@ export function applyMonthlyCarryOver(
     if (overflow.length > 0) {
       const nKey = nextMonthKey(key);
       const nDate = firstOfNextMonthDate(key);
-      const overflowMoved = overflow.map(s => ({ ...s, attributedDate: nDate }));
+      const overflowMoved = overflow.map((s) => ({ ...s, attributedDate: nDate }));
 
       if (!monthMap.has(nKey)) {
         monthOrder.splice(mi + 1, 0, nKey);
@@ -327,7 +341,9 @@ export function applyMonthlyCarryOver(
       const nextSegs = monthMap.get(nKey)!;
       monthMap.set(
         nKey,
-        [...overflowMoved, ...nextSegs].sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
+        [...overflowMoved, ...nextSegs].sort(
+          (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+        ),
       );
     }
   }

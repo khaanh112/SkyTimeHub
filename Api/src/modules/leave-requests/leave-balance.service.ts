@@ -38,7 +38,6 @@ import {
   vnMonth,
   dayjs,
   parseDateParts,
-  fmtDateParts,
   addMonthsToStr,
   diffDaysStr,
   addDaysToStr,
@@ -142,26 +141,28 @@ export class LeaveBalanceService {
     excludeLeaveRequestId?: number,
     manager?: EntityManager,
   ): Promise<number> {
-    const repo = manager
-      ? manager.getRepository(CompBalanceTransaction)
-      : this.compBalanceTxRepo;
+    const repo = manager ? manager.getRepository(CompBalanceTransaction) : this.compBalanceTxRepo;
 
     const withExclude = (qb: ReturnType<typeof repo.createQueryBuilder>) => {
       if (excludeLeaveRequestId) {
-        qb.andWhere('(c.source_id IS NULL OR c.source_id != :excl)', { excl: excludeLeaveRequestId });
+        qb.andWhere('(c.source_id IS NULL OR c.source_id != :excl)', {
+          excl: excludeLeaveRequestId,
+        });
       }
       return qb;
     };
 
     const [creditRow, debitRow] = await Promise.all([
       withExclude(
-        repo.createQueryBuilder('c')
+        repo
+          .createQueryBuilder('c')
           .select('COALESCE(SUM(c.amount_minutes), 0)', 'total')
           .where('c.employee_id = :id', { id: employeeId })
           .andWhere('c.direction = :dir', { dir: CompTxDirection.CREDIT }),
       ).getRawOne(),
       withExclude(
-        repo.createQueryBuilder('c')
+        repo
+          .createQueryBuilder('c')
           .select('COALESCE(SUM(c.amount_minutes), 0)', 'total')
           .where('c.employee_id = :id', { id: employeeId })
           .andWhere('c.direction = :dir', { dir: CompTxDirection.DEBIT }),
@@ -169,7 +170,7 @@ export class LeaveBalanceService {
     ]);
 
     const totalCredit = parseInt(creditRow?.total ?? '0', 10);
-    const totalDebit  = parseInt(debitRow?.total  ?? '0', 10);
+    const totalDebit = parseInt(debitRow?.total ?? '0', 10);
     return Math.max(totalCredit - totalDebit, 0);
   }
 
@@ -208,8 +209,8 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.CREDIT })
-      .andWhere("tx.source_type = :sourceType", { sourceType: BalanceTxSource.MONTHLY_ACCRUAL });
+      .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
+      .andWhere('tx.source_type = :sourceType', { sourceType: BalanceTxSource.MONTHLY_ACCRUAL });
     if (atMonth) {
       accrualQb = accrualQb.andWhere('tx.period_month <= :atMonth', { atMonth });
     }
@@ -225,8 +226,8 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.CREDIT })
-      .andWhere("tx.source_type != :sourceType", { sourceType: BalanceTxSource.MONTHLY_ACCRUAL })
+      .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
+      .andWhere('tx.source_type != :sourceType', { sourceType: BalanceTxSource.MONTHLY_ACCRUAL })
       .getRawOne();
     const otherCredit = parseFloat(otherCreditResult?.total ?? '0');
 
@@ -243,7 +244,7 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.DEBIT });
+      .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.DEBIT });
 
     /// check lại balance
     if (excludeRequestId) {
@@ -1371,15 +1372,13 @@ export class LeaveBalanceService {
         note: `Compensatory leave request #${leaveRequestId} approved`,
       })
       .where('employee_id = :emp', { emp: employeeId })
-      .andWhere('source_id = :src',  { src: leaveRequestId })
+      .andWhere('source_id = :src', { src: leaveRequestId })
       .andWhere('source_type = :res', { res: CompTxSource.LEAVE_RESERVE })
-      .andWhere('direction = :dir',   { dir: CompTxDirection.DEBIT })
+      .andWhere('direction = :dir', { dir: CompTxDirection.DEBIT })
       .execute();
 
     if ((updated.affected ?? 0) > 0) {
-      this.logger.log(
-        `[writeCompLeaveApprovalDebit] Leave #${leaveRequestId}: RESERVE → APPROVAL`,
-      );
+      this.logger.log(`[writeCompLeaveApprovalDebit] Leave #${leaveRequestId}: RESERVE → APPROVAL`);
       return;
     }
 
@@ -1541,8 +1540,10 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = :debit", { debit: BalanceTxDirection.DEBIT })
-      .andWhere("tx.source_type IN (:...sourceTypes)", { sourceTypes: [BalanceTxSource.RESERVE, BalanceTxSource.APPROVAL] });
+      .andWhere('tx.direction = :debit', { debit: BalanceTxDirection.DEBIT })
+      .andWhere('tx.source_type IN (:...sourceTypes)', {
+        sourceTypes: [BalanceTxSource.RESERVE, BalanceTxSource.APPROVAL],
+      });
 
     if (excludeRequestId) {
       debitQb = debitQb.andWhere('(tx.source_id IS NULL OR tx.source_id != :excludeRequestId)', {
@@ -1559,8 +1560,10 @@ export class LeaveBalanceService {
       .where('tx.employee_id = :employeeId', { employeeId })
       .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId })
       .andWhere('tx.period_year = :year', { year })
-      .andWhere("tx.direction = :direction", { direction: BalanceTxDirection.CREDIT })
-      .andWhere("tx.source_type IN (:...sourceTypes)", { sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] });
+      .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
+      .andWhere('tx.source_type IN (:...sourceTypes)', {
+        sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND],
+      });
 
     if (excludeRequestId) {
       creditQb = creditQb.andWhere('(tx.source_id IS NULL OR tx.source_id != :excludeRequestId)', {
@@ -1591,9 +1594,7 @@ export class LeaveBalanceService {
     year: number,
   ): number {
     if (!officialContractDate) return 0;
-    const contractYear = parseDateParts(
-      dayjs(officialContractDate).format('YYYY-MM-DD'),
-    ).year;
+    const contractYear = parseDateParts(dayjs(officialContractDate).format('YYYY-MM-DD')).year;
     const yearsOfService = year - contractYear;
     // Only count full completed years at the start of the target year
     if (yearsOfService < 5) return 0;
@@ -1658,9 +1659,11 @@ export class LeaveBalanceService {
         // Determine start month based on join date proration
         let startMonth = 1;
         if (user.joinDate) {
-          const { year: joinYear, month: joinMonth, day: joinDay } = parseDateParts(
-            dayjs(user.joinDate).format('YYYY-MM-DD'),
-          );
+          const {
+            year: joinYear,
+            month: joinMonth,
+            day: joinDay,
+          } = parseDateParts(dayjs(user.joinDate).format('YYYY-MM-DD'));
           if (joinYear === year) {
             startMonth = joinDay < 15 ? joinMonth : joinMonth + 1;
           } else if (joinYear > year) {
@@ -1742,9 +1745,11 @@ export class LeaveBalanceService {
     const toCredit = activeUsers.filter((u) => {
       if (existingIds.has(u.id)) return false;
       if (u.joinDate) {
-        const { year: joinYear, month: joinMonth, day: joinDay } = parseDateParts(
-          dayjs(u.joinDate).format('YYYY-MM-DD'),
-        );
+        const {
+          year: joinYear,
+          month: joinMonth,
+          day: joinDay,
+        } = parseDateParts(dayjs(u.joinDate).format('YYYY-MM-DD'));
 
         if (joinYear > year || (joinYear === year && joinMonth > month)) return false;
         if (joinYear === year && joinMonth === month && joinDay >= 15) return false;
@@ -1824,9 +1829,11 @@ export class LeaveBalanceService {
     let startMonth: number;
 
     if (employee?.joinDate) {
-      const { year: joinYear, month: joinMonth, day: joinDay } = parseDateParts(
-        dayjs(employee.joinDate).format('YYYY-MM-DD'),
-      );
+      const {
+        year: joinYear,
+        month: joinMonth,
+        day: joinDay,
+      } = parseDateParts(dayjs(employee.joinDate).format('YYYY-MM-DD'));
 
       if (joinYear > year) {
         // Employee joins after this year — no accrual
@@ -1952,7 +1959,9 @@ export class LeaveBalanceService {
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
         .andWhere('tx.period_year = :year', { year })
         .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
-        .andWhere('tx.source_type IN (:...sourceTypes)', { sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] })
+        .andWhere('tx.source_type IN (:...sourceTypes)', {
+          sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND],
+        })
         .getRawOne();
       const reversalCredit = parseFloat(reversalCreditResult?.total ?? '0');
 
@@ -1964,7 +1973,9 @@ export class LeaveBalanceService {
         .andWhere('tx.leave_type_id = :leaveTypeId', { leaveTypeId: lt.id })
         .andWhere('tx.period_year = :year', { year })
         .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.DEBIT })
-        .andWhere("tx.source_type IN (:...sourceTypes)", { sourceTypes: [BalanceTxSource.RESERVE, BalanceTxSource.APPROVAL] })
+        .andWhere('tx.source_type IN (:...sourceTypes)', {
+          sourceTypes: [BalanceTxSource.RESERVE, BalanceTxSource.APPROVAL],
+        })
         .getRawOne();
       const grossDebit = parseFloat(grossDebitResult?.total ?? '0');
 
@@ -2026,7 +2037,9 @@ export class LeaveBalanceService {
           .andWhere('tx.period_year = :year', { year })
           .andWhere('tx.period_month <= :effectiveMonth', { effectiveMonth })
           .andWhere('tx.direction = :direction', { direction: BalanceTxDirection.CREDIT })
-          .andWhere('tx.source_type IN (:...sourceTypes)', { sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND] })
+          .andWhere('tx.source_type IN (:...sourceTypes)', {
+            sourceTypes: [BalanceTxSource.RELEASE, BalanceTxSource.REFUND],
+          })
           .getRawOne();
         const unpaidReleases = parseFloat(unpaidReleasesResult?.total ?? '0');
 
@@ -2075,7 +2088,7 @@ export class LeaveBalanceService {
             .getRawOne(),
         ]);
 
-        const usedMinutes    = parseInt(approvalRow?.total ?? '0', 10);
+        const usedMinutes = parseInt(approvalRow?.total ?? '0', 10);
         const pendingMinutes = Math.max(
           parseInt(reserveRow?.total ?? '0', 10) - parseInt(releaseRow?.total ?? '0', 10),
           0,
@@ -2088,7 +2101,7 @@ export class LeaveBalanceService {
           categoryCode: lt.category?.code ?? '',
           categoryName: lt.category?.name ?? '',
           unit: 'hours',
-          used: Math.round((usedMinutes    / 60) * 100) / 100,
+          used: Math.round((usedMinutes / 60) * 100) / 100,
           remaining: Math.round((netCompMinutes / 60) * 100) / 100,
           pendingDays: Math.round((pendingMinutes / 60) * 100) / 100,
           annualLimit: null,
@@ -2207,11 +2220,17 @@ export class LeaveBalanceService {
       const days = Math.max(Number(r.used_days), 0);
 
       let typeMap = usedByEmpType.get(empId);
-      if (!typeMap) { typeMap = new Map(); usedByEmpType.set(empId, typeMap); }
+      if (!typeMap) {
+        typeMap = new Map();
+        usedByEmpType.set(empId, typeMap);
+      }
       typeMap.set(r.leave_type_code, (typeMap.get(r.leave_type_code) ?? 0) + days);
 
       let catMap = usedByEmpCat.get(empId);
-      if (!catMap) { catMap = new Map(); usedByEmpCat.set(empId, catMap); }
+      if (!catMap) {
+        catMap = new Map();
+        usedByEmpCat.set(empId, catMap);
+      }
       catMap.set(r.category_code, (catMap.get(r.category_code) ?? 0) + days);
     }
 
@@ -2222,9 +2241,10 @@ export class LeaveBalanceService {
       const typeMap = usedByEmpType.get(user.id) ?? new Map<string, number>();
       const catMap = usedByEmpCat.get(user.id) ?? new Map<string, number>();
 
-      const paidUsed   = typeMap.get('PAID_LEAVE') ?? 0;
-      const unpaidUsed = (typeMap.get('UNPAID_LEAVE') ?? 0) + (typeMap.get('SYS_UNPAID_LEAVE') ?? 0);
-      const paidTotal  = paidAllocByEmp.get(user.id) ?? 0;
+      const paidUsed = typeMap.get('PAID_LEAVE') ?? 0;
+      const unpaidUsed =
+        (typeMap.get('UNPAID_LEAVE') ?? 0) + (typeMap.get('SYS_UNPAID_LEAVE') ?? 0);
+      const paidTotal = paidAllocByEmp.get(user.id) ?? 0;
       const policyUsed = catMap.get('POLICY') ?? 0;
       const socialUsed = catMap.get('SOCIAL') ?? 0;
 
@@ -2234,18 +2254,16 @@ export class LeaveBalanceService {
         employeeId: user.employeeId ?? '',
         fullName: user.username ?? user.email,
         department: user.department?.name ?? '',
-        joinDate: user.joinDate
-          ? dayjs(user.joinDate).format('YYYY-MM-DD')
-          : null,
+        joinDate: user.joinDate ? dayjs(user.joinDate).format('YYYY-MM-DD') : null,
         contractSignedDate: user.officialContractDate
           ? dayjs(user.officialContractDate).format('YYYY-MM-DD')
           : null,
         contractType: user.contractType ?? null,
-        paidLeaveTotal:     isOfficial ? paidTotal                : null,
-        paidLeaveUsed:      isOfficial ? paidUsed                 : null,
-        paidLeaveRemaining: isOfficial ? paidTotal - paidUsed     : null,
-        unpaidLeaveTotal:     isOfficial ? UNPAID_LIMIT           : null,
-        unpaidLeaveUsed:      unpaidUsed,
+        paidLeaveTotal: isOfficial ? paidTotal : null,
+        paidLeaveUsed: isOfficial ? paidUsed : null,
+        paidLeaveRemaining: isOfficial ? paidTotal - paidUsed : null,
+        unpaidLeaveTotal: isOfficial ? UNPAID_LIMIT : null,
+        unpaidLeaveUsed: unpaidUsed,
         unpaidLeaveRemaining: isOfficial ? UNPAID_LIMIT - unpaidUsed : null,
         policyLeaveUsed: policyUsed,
         socialLeaveUsed: socialUsed,

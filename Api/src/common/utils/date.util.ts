@@ -32,8 +32,7 @@ export const vnDayOfWeek = (date: Date) => dayjs(date).tz(VN_TZ).day();
 export const vnDateStr = (date: Date) => dayjs(date).tz(VN_TZ).format('YYYY-MM-DD');
 
 /** Start of day (midnight VN time) for a date, returned as Date (UTC) */
-export const vnStartOfDay = (date: Date) =>
-  dayjs(date).tz(VN_TZ).startOf('day').toDate();
+export const vnStartOfDay = (date: Date) => dayjs(date).tz(VN_TZ).startOf('day').toDate();
 
 /** Set specific hour on a date in VN timezone (minute/second/ms = 0), returned as Date (UTC) */
 export const vnSetHour = (date: Date, hour: number) =>
@@ -63,9 +62,7 @@ export const vnEndOfDayFromStr = (dateStr: string): Date =>
  * Parse a YYYY-MM-DD string into { year, month, day } numbers.
  * Pure string splitting — no Date/timezone involved.
  */
-export const parseDateParts = (
-  dateStr: string,
-): { year: number; month: number; day: number } => {
+export const parseDateParts = (dateStr: string): { year: number; month: number; day: number } => {
   const [y, m, d] = dateStr.split('-').map(Number);
   return { year: y, month: m, day: d };
 };

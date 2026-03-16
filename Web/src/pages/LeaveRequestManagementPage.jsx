@@ -434,15 +434,7 @@ const LeaveRequestManagementPage = () => {
                 ? 'Create your first leave request to get started.'
                 : 'No requests match the current filters.'}
             </p>
-            {view === 'my-requests' && (
-              <button
-                onClick={() => navigate('/leave-requests/create')}
-                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Create Request
-              </button>
-            )}
+        
           </div>
         ) : (
           <>

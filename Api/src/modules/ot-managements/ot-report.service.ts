@@ -45,7 +45,7 @@ export class OtReportService {
     const year = query.year ?? vnYear();
     const { month, departmentId } = query;
 
-    const params: any[] = [year];
+    const params: unknown[] = [year];
     const conditions: string[] = [
       `c.status IN ('checked_in', 'checked_out')`,
       `EXTRACT(YEAR FROM (pe.start_time AT TIME ZONE 'Asia/Ho_Chi_Minh')) = $1`,
@@ -53,7 +53,9 @@ export class OtReportService {
 
     if (month) {
       params.push(month);
-      conditions.push(`EXTRACT(MONTH FROM (pe.start_time AT TIME ZONE 'Asia/Ho_Chi_Minh')) = $${params.length}`);
+      conditions.push(
+        `EXTRACT(MONTH FROM (pe.start_time AT TIME ZONE 'Asia/Ho_Chi_Minh')) = $${params.length}`,
+      );
     }
     if (departmentId) {
       params.push(departmentId);
@@ -124,17 +126,31 @@ export class OtReportService {
 
     const total = parseInt(countRows[0].total, 10);
 
-    const data = rows.map((r: any, idx: number) => ({
-      no: offset + idx + 1,
-      empCode: r.empCode,
-      empName: r.empName,
-      department: r.deptName,
-      startTime: r.startTime,
-      endTime: r.endTime,
-      durationHours: toHours(r.durationMinutes),
-      otType: DAY_TYPE_LABEL[r.dayType] ?? r.dayType,
-      otBenefit: BENEFIT_LABEL[r.compensatoryMethod] ?? r.compensatoryMethod,
-    }));
+    const data = rows.map(
+      (
+        r: {
+          empCode: string;
+          empName: string;
+          deptName: string;
+          startTime: Date;
+          endTime: Date;
+          durationMinutes: number;
+          dayType: string;
+          compensatoryMethod: string;
+        },
+        idx: number,
+      ) => ({
+        no: offset + idx + 1,
+        empCode: r.empCode,
+        empName: r.empName,
+        department: r.deptName,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        durationHours: toHours(r.durationMinutes),
+        otType: DAY_TYPE_LABEL[r.dayType] ?? r.dayType,
+        otBenefit: BENEFIT_LABEL[r.compensatoryMethod] ?? r.compensatoryMethod,
+      }),
+    );
 
     return { success: true, data, page: { page, pageSize, total } };
   }
@@ -215,21 +231,39 @@ export class OtReportService {
 
     const total = parseInt(countRows[0].total, 10);
 
-    const data = rows.map((r: any, idx: number) => ({
-      no: offset + idx + 1,
-      empCode: r.empCode,
-      empName: r.empName,
-      department: r.deptName,
-      totalHours: toHours(r.total),
-      compLeaveHours: toHours(r.comp_leave),
-      weekdayHours: toHours(r.weekday),
-      weekendHours: toHours(r.weekend),
-      holidayHours: toHours(r.holiday),
-      weekdayNightNoDayHours: toHours(r.weekday_night_no_day),
-      weekdayNightWithDayHours: toHours(r.weekday_night_with_day),
-      weekendNightHours: toHours(r.weekend_night),
-      holidayNightHours: toHours(r.holiday_night),
-    }));
+    const data = rows.map(
+      (
+        r: {
+          empCode: string;
+          empName: string;
+          deptName: string;
+          total: number;
+          comp_leave: number;
+          weekday: number;
+          weekend: number;
+          holiday: number;
+          weekday_night_no_day: number;
+          weekday_night_with_day: number;
+          weekend_night: number;
+          holiday_night: number;
+        },
+        idx: number,
+      ) => ({
+        no: offset + idx + 1,
+        empCode: r.empCode,
+        empName: r.empName,
+        department: r.deptName,
+        totalHours: toHours(r.total),
+        compLeaveHours: toHours(r.comp_leave),
+        weekdayHours: toHours(r.weekday),
+        weekendHours: toHours(r.weekend),
+        holidayHours: toHours(r.holiday),
+        weekdayNightNoDayHours: toHours(r.weekday_night_no_day),
+        weekdayNightWithDayHours: toHours(r.weekday_night_with_day),
+        weekendNightHours: toHours(r.weekend_night),
+        holidayNightHours: toHours(r.holiday_night),
+      }),
+    );
 
     return { success: true, data, page: { page, pageSize, total } };
   }
@@ -313,17 +347,29 @@ export class OtReportService {
     // Sheet 1: OT Details
     const VN_TZ = 'Asia/Ho_Chi_Minh';
     const detailsHeader = [
-      'No.', 'Employee ID', 'Full Name', 'Department',
-      'Start Time', 'End Time', 'Duration (h)', 'OT Type', 'OT Benefit',
+      'No.',
+      'Employee ID',
+      'Full Name',
+      'Department',
+      'Start Time',
+      'End Time',
+      'Duration (h)',
+      'OT Type',
+      'OT Benefit',
     ];
     const detailsAoa = [
       detailsHeader,
-      ...detailRows.map((r: any, i: number) => {
+      ...detailRows.map((r: { startTime: string; endTime: string; dayType: string; compensatoryMethod: string, empCode: string; empName: string; deptName: string, durationMinutes: number }, i: number) => {
         const start = new Date(r.startTime);
         const end = new Date(r.endTime);
         const fmtOpts: Intl.DateTimeFormatOptions = {
-          timeZone: VN_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
-          hour: '2-digit', minute: '2-digit', hour12: false,
+          timeZone: VN_TZ,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
         };
         return [
           i + 1,
@@ -342,29 +388,55 @@ export class OtReportService {
 
     // Sheet 2: OT Summary
     const summaryHeader = [
-      'No.', 'Employee ID', 'Full Name', 'Department',
-      'Total (h)', 'Comp Leave (h)',
-      'Weekday', 'Weekend', 'Holiday',
-      'Weekday Night (No day OT)', 'Weekday Night (With day OT)',
-      'Weekend Night', 'Holiday Night',
+      'No.',
+      'Employee ID',
+      'Full Name',
+      'Department',
+      'Total (h)',
+      'Comp Leave (h)',
+      'Weekday',
+      'Weekend',
+      'Holiday',
+      'Weekday Night (No day OT)',
+      'Weekday Night (With day OT)',
+      'Weekend Night',
+      'Holiday Night',
     ];
     const summaryAoa = [
       summaryHeader,
-      ...summaryRows.map((r: any, i: number) => [
-        i + 1,
-        r.empCode ?? '',
-        r.empName ?? '',
-        r.deptName ?? '',
-        toHours(r.total),
-        toHours(r.comp_leave),
-        toHours(r.weekday),
-        toHours(r.weekend),
-        toHours(r.holiday),
-        toHours(r.weekday_night_no_day),
-        toHours(r.weekday_night_with_day),
-        toHours(r.weekend_night),
-        toHours(r.holiday_night),
-      ]),
+      ...summaryRows.map(
+        (
+          r: {
+            empCode: string;
+            empName: string;
+            deptName: string;
+            total: number;
+            comp_leave: number;
+            weekday: number;
+            weekend: number;
+            holiday: number;
+            weekday_night_no_day: number;
+            weekday_night_with_day: number;
+            weekend_night: number;
+            holiday_night: number;
+          },
+          i: number,
+        ) => [
+          i + 1,
+          r.empCode ?? '',
+          r.empName ?? '',
+          r.deptName ?? '',
+          toHours(r.total),
+          toHours(r.comp_leave),
+          toHours(r.weekday),
+          toHours(r.weekend),
+          toHours(r.holiday),
+          toHours(r.weekday_night_no_day),
+          toHours(r.weekday_night_with_day),
+          toHours(r.weekend_night),
+          toHours(r.holiday_night),
+        ],
+      ),
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryAoa), 'OT Summary');
 
@@ -375,7 +447,7 @@ export class OtReportService {
   // ── Private: build WHERE clause for ot_checkin_items ───────
   private buildItemWhere(year: number, month?: number, departmentId?: number) {
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: unknown[] = [];
 
     params.push(year);
     conditions.push(`EXTRACT(YEAR FROM item.actual_date) = $${params.length}`);

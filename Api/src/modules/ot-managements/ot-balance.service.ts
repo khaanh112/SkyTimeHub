@@ -66,10 +66,10 @@ export class OtBalanceService {
     // Helper: exclude old plan-creation credits so update balance checks aren't inflated
     const applyExclusion = (qb: ReturnType<typeof this.otBalanceRepo.createQueryBuilder>) => {
       if (excludePlanEmpIds?.length) {
-        qb.andWhere(
-          'NOT (t.source_type = :excType AND t.source_id IN (:...excIds))',
-          { excType: OtBalanceSource.OT_PLAN_CREATED, excIds: excludePlanEmpIds },
-        );
+        qb.andWhere('NOT (t.source_type = :excType AND t.source_id IN (:...excIds))', {
+          excType: OtBalanceSource.OT_PLAN_CREATED,
+          excIds: excludePlanEmpIds,
+        });
       }
       return qb;
     };
@@ -78,7 +78,7 @@ export class OtBalanceService {
     const dailyQb = this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        'COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)',
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })
@@ -90,7 +90,7 @@ export class OtBalanceService {
     const monthlyQb = this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        'COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)',
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })
@@ -103,7 +103,7 @@ export class OtBalanceService {
     const yearlyQb = this.otBalanceRepo
       .createQueryBuilder('t')
       .select(
-        "COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)",
+        'COALESCE(SUM(CASE WHEN t.direction = :direction THEN t.amount_minutes ELSE -t.amount_minutes END), 0)',
         'minutes',
       )
       .where('t.employee_id = :employeeId', { employeeId })
@@ -136,90 +136,96 @@ export class OtBalanceService {
       `COALESCE(SUM(CASE WHEN t.direction = '${d}' THEN t.amount_minutes ELSE -t.amount_minutes END), 0)`;
     const select = net(OtBalanceDirection.CREDIT);
 
-    const [
-      daily, dailyBF, dailyCF,
-      monthly, monthlyBF, monthlyCF,
-      yearly, yearlyBF, yearlyCF,
-    ] = await Promise.all([
-      // Daily total (period_date = today)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.period_date = :today', { today: todayStr })
-        .getRawOne(),
+    const [daily, dailyBF, dailyCF, monthly, monthlyBF, monthlyCF, yearly, yearlyBF, yearlyCF] =
+      await Promise.all([
+        // Daily total (period_date = today)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.period_date = :today', { today: todayStr })
+          .getRawOne(),
 
-      // Daily brought forward (work before today → attributed TO today)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.period_date = :today', { today: todayStr })
-        .andWhere('t.actual_date IS NOT NULL')
-        .andWhere('t.actual_date < :today', { today: todayStr })
-        .getRawOne(),
+        // Daily brought forward (work before today → attributed TO today)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.period_date = :today', { today: todayStr })
+          .andWhere('t.actual_date IS NOT NULL')
+          .andWhere('t.actual_date < :today', { today: todayStr })
+          .getRawOne(),
 
-      // Daily carried forward (work today → attributed to future)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.actual_date = :today', { today: todayStr })
-        .andWhere('t.period_date IS NOT NULL')
-        .andWhere('t.period_date > :today', { today: todayStr })
-        .getRawOne(),
+        // Daily carried forward (work today → attributed to future)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.actual_date = :today', { today: todayStr })
+          .andWhere('t.period_date IS NOT NULL')
+          .andWhere('t.period_date > :today', { today: todayStr })
+          .getRawOne(),
 
-      // Monthly total (period_year=year, period_month=month)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.period_year = :year', { year })
-        .andWhere('t.period_month = :month', { month })
-        .getRawOne(),
+        // Monthly total (period_year=year, period_month=month)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.period_year = :year', { year })
+          .andWhere('t.period_month = :month', { month })
+          .getRawOne(),
 
-      // Monthly brought forward (work before this month → attributed TO this month)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.period_year = :year', { year })
-        .andWhere('t.period_month = :month', { month })
-        .andWhere('t.actual_date IS NOT NULL')
-        .andWhere('t.actual_date < :firstOfMonth', { firstOfMonth })
-        .getRawOne(),
+        // Monthly brought forward (work before this month → attributed TO this month)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.period_year = :year', { year })
+          .andWhere('t.period_month = :month', { month })
+          .andWhere('t.actual_date IS NOT NULL')
+          .andWhere('t.actual_date < :firstOfMonth', { firstOfMonth })
+          .getRawOne(),
 
-      // Monthly carried forward (work in this month → attributed to future month)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.actual_date IS NOT NULL')
-        .andWhere('t.actual_date >= :firstOfMonth', { firstOfMonth })
-        .andWhere('t.actual_date < :firstOfNextMonth', { firstOfNextMonth })
-        .andWhere('NOT (t.period_year = :year AND t.period_month = :month)', { year, month })
-        .getRawOne(),
+        // Monthly carried forward (work in this month → attributed to future month)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.actual_date IS NOT NULL')
+          .andWhere('t.actual_date >= :firstOfMonth', { firstOfMonth })
+          .andWhere('t.actual_date < :firstOfNextMonth', { firstOfNextMonth })
+          .andWhere('NOT (t.period_year = :year AND t.period_month = :month)', { year, month })
+          .getRawOne(),
 
-      // Yearly total (period_year = year)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.period_year = :year', { year })
-        .getRawOne(),
+        // Yearly total (period_year = year)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.period_year = :year', { year })
+          .getRawOne(),
 
-      // Yearly brought forward (work before this year → attributed TO this year)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.period_year = :year', { year })
-        .andWhere('t.actual_date IS NOT NULL')
-        .andWhere('t.actual_date < :firstOfYear', { firstOfYear })
-        .getRawOne(),
+        // Yearly brought forward (work before this year → attributed TO this year)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.period_year = :year', { year })
+          .andWhere('t.actual_date IS NOT NULL')
+          .andWhere('t.actual_date < :firstOfYear', { firstOfYear })
+          .getRawOne(),
 
-      // Yearly carried forward (work in this year → attributed to future year)
-      this.otBalanceRepo.createQueryBuilder('t')
-        .select(select, 'minutes')
-        .where('t.employee_id = :id', { id: employeeId })
-        .andWhere('t.actual_date IS NOT NULL')
-        .andWhere('t.actual_date >= :firstOfYear', { firstOfYear })
-        .andWhere('t.actual_date < :firstOfNextYear', { firstOfNextYear })
-        .andWhere('t.period_year > :year', { year })
-        .getRawOne(),
-    ]);
+        // Yearly carried forward (work in this year → attributed to future year)
+        this.otBalanceRepo
+          .createQueryBuilder('t')
+          .select(select, 'minutes')
+          .where('t.employee_id = :id', { id: employeeId })
+          .andWhere('t.actual_date IS NOT NULL')
+          .andWhere('t.actual_date >= :firstOfYear', { firstOfYear })
+          .andWhere('t.actual_date < :firstOfNextYear', { firstOfNextYear })
+          .andWhere('t.period_year > :year', { year })
+          .getRawOne(),
+      ]);
 
     const toHours = (row: { minutes: unknown }) =>
       Math.round(((Number(row?.minutes) || 0) / 60) * 100) / 100;

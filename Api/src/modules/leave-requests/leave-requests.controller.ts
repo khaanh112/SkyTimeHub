@@ -267,7 +267,9 @@ export class LeaveRequestsController {
     });
 
     if (hasPending) {
-      res.status(400).json({ message: 'Cannot export: there are pending leave requests in the selected period.' });
+      res.status(400).json({
+        message: 'Cannot export: there are pending leave requests in the selected period.',
+      });
       return;
     }
 
@@ -289,18 +291,39 @@ export class LeaveRequestsController {
 
     // Header row 1 (group labels)
     const h1 = [
-      'No.', 'Employee ID', 'Full Name', 'Department',
-      'Join Date', 'Contract Signed', 'Contract Type',
-      'Paid Leave', '', '',
-      'Unpaid Leave', '', '',
-      'Policy Leave', 'Social Benefits Leave',
+      'No.',
+      'Employee ID',
+      'Full Name',
+      'Department',
+      'Join Date',
+      'Contract Signed',
+      'Contract Type',
+      'Paid Leave',
+      '',
+      '',
+      'Unpaid Leave',
+      '',
+      '',
+      'Policy Leave',
+      'Social Benefits Leave',
     ];
     // Header row 2 (sub-labels)
     const h2 = [
-      '', '', '', '', '', '', '',
-      'Total', 'Used', 'Remaining',
-      'Total', 'Used', 'Remaining',
-      'Used', 'Used',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      'Total',
+      'Used',
+      'Remaining',
+      'Total',
+      'Used',
+      'Remaining',
+      'Used',
+      'Used',
     ];
 
     const dataRows = rows.map((r) => [
@@ -326,14 +349,14 @@ export class LeaveRequestsController {
 
     // Merge group header cells
     ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },   // No.
-      { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } },   // Employee ID
-      { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } },   // Full Name
-      { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } },   // Department
-      { s: { r: 0, c: 4 }, e: { r: 1, c: 4 } },   // Join Date
-      { s: { r: 0, c: 5 }, e: { r: 1, c: 5 } },   // Contract Signed
-      { s: { r: 0, c: 6 }, e: { r: 1, c: 6 } },   // Contract Type
-      { s: { r: 0, c: 7 }, e: { r: 0, c: 9 } },   // Paid Leave (3 cols)
+      { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } }, // No.
+      { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } }, // Employee ID
+      { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } }, // Full Name
+      { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } }, // Department
+      { s: { r: 0, c: 4 }, e: { r: 1, c: 4 } }, // Join Date
+      { s: { r: 0, c: 5 }, e: { r: 1, c: 5 } }, // Contract Signed
+      { s: { r: 0, c: 6 }, e: { r: 1, c: 6 } }, // Contract Type
+      { s: { r: 0, c: 7 }, e: { r: 0, c: 9 } }, // Paid Leave (3 cols)
       { s: { r: 0, c: 10 }, e: { r: 0, c: 12 } }, // Unpaid Leave (3 cols)
       { s: { r: 0, c: 13 }, e: { r: 1, c: 13 } }, // Policy Leave
       { s: { r: 0, c: 14 }, e: { r: 1, c: 14 } }, // Social Leave
@@ -341,20 +364,31 @@ export class LeaveRequestsController {
 
     // Column widths
     ws['!cols'] = [
-      { wch: 4 }, { wch: 12 }, { wch: 24 }, { wch: 20 },
-      { wch: 12 }, { wch: 16 }, { wch: 12 },
-      { wch: 8 }, { wch: 8 }, { wch: 10 },
-      { wch: 8 }, { wch: 8 }, { wch: 10 },
-      { wch: 13 }, { wch: 18 },
+      { wch: 4 },
+      { wch: 12 },
+      { wch: 24 },
+      { wch: 20 },
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 10 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 10 },
+      { wch: 13 },
+      { wch: 18 },
     ];
 
-    const periodLabel = monthNum
-      ? `${String(monthNum).padStart(2, '0')}-${yearNum}`
-      : `${yearNum}`;
+    const periodLabel = monthNum ? `${String(monthNum).padStart(2, '0')}-${yearNum}` : `${yearNum}`;
     XLSX.utils.book_append_sheet(wb, ws, 'Leave Report');
 
     const buffer: Buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     res.setHeader('Content-Disposition', `attachment; filename="leave-report-${periodLabel}.xlsx"`);
     res.send(buffer);
   }

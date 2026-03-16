@@ -33,7 +33,8 @@ export class ApproveCheckinDto {
 
   @ApiPropertyOptional({
     enum: OtCompensatoryMethod,
-    description: 'Override compensatory method (paid | comp_leave). Keeps employee choice if omitted.',
+    description:
+      'Override compensatory method (paid | comp_leave). Keeps employee choice if omitted.',
   })
   @IsOptional()
   @IsString()

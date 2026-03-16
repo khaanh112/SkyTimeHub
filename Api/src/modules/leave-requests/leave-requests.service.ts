@@ -1225,7 +1225,8 @@ export class LeaveRequestsService {
           code: lt.code,
           name: lt.name,
           requiresDocument: lt.requiresDocument,
-          requiresCompWorkingDate: cat.code === LeaveCategoryEnum.COMPENSATORY ? false : lt.requiresCompWorkingDate,
+          requiresCompWorkingDate:
+            cat.code === LeaveCategoryEnum.COMPENSATORY ? false : lt.requiresCompWorkingDate,
         })),
       };
     });

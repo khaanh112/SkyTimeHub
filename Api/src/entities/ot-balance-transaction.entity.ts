@@ -33,7 +33,10 @@ export class OtBalanceTransaction {
   employee: User;
 
   // ── Direction ──────────────────────────────────────────────
-  @ApiProperty({ example: OtBalanceDirection.CREDIT, description: 'CREDIT = hours used, DEBIT = hours refunded' })
+  @ApiProperty({
+    example: OtBalanceDirection.CREDIT,
+    description: 'CREDIT = hours used, DEBIT = hours refunded',
+  })
   @Column({ type: 'varchar', length: 10, nullable: false })
   direction: OtBalanceDirection;
 
@@ -68,7 +71,10 @@ export class OtBalanceTransaction {
   periodDate: string | null;
 
   // ── OT type (set on per-item transactions) ───────────────
-  @ApiPropertyOptional({ enum: OtDayType, description: 'Day type of the segment (null for legacy bulk transactions)' })
+  @ApiPropertyOptional({
+    enum: OtDayType,
+    description: 'Day type of the segment (null for legacy bulk transactions)',
+  })
   @Column({ name: 'day_type', type: 'enum', enum: OtDayType, nullable: true })
   dayType: OtDayType | null;
 
@@ -80,7 +86,10 @@ export class OtBalanceTransaction {
   @JoinColumn({ name: 'ot_type_id' })
   otType: OtType | null;
 
-  @ApiPropertyOptional({ example: '2026-03-15', description: 'Actual calendar date of the segment (HR reference)' })
+  @ApiPropertyOptional({
+    example: '2026-03-15',
+    description: 'Actual calendar date of the segment (HR reference)',
+  })
   @Column({ name: 'actual_date', type: 'date', nullable: true })
   actualDate: string | null;
 

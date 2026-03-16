@@ -44,10 +44,7 @@ export async function resolveDayType(
  * Resolve an OtDayType from an already-built cache (synchronous, no DB call).
  * Falls back to WEEKDAY if the date is not in the cache.
  */
-export function resolveDayTypeFromCache(
-  dateStr: string,
-  cache: Map<string, OtDayType>,
-): OtDayType {
+export function resolveDayTypeFromCache(dateStr: string, cache: Map<string, OtDayType>): OtDayType {
   return cache.get(dateStr) ?? OtDayType.WEEKDAY;
 }
 
@@ -78,4 +75,3 @@ export async function buildDayTypeCache(
   }
   return cache;
 }
-

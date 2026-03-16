@@ -1,4 +1,3 @@
-
 /**
  * Represents a single row from the user import file
  */

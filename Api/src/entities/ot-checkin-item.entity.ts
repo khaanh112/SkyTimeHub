@@ -64,11 +64,17 @@ export class OtCheckinItem {
   durationMinutes: number;
 
   // ── Attribution ────────────────────────────────────────────
-  @ApiProperty({ example: '2026-03-15', description: 'Actual calendar date of segment (HR reference)' })
+  @ApiProperty({
+    example: '2026-03-15',
+    description: 'Actual calendar date of segment (HR reference)',
+  })
   @Column({ name: 'actual_date', type: 'date', nullable: false })
   actualDate: string;
 
-  @ApiProperty({ example: '2026-03-15', description: 'Accounting date credited to (may differ from actualDate after carry-over)' })
+  @ApiProperty({
+    example: '2026-03-15',
+    description: 'Accounting date credited to (may differ from actualDate after carry-over)',
+  })
   @Column({ name: 'attributed_date', type: 'date', nullable: false })
   attributedDate: string;
 

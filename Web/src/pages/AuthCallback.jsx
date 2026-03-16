@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { LoadingSpinner } from '../components';
 import { authService } from '../services';
 import { toast } from 'react-toastify';
+import { Bell } from 'lucide-react';
 
 const AuthCallback = () => {
   const [searchParams] = useSearchParams();
@@ -73,6 +74,45 @@ const AuthCallback = () => {
   };
 
   if (error) {
+    if (pendingEmail) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+          <div className="w-full max-w-110 bg-white rounded-lg shadow-sm border border-gray-200 p-8 sm:p-10 text-center">
+            <div className="flex justify-center mb-5">
+              <Bell className="w-14 h-14 text-gray-800" strokeWidth={1.75} />
+            </div>
+
+            <h2 className="text-[34px] leading-tight font-semibold text-gray-800 mb-6">
+              Account Verification Required
+            </h2>
+
+            <p className="text-gray-700 text-[18px] leading-relaxed mb-7">
+              Your account is currently in 'Pending' status. Please check your corporate email for the
+              activation link or click below to have a new one sent. Make sure to check your spam
+              folder.
+            </p>
+
+            <button
+              onClick={handleResendActivation}
+              disabled={resending}
+              className="inline-flex items-center justify-center min-w-55 px-6 py-3 rounded-xl bg-blue-600 text-white text-xl font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {resending ? 'Sending...' : 'Resend activation email'}
+            </button>
+
+            <div className="mt-7">
+              <button
+                onClick={() => navigate('/login', { replace: true })}
+                className="text-2xl text-gray-500 underline hover:text-gray-700 transition-colors"
+              >
+                Back to Login
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="max-w-md w-full mx-4">

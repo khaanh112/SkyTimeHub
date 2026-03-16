@@ -583,13 +583,7 @@ const OTManagementPage = () => {
                 <BarChart2 className="w-4 h-4" />
                 OT Hours Report
               </button>
-              <button
-                onClick={handleExport}
-                className="inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
-              >
-                <FileText className="w-4 h-4" />
-                Report
-              </button>
+             
               {user?.position === 'Department leader' && (
                 <button
                   onClick={() => navigate('/ot-management/create')}

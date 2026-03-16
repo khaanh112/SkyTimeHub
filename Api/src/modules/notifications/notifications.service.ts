@@ -823,7 +823,9 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await repo.save(emailQueue);
-    this.logger.log(`✅ OT assignment approved notification queued for plan ${otPlanId}, employee ${employeeId}`);
+    this.logger.log(
+      `✅ OT assignment approved notification queued for plan ${otPlanId}, employee ${employeeId}`,
+    );
 
     if (!manager) {
       setImmediate(() => this.trySendImmediately(savedEmail.id));
@@ -953,7 +955,9 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await repo.save(emailQueue);
-    this.logger.log(`✅ OT assignment cancelled notification queued for plan ${otPlanId}, employee ${employeeId}`);
+    this.logger.log(
+      `✅ OT assignment cancelled notification queued for plan ${otPlanId}, employee ${employeeId}`,
+    );
 
     if (!manager) {
       setImmediate(() => this.trySendImmediately(savedEmail.id));
@@ -998,7 +1002,9 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await repo.save(emailQueue);
-    this.logger.log(`✅ OT checkin confirmed notification queued for checkin ${checkinId}, employee ${employeeId}`);
+    this.logger.log(
+      `✅ OT checkin confirmed notification queued for checkin ${checkinId}, employee ${employeeId}`,
+    );
 
     if (!manager) {
       setImmediate(() => this.trySendImmediately(savedEmail.id));
@@ -1044,7 +1050,9 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await repo.save(emailQueue);
-    this.logger.log(`✅ OT checkin rejected notification queued for checkin ${checkinId}, employee ${employeeId}`);
+    this.logger.log(
+      `✅ OT checkin rejected notification queued for checkin ${checkinId}, employee ${employeeId}`,
+    );
 
     if (!manager) {
       setImmediate(() => this.trySendImmediately(savedEmail.id));
@@ -1091,7 +1099,9 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await repo.save(emailQueue);
-    this.logger.log(`✅ OT checkout submitted notification queued for checkin ${checkinId}, leader ${leaderId}`);
+    this.logger.log(
+      `✅ OT checkout submitted notification queued for checkin ${checkinId}, leader ${leaderId}`,
+    );
 
     if (!manager) {
       setImmediate(() => this.trySendImmediately(savedEmail.id));
@@ -1137,7 +1147,9 @@ export class NotificationsService implements OnModuleDestroy {
     });
 
     const savedEmail = await repo.save(emailQueue);
-    this.logger.log(`✅ OT auto-checkout notification queued for checkin ${checkinId}, employee ${employeeId}`);
+    this.logger.log(
+      `✅ OT auto-checkout notification queued for checkin ${checkinId}, employee ${employeeId}`,
+    );
 
     if (!manager) {
       setImmediate(() => this.trySendImmediately(savedEmail.id));
