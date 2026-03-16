@@ -1,4 +1,5 @@
 import { Injectable, HttpStatus, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { User } from '@entities/users.entity';
 import { Repository, DataSource } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -18,6 +19,7 @@ export class UsersService {
     private usersRepository: Repository<User>,
     private notificationsService: NotificationsService,
     private dataSource: DataSource,
+    private readonly configService: ConfigService,
   ) {}
 
   async getUsers(): Promise<User[]> {
@@ -97,7 +99,8 @@ export class UsersService {
         savedUser = await queryRunner.manager.save(newUser);
 
         // Enqueue activation email with correct format
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const frontendUrl =
+          this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
         const activationLink = `${frontendUrl}/auth/activate?token=${activationToken}`;
 
         // Enqueue INSIDE transaction (transactional outbox)
@@ -249,7 +252,7 @@ export class UsersService {
     await this.usersRepository.save(user);
 
     // 5. Send activation email
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
     const activationLink = `${frontendUrl}/auth/activate?token=${newActivationToken}`;
 
     await this.notificationsService.enqueueActivationEmail(

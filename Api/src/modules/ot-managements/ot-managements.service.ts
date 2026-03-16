@@ -6,6 +6,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In, Brackets, EntityManager } from 'typeorm';
@@ -89,7 +90,12 @@ export class OtManagementsService {
     private readonly dataSource: DataSource,
     private readonly otBalanceService: OtBalanceService,
     private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getFrontendUrl(): string {
+    return this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+  }
 
   // ─── CREATE ─────────────────────────────────────────────────
   async createOtPlan(userId: number, dto: CreateOtPlanDto) {
@@ -402,7 +408,7 @@ export class OtManagementsService {
           bodName: approver.username,
           leaderName: user.username,
           departmentName: dept.name,
-          otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${savedPlan.id}`,
+          otPlanUrl: `${this.getFrontendUrl()}/ot-management/${savedPlan.id}`,
         },
         manager,
       );
@@ -990,7 +996,7 @@ export class OtManagementsService {
             departmentName: dept?.name || '',
             approverName: approver?.username || '',
             approvedAt: approvedAt.toISOString(),
-            otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${id}`,
+            otPlanUrl: `${this.getFrontendUrl()}/ot-management/${id}`,
           },
           manager,
         );
@@ -1010,7 +1016,7 @@ export class OtManagementsService {
               emp.employeeId,
               {
                 employeeName: empUser.username,
-                otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${emp.id}`,
+                otAssignmentUrl: `${this.getFrontendUrl()}/ot-management/assignments/${emp.id}`,
               },
               manager,
             );
@@ -1086,7 +1092,7 @@ export class OtManagementsService {
             approverName: approver?.username || '',
             rejectedReason: reason,
             rejectedAt: rejectedAt.toISOString(),
-            otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${id}`,
+            otPlanUrl: `${this.getFrontendUrl()}/ot-management/${id}`,
           },
           manager,
         );
@@ -1200,7 +1206,7 @@ export class OtManagementsService {
               bodName: bod.username,
               leaderName: leader?.username || '',
               departmentName: dept?.name || '',
-              otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/${id}`,
+              otPlanUrl: `${this.getFrontendUrl()}/ot-management/${id}`,
             },
             manager,
           );
@@ -1222,7 +1228,7 @@ export class OtManagementsService {
                   emp.employeeId,
                   {
                     employeeName: empUser.username,
-                    otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${emp.id}`,
+                    otAssignmentUrl: `${this.getFrontendUrl()}/ot-management/assignments/${emp.id}`,
                   },
                   manager,
                 );
@@ -1359,7 +1365,7 @@ export class OtManagementsService {
           checkOutAt: dayjs(checkin.checkOutAt).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
           actualDuration: `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`,
           workOutput: checkin.workOutput ?? '',
-          otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+            otAssignmentUrl: `${this.getFrontendUrl()}/ot-management/assignments/${planEmp.id}`,
         },
       );
       this.notificationsService.triggerImmediateSend(emailIds);
@@ -1627,7 +1633,7 @@ export class OtManagementsService {
               confirmedBy: leaderUser?.username ?? '',
               otDate: vnDateStr(effectiveCheckIn),
               confirmedAt: dayjs(new Date()).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
-              otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+              otPlanUrl: `${this.getFrontendUrl()}/ot-management/assignments/${planEmp.id}`,
             },
             manager,
           );
@@ -1719,7 +1725,7 @@ export class OtManagementsService {
             otDate: vnDateStr(checkin.checkInAt ?? new Date()),
             rejectedAt: dayjs(new Date()).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
             rejectedReason: reason,
-            otPlanUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+            otPlanUrl: `${this.getFrontendUrl()}/ot-management/assignments/${planEmp.id}`,
           },
           manager,
         );
@@ -1810,7 +1816,7 @@ export class OtManagementsService {
             checkInAt: dayjs(checkin.checkInAt).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
             checkOutAt: dayjs(autoCheckoutTime).tz(VN_TZ).format('DD/MM/YYYY HH:mm'),
             actualDuration: `${Math.floor(planEmp.durationMinutes / 60)}h ${planEmp.durationMinutes % 60}m`,
-            otAssignmentUrl: `${process.env.FRONTEND_URL}/ot-management/assignments/${planEmp.id}`,
+            otAssignmentUrl: `${this.getFrontendUrl()}/ot-management/assignments/${planEmp.id}`,
           },
         );
         autoCheckoutIds.push(...emailIds);

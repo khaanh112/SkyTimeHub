@@ -7,6 +7,7 @@ import {
   ConflictException,
   HttpStatus,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { LeaveRequest } from '@entities/leave_request.entity';
@@ -67,7 +68,12 @@ export class LeaveRequestsService {
     private notificationsService: NotificationsService,
     private leaveBalanceService: LeaveBalanceService,
     private storageService: StorageService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getFrontendUrl(): string {
+    return this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+  }
 
   /**
    * Compute half-day slot index from date + session.
@@ -460,7 +466,7 @@ export class LeaveRequestsService {
           startDate: savedRequest.startDate,
           endDate: savedRequest.endDate,
           leaveRequestId: savedRequest.id,
-          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${savedRequest.id}`,
+          dashboardLink: `${this.getFrontendUrl()}/leave-requests/${savedRequest.id}`,
         },
         queryRunner.manager,
       );
@@ -756,7 +762,7 @@ export class LeaveRequestsService {
           requesterName: leaveRequest.user.username,
           startDate: dto.startDate,
           endDate: dto.endDate,
-          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${requestId}`,
+          dashboardLink: `${this.getFrontendUrl()}/leave-requests/${requestId}`,
         },
         queryRunner.manager,
       );
@@ -884,7 +890,7 @@ export class LeaveRequestsService {
           startDate: leaveRequest.startDate,
           endDate: leaveRequest.endDate,
           approvedAt: leaveRequest.approvedAt.toISOString(),
-          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
+          dashboardLink: `${this.getFrontendUrl()}/leave-requests/${leaveRequest.id}`,
         },
         queryRunner.manager,
       );
@@ -1001,7 +1007,7 @@ export class LeaveRequestsService {
           endDate: leaveRequest.endDate,
           rejectedAt: leaveRequest.rejectedAt.toISOString(),
           rejectedReason: leaveRequest.rejectedReason,
-          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
+          dashboardLink: `${this.getFrontendUrl()}/leave-requests/${leaveRequest.id}`,
         },
         queryRunner.manager,
       );
@@ -1134,7 +1140,7 @@ export class LeaveRequestsService {
           startDate: leaveRequest.startDate,
           endDate: leaveRequest.endDate,
           cancelledAt: leaveRequest.cancelledAt.toISOString(),
-          dashboardLink: `${process.env.FRONTEND_URL}/leave-requests/${leaveRequest.id}`,
+          dashboardLink: `${this.getFrontendUrl()}/leave-requests/${leaveRequest.id}`,
         },
         queryRunner.manager,
       );

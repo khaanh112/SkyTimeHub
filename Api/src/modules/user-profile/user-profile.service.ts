@@ -1,4 +1,5 @@
 import { Injectable, HttpStatus, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { User } from '@entities/users.entity';
@@ -26,6 +27,7 @@ export class UserProfileService {
     private readonly departmentRepository: Repository<Department>,
     private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -169,7 +171,8 @@ export class UserProfileService {
 
       // 5. Queue activation email (outside transaction — non-critical)
       try {
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const frontendUrl =
+          this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
         const activationLink = `${frontendUrl}/auth/activate?token=${activationToken}`;
         await this.notificationsService.enqueueActivationEmail(
           savedUser.id,

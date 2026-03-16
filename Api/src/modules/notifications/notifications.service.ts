@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
 import * as nodemailer from 'nodemailer';
@@ -20,6 +21,7 @@ export class NotificationsService implements OnModuleDestroy {
   constructor(
     @InjectRepository(EmailQueue)
     private emailQueueRepository: Repository<EmailQueue>,
+    private readonly configService: ConfigService,
   ) {
     this.initializeTransporter();
     this.loadTemplates();
@@ -109,13 +111,18 @@ export class NotificationsService implements OnModuleDestroy {
    * Initialize Zoho SMTP transporter
    */
   private async initializeTransporter() {
+    const smtpHost = this.configService.get<string>('SMTP_HOST') || 'smtp.zoho.com';
+    const smtpPort = Number(this.configService.get<string>('SMTP_PORT') || '465');
+    const smtpUser = this.configService.get<string>('SMTP_USER');
+    const smtpPass = this.configService.get<string>('SMTP_PASS');
+
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.zoho.com',
-      port: parseInt(process.env.SMTP_PORT || '465'),
+      host: smtpHost,
+      port: smtpPort,
       secure: true, // Use SSL
       auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        user: smtpUser,
+        pass: smtpPass,
       },
       // Connection pooling to prevent "Unexpected socket close" errors
       pool: true, // Enable connection pooling
@@ -221,7 +228,7 @@ export class NotificationsService implements OnModuleDestroy {
     this.logger.debug(`📤 Sending email ${email.id} to ${email.recipientUser.email} via SMTP...`);
 
     const mailOptions = {
-      from: `"${process.env.SMTP_FROM_NAME || 'SkyTimeHub'}" <${process.env.SMTP_USER}>`,
+      from: `"${this.configService.get<string>('SMTP_FROM_NAME') || 'SkyTimeHub'}" <${this.configService.get<string>('SMTP_USER') || ''}>`,
       to: email.recipientUser.email,
       subject,
       html,
