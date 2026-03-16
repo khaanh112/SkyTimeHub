@@ -74,7 +74,8 @@ export class UserProfileService {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
-
+    let savedUser: User;
+    let emailIds: number[] = [];
     try {
       // 1. Validate uniqueness
       const existingEmail = await queryRunner.manager.findOne(User, {
@@ -113,7 +114,7 @@ export class UserProfileService {
         status: UserStatus.PENDING,
         activationToken,
       });
-      const savedUser = await queryRunner.manager.save(User, newUser);
+      savedUser = await queryRunner.manager.save(User, newUser);
 
       // 3. Set department leader if requested
       if (isDepartmentLeader && savedUser.departmentId) {
@@ -164,29 +165,21 @@ export class UserProfileService {
           approverId,
           active: true,
         });
+
         await queryRunner.manager.save(UserApprover, userApprover);
       }
 
+      const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+      const activationLink = `${frontendUrl}/auth/activate?token=${activationToken}`;
+      emailIds = await this.notificationsService.enqueueActivationEmail(
+        savedUser.id,
+        activationToken,
+        activationLink,
+        queryRunner.manager,
+      );
+
       await queryRunner.commitTransaction();
 
-      // 5. Queue activation email (outside transaction — non-critical)
-      try {
-        const frontendUrl =
-          this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
-        const activationLink = `${frontendUrl}/auth/activate?token=${activationToken}`;
-        await this.notificationsService.enqueueActivationEmail(
-          savedUser.id,
-          activationToken,
-          activationLink,
-        );
-        this.logger.log(`User created: ${savedUser.email}, activation email queued`);
-      } catch (emailError) {
-        this.logger.warn(
-          `User created but failed to queue activation email: ${emailError.message}`,
-        );
-      }
-
-      return savedUser;
     } catch (error) {
       await queryRunner.rollbackTransaction();
       if (error instanceof AppException) throw error;
@@ -199,6 +192,9 @@ export class UserProfileService {
     } finally {
       await queryRunner.release();
     }
+
+    this.notificationsService.triggerImmediateSend(emailIds);
+    return savedUser;
   }
 
   /**
