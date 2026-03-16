@@ -288,17 +288,17 @@ export class NotificationsService implements OnModuleDestroy {
   private getEmailSubject(type: EmailType, context: Record<string, unknown>): string {
     switch (type) {
       case EmailType.ACTIVATION:
-        return 'Kích hoạt tài khoản SkyTimeHub';
+        return 'Account Activation - SkyTimeHub';
       case EmailType.LEAVE_REQUEST_SUBMITTED:
-        return `Yêu cầu nghỉ phép mới từ ${context.requesterName || 'User'}`;
+        return `New Leave Request from ${context.requesterName || 'User'}`;
       case EmailType.LEAVE_REQUEST_APPROVED:
-        return 'Yêu cầu nghỉ phép đã được phê duyệt';
+        return 'Leave Request Approved';
       case EmailType.LEAVE_REQUEST_REJECTED:
-        return 'Yêu cầu nghỉ phép bị từ chối';
+        return 'Leave Request Rejected';
       case EmailType.LEAVE_REQUEST_UPDATED:
-        return `Yêu cầu nghỉ phép đã được cập nhật - ${context.requesterName || 'User'}`;
+        return `Leave Request Updated - ${context.requesterName || 'User'}`;
       case EmailType.LEAVE_REQUEST_CANCELLED:
-        return `Yêu cầu nghỉ phép đã bị hủy - ${context.requesterName || 'User'}`;
+        return `Leave Request Cancelled - ${context.requesterName || 'User'}`;
       case EmailType.OT_PLAN_SUBMITTED:
         return `[Action Required] OT Plan – ${context.departmentName || ''}`;
       case EmailType.OT_PLAN_APPROVED:
@@ -383,7 +383,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -441,7 +441,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -497,7 +497,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -565,7 +565,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -623,7 +623,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -682,7 +682,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -741,7 +741,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -785,7 +785,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit  
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -826,7 +826,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -873,7 +873,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -916,7 +916,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -958,7 +958,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -1005,7 +1005,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -1053,7 +1053,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -1102,7 +1102,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
@@ -1150,7 +1150,7 @@ export class NotificationsService implements OnModuleDestroy {
       status: EmailStatus.PENDING,
       attemptCount: 0,
       maxAttempts: 3,
-      nextRetryAt: new Date(),
+      nextRetryAt: new Date(Date.now() + 60000), // Start with 1 minute delay to allow transaction to commit
     });
 
     const savedEmail = await repo.save(emailQueue);
