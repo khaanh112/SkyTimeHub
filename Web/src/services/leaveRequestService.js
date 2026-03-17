@@ -79,8 +79,11 @@ const leaveRequestService = {
   },
 
   // Get leave balance summary for a specific user (management view)
-  getUserBalanceSummary: async (userId) => {
-    const response = await api.get(`/leave-requests/balance-summary/${userId}`);
+  getUserBalanceSummary: async (userId, year, month) => {
+    const params = {};
+    if (year !== undefined) params.year = year;
+    if (month !== undefined) params.month = month;
+    const response = await api.get(`/leave-requests/employee-balance-summary/${userId}`, { params });
     return response.data;
   },
 

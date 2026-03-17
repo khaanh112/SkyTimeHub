@@ -1382,7 +1382,6 @@ export class OtManagementsService {
     overrides: {
       checkInAt?: string;
       checkOutAt?: string;
-      compensatoryMethod?: OtCompensatoryMethod;
     } = {},
   ) {
     this.logger.log(
@@ -1477,7 +1476,6 @@ export class OtManagementsService {
         // Apply overrides to record
         if (overrides.checkInAt) checkin.checkInAt = effectiveCheckIn;
         if (overrides.checkOutAt) checkin.checkOutAt = effectiveCheckOut;
-        if (overrides.compensatoryMethod) checkin.compensatoryMethod = overrides.compensatoryMethod;
         checkin.actualDurationMinutes = computeDurationMinutes(effectiveCheckIn, effectiveCheckOut);
         checkin.status = OtCheckinStatus.LEADER_APPROVED;
         checkin.leaderApprovedBy = userId;

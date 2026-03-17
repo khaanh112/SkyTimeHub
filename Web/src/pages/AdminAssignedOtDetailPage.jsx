@@ -60,7 +60,6 @@ const AdminAssignedOtDetailPage = () => {
   // Editable override fields for leader confirm
   const [checkInOverride, setCheckInOverride] = useState('');
   const [checkOutOverride, setCheckOutOverride] = useState('');
-  const [compMethod, setCompMethod] = useState('');
 
   // Reject modal
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -74,7 +73,6 @@ const AdminAssignedOtDetailPage = () => {
       // Pre-fill override fields from existing checkin data
       if (data.checkin?.checkInAt) setCheckInOverride(toInputDateTime(data.checkin.checkInAt));
       if (data.checkin?.checkOutAt) setCheckOutOverride(toInputDateTime(data.checkin.checkOutAt));
-      if (data.checkin?.compensatoryMethod) setCompMethod(data.checkin.compensatoryMethod);
     } catch (err) {
       console.error(err);
       toast.error('Failed to load assignment details');
@@ -93,7 +91,6 @@ const AdminAssignedOtDetailPage = () => {
       await otService.approveCheckin(assignment.checkin.id, assignment.checkin.version, {
         checkInAt: checkInOverride ? `${checkInOverride}:00+07:00` : undefined,
         checkOutAt: checkOutOverride ? `${checkOutOverride}:00+07:00` : undefined,
-        compensatoryMethod: compMethod || undefined,
       });
       toast.success('Check-in confirmed successfully');
       navigate(`/ot-management/${planId}`);
@@ -252,23 +249,48 @@ const AdminAssignedOtDetailPage = () => {
               Actual Check-in/Out
             </p>
             <div className="space-y-4">
-              {showCheckin ? (
-                <div>
-                  <p className="text-xs text-gray-500 mb-0.5">Check-in</p>
-                  <p className="text-sm font-semibold text-green-600">{checkinTime ?? '—'}</p>
-                </div>
-              ) : null}
-              {showCheckout && (
-                <DetailRow label="Check-out" value={checkoutTime ?? '—'} />
-              )}
-              {showActualDuration && (
-                <DetailRow
-                  label="Actual Duration"
-                  value={fmtDuration(checkin?.actualDurationMinutes)}
-                />
-              )}
-              {!showCheckin && (
-                <p className="text-xs text-gray-400 italic">No check-in recorded yet</p>
+              {canAct ? (
+                <>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Check-in Time</label>
+                    <input
+                      type="datetime-local"
+                      value={checkInOverride}
+                      onChange={(e) => setCheckInOverride(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Check-out Time</label>
+                    <input
+                      type="datetime-local"
+                      value={checkOutOverride}
+                      onChange={(e) => setCheckOutOverride(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {showCheckin ? (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-0.5">Check-in</p>
+                      <p className="text-sm font-semibold text-green-600">{checkinTime ?? '—'}</p>
+                    </div>
+                  ) : null}
+                  {showCheckout && (
+                    <DetailRow label="Check-out" value={checkoutTime ?? '—'} />
+                  )}
+                  {showActualDuration && (
+                    <DetailRow
+                      label="Actual Duration"
+                      value={fmtDuration(checkin?.actualDurationMinutes)}
+                    />
+                  )}
+                  {!showCheckin && (
+                    <p className="text-xs text-gray-400 italic">No check-in recorded yet</p>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -276,7 +298,7 @@ const AdminAssignedOtDetailPage = () => {
       </div>
 
       {/* ── Outcome & OT Benefits ────────────────────────────── */}
-      {showOutcome && (
+      {(showOutcome || canAct) && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 mb-4">
           <h2 className="text-base font-semibold text-gray-900 mb-5">Outcome & OT Benefits</h2>
 
@@ -300,46 +322,6 @@ const AdminAssignedOtDetailPage = () => {
           <DetailRow label="Planned task" value={assignment.plannedTask} />
         </div>
       </div>
-
-      {/* ── Adjust Actual Times ──────────────────────────────── */}
-      {canAct && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-4">
-          <h2 className="text-base font-semibold text-gray-900 mb-5">Adjust Actual Times</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1.5">Check-in Time</label>
-              <input
-                type="datetime-local"
-                value={checkInOverride}
-                onChange={(e) => setCheckInOverride(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1.5">Check-out Time</label>
-              <input
-                type="datetime-local"
-                value={checkOutOverride}
-                onChange={(e) => setCheckOutOverride(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1.5">Compensatory Method</label>
-              <select
-                value={compMethod}
-                onChange={(e) => setCompMethod(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select...</option>
-                <option value="COMP_LEAVE">Compensatory Leave</option>
-                <option value="OVERTIME_PAY">Overtime Pay</option>
-                <option value="NONE">None</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Footer Buttons ───────────────────────────────────── */}
       <div className="flex items-center justify-end gap-3">

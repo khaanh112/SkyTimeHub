@@ -30,13 +30,5 @@ export class ApproveCheckinDto {
   @IsOptional()
   @IsDateString()
   checkOutAt?: string;
-
-  @ApiPropertyOptional({
-    enum: OtCompensatoryMethod,
-    description:
-      'Override compensatory method (paid | comp_leave). Keeps employee choice if omitted.',
-  })
-  @IsOptional()
-  @IsString()
-  compensatoryMethod?: OtCompensatoryMethod;
+  
 }

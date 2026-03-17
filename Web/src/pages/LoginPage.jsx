@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Send } from 'lucide-react';
+import { Mail, Send, Clock } from 'lucide-react';
 import { authService } from '../services';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
@@ -20,12 +20,10 @@ const LoginPage = () => {
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();
-    
     if (!email) {
       toast.error('Vui lòng nhập email');
       return;
     }
-
     setPendingEmail(null);
     setLoading(true);
     try {
@@ -57,70 +55,76 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] border-2 border-[#CED4DA] rounded-lg flex items-center justify-center px-4 py-8 sm:p-8">
-      <div className="w-full max-w-3xl">
-        <div className="bg-[#7C5FF7] border border-[#7C5FF7] rounded-[20px] px-6 sm:px-12 py-10 sm:py-14 text-center">
-          <div className="mx-auto mb-8 sm:mb-10 flex items-center justify-center">
-            <div className="text-white text-3xl sm:text-4xl font-bold tracking-[0.18em]">SKY CORPORATION</div>
+    <div className="min-h-screen bg-gradient-to-br from-[#f0edff] via-[#f9fafb] to-[#ede9fe] flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#7C5FF7] shadow-lg shadow-purple-200 mb-4">
+            <Clock className="w-7 h-7 text-white" />
           </div>
+          <h1 className="text-lg font-bold text-gray-800 tracking-wide">SKY CORPORATION</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Leave & Overtime Management</p>
+        </div>
 
-          <h1 className="text-[#E5E7EB] text-3xl sm:text-5xl leading-tight font-bold">
-            Leave & Overtime
-            <br />
-            Management System
-          </h1>
-
+        {/* Card */}
+        <div className="bg-white rounded-2xl shadow-xl shadow-purple-100/60 border border-purple-100 p-6">
+          {/* Zoho Login */}
           <button
             onClick={handleZohoLogin}
             disabled={loading}
-            className="mt-10 sm:mt-12 mx-auto w-full max-w-md h-24 rounded-[20px] bg-white border border-[#7C5FF7] text-[#7C5FF7] font-bold text-xl sm:text-2xl leading-7 flex items-center justify-center gap-3 hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl bg-[#7C5FF7] text-white font-semibold text-sm hover:bg-[#6b4fe6] transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-md shadow-purple-200"
           >
-            <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#7C5FF7]">
-              <Mail className="w-5 h-5" />
-            </span>
-            <span>Login with Zoho mail</span>
+            <Mail className="w-4 h-4" />
+            <span>Đăng nhập bằng Zoho Mail</span>
           </button>
-        </div>
 
-        <div className="mt-5 bg-white border border-[#CED4DA] rounded-2xl p-4 sm:p-5">
-          <form onSubmit={handleEmailLogin} className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-4">
+            <div className="flex-1 h-px bg-gray-100" />
+            <span className="text-xs text-gray-400 font-medium">hoặc</span>
+            <div className="flex-1 h-px bg-gray-100" />
+          </div>
+
+          {/* Email Login */}
+          <form onSubmit={handleEmailLogin} className="space-y-3">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Đăng nhập bằng Email</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="example@skycompany.com"
                 disabled={loading}
-                className="w-full px-4 py-3 border border-[#CED4DA] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C5FF7]/30 focus:border-[#7C5FF7] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#7C5FF7]/20 focus:border-[#7C5FF7] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="h-12.5 px-6 rounded-xl bg-[#7C5FF7] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full py-2.5 rounded-xl border border-[#7C5FF7] text-[#7C5FF7] font-semibold text-sm hover:bg-[#7C5FF7]/5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading ? (
-                <span className="inline-flex items-center gap-2">
+                <span className="inline-flex items-center justify-center gap-2">
                   <LoadingSpinner size="sm" />
                   <span>Đang xử lý...</span>
                 </span>
               ) : (
-                <span>Đăng nhập Email</span>
+                'Đăng nhập'
               )}
             </button>
           </form>
 
+          {/* Pending activation */}
           {pendingEmail && (
-            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-sm text-amber-800 mb-3">
-                Tài khoản <strong>{pendingEmail}</strong> chưa được kích hoạt. Vui lòng kiểm tra email hoặc gửi lại email kích hoạt.
+            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <p className="text-xs text-amber-800 mb-2">
+                Tài khoản <strong>{pendingEmail}</strong> chưa được kích hoạt.
               </p>
               <button
                 onClick={handleResendActivation}
                 disabled={resending}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {resending ? (
                   <>
@@ -129,7 +133,7 @@ const LoginPage = () => {
                   </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4" />
+                    <Send className="w-3 h-3" />
                     <span>Gửi lại email kích hoạt</span>
                   </>
                 )}

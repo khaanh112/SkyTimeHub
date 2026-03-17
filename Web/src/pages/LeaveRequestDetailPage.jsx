@@ -29,6 +29,23 @@ const SectionNumber = ({ number }) => (
   </div>
 );
 
+const BalanceRow = ({ b }) => (
+  <div className="text-xs text-gray-700 py-0.5">
+    <span className="font-medium">{b.name}:</span>{' '}
+    <span className="text-blue-600 font-semibold">
+      {b.balance} {b.unit === 'hours' ? 'hrs' : 'days'}
+    </span>
+    {b.monthlyAccrual != null && b.accruedToDate != null && (
+      <span className="text-gray-400 ml-1">
+        (accrued {b.accruedToDate}/{b.annualLimit ?? b.accruedToDate})
+      </span>
+    )}
+    {b.isHardLimit === false && b.code === 'UNPAID' && (
+      <span className="text-amber-500 ml-1">(soft limit)</span>
+    )}
+  </div>
+);
+
 /** Fetches a presigned URL and offers inline view + download for a PDF attachment */
 const AttachmentViewer = ({ attachmentId, originalFilename, sizeBytes }) => {
   const [url, setUrl] = useState(null);
@@ -143,6 +160,7 @@ const LeaveRequestDetailPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [processingId, setProcessingId] = useState(null);
   const [balanceSummary, setBalanceSummary] = useState(null);
+  const [balanceSummaryPrev, setBalanceSummaryPrev] = useState(null);
   const [showBalanceTooltip, setShowBalanceTooltip] = useState(false);
 
   useEffect(() => {
@@ -159,12 +177,36 @@ const LeaveRequestDetailPage = () => {
 
       // Fetch balance summary for the requester
       try {
+        const [startYear, , ] = data.startDate.split('-').map(Number);
+        const [endYear, endMonth] = data.endDate.split('-').map(Number);
+        const isCrossYear = startYear !== endYear;
+
         if (data.userId && data.userId !== currentUser?.id) {
-          const balance = await leaveRequestService.getUserBalanceSummary(data.userId);
-          setBalanceSummary(balance.data || balance);
+          if (isCrossYear) {
+            const [bal1, bal2] = await Promise.all([
+              leaveRequestService.getUserBalanceSummary(data.userId, startYear, 12),
+              leaveRequestService.getUserBalanceSummary(data.userId, endYear, endMonth),
+            ]);
+            setBalanceSummaryPrev(bal1.data || bal1);
+            setBalanceSummary(bal2.data || bal2);
+          } else {
+            const balance = await leaveRequestService.getUserBalanceSummary(data.userId, endYear, endMonth);
+            setBalanceSummaryPrev(null);
+            setBalanceSummary(balance.data || balance);
+          }
         } else {
-          const balance = await leaveRequestService.getBalanceSummary();
-          setBalanceSummary(balance.data || balance);
+          if (isCrossYear) {
+            const [bal1, bal2] = await Promise.all([
+              leaveRequestService.getBalanceSummary(startYear, 12),
+              leaveRequestService.getBalanceSummary(endYear, endMonth),
+            ]);
+            setBalanceSummaryPrev(bal1.data || bal1);
+            setBalanceSummary(bal2.data || bal2);
+          } else {
+            const balance = await leaveRequestService.getBalanceSummary(endYear, endMonth);
+            setBalanceSummaryPrev(null);
+            setBalanceSummary(balance.data || balance);
+          }
         }
       } catch (balanceError) {
         console.warn('Could not fetch balance summary:', balanceError);
@@ -316,15 +358,15 @@ const LeaveRequestDetailPage = () => {
   };
 
   // Get balance info for tooltip (only types with actual balance pools)
-  const getBalanceInfo = () => {
-    if (!balanceSummary || !Array.isArray(balanceSummary)) return [];
-    return balanceSummary.map((b) => ({
+  const getBalanceInfo = (summary = balanceSummary) => {
+    if (!summary || !Array.isArray(summary)) return [];
+    return summary.map((b) => ({
       name: b.leaveTypeName,
       code: b.leaveTypeCode,
       unit: b.unit || (b.leaveTypeCode === 'COMP' ? 'hours' : 'days'),
-      balance: b.balance,
+      balance: b.remaining ?? b.balance,
       accruedToDate: b.accruedToDate ?? b.totalCredit,
-      totalDebit: b.totalDebit,
+      totalDebit: b.used ?? b.totalDebit,
       annualLimit: b.annualLimit,
       monthlyAccrual: b.monthlyAccrual,
       isHardLimit: b.isHardLimit,
@@ -375,7 +417,14 @@ const LeaveRequestDetailPage = () => {
 
   const itemsBreakdown = getItemsBreakdown();
   const balanceInfo = getBalanceInfo();
+  const balanceInfoPrev = getBalanceInfo(balanceSummaryPrev);
   const totalDuration = parseFloat(leaveRequest.durationDays) || leaveRequest.duration || 0;
+
+  const startDateParts = leaveRequest.startDate?.split('-').map(Number) || [];
+  const endDateParts = leaveRequest.endDate?.split('-').map(Number) || [];
+  const isCrossYear = startDateParts[0] && endDateParts[0] && startDateParts[0] !== endDateParts[0];
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtBalanceLabel = (month, year) => `${MONTHS[(month ?? 1) - 1]} ${year}`;
 
   return (
     <>
@@ -429,22 +478,43 @@ const LeaveRequestDetailPage = () => {
                       </button>
                       {showBalanceTooltip && (
                         <div className="absolute left-6 top-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-70">
-                          {balanceInfo.map((b, idx) => (
-                            <div key={idx} className="text-xs text-gray-700 py-0.5">
-                              <span className="font-medium">{b.name}:</span>{' '}
-                              <span className="text-blue-600 font-semibold">
-                                {b.balance} {b.unit === 'hours' ? 'hrs' : 'days'}
-                              </span>
-                              {b.monthlyAccrual && (
-                                <span className="text-gray-400 ml-1">
-                                  (accrued {b.accruedToDate}/{b.annualLimit ?? b.accruedToDate})
-                                </span>
+                          {isCrossYear ? (
+                            <>
+                              {/* Previous year section */}
+                              {balanceInfoPrev.length > 0 && (
+                                <div className="mb-2">
+                                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                                    As of {fmtBalanceLabel(12, startDateParts[0])}
+                                  </div>
+                                  {balanceInfoPrev.map((b, idx) => (
+                                    <BalanceRow key={idx} b={b} />
+                                  ))}
+                                </div>
                               )}
-                              {b.isHardLimit === false && b.code === 'UNPAID' && (
-                                <span className="text-amber-500 ml-1">(soft limit)</span>
+                              {/* Divider */}
+                              {balanceInfoPrev.length > 0 && (
+                                <div className="border-t border-gray-100 my-1.5" />
                               )}
-                            </div>
-                          ))}
+                              {/* End year section */}
+                              <div>
+                                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                                  As of {fmtBalanceLabel(endDateParts[1], endDateParts[0])}
+                                </div>
+                                {balanceInfo.map((b, idx) => (
+                                  <BalanceRow key={idx} b={b} />
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                                As of {fmtBalanceLabel(endDateParts[1], endDateParts[0])}
+                              </div>
+                              {balanceInfo.map((b, idx) => (
+                                <BalanceRow key={idx} b={b} />
+                              ))}
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

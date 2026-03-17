@@ -72,7 +72,7 @@ export class OtManagementsController {
     return this.otService.approveCheckin(req.user.id, dto.checkinId, dto.version, {
       checkInAt: dto.checkInAt,
       checkOutAt: dto.checkOutAt,
-      compensatoryMethod: dto.compensatoryMethod,
+
     });
   }
 
