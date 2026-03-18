@@ -310,6 +310,21 @@ const EmployeeDetailPage = () => {
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-600"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Leave Accrual Start Date
+                </label>
+                <input
+                  type="text"
+                  value={
+                    user.leaveAccrualStartDate
+                      ? fmtDate(user.leaveAccrualStartDate)
+                      : ''
+                  }
+                  readOnly
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-600"
+                />
+              </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Approver</label>
                 <input

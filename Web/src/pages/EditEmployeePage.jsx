@@ -39,6 +39,7 @@ const EditEmployeePage = () => {
     dateOfBirth: '',
     address: '',
     contractType: '',
+    leaveAccrualStartDate: '',
   });
 
   useEffect(() => {
@@ -83,6 +84,9 @@ const EditEmployeePage = () => {
             : '',
           address: user.address || '',
           contractType: user.contractType || '',
+          leaveAccrualStartDate: user.leaveAccrualStartDate
+            ? toInputDate(user.leaveAccrualStartDate)
+            : '',
         });
 
         setIsDepartmentLeader(user.position === 'Department leader');
@@ -205,6 +209,7 @@ const EditEmployeePage = () => {
       dataToSend.dateOfBirth = formData.dateOfBirth || null;
       dataToSend.address = formData.address?.trim() || null;
       dataToSend.contractType = formData.contractType || null;
+      dataToSend.leaveAccrualStartDate = formData.leaveAccrualStartDate || null;
 
       console.log('Sending data to update user profile:', dataToSend);
       await userService.updateProfile(id, dataToSend);
@@ -535,6 +540,19 @@ const EditEmployeePage = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Leave Accrual Start Date
+                </label>
+                <input
+                  type="date"
+                  name="leaveAccrualStartDate"
+                  value={formData.leaveAccrualStartDate}
+                  onChange={handleInputChange}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                />
               </div>
 
               <div className="md:col-span-2">

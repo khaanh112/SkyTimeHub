@@ -32,6 +32,8 @@ export interface ImportUserRow {
   address?: string;
   /** Contract type */
   contractType?: string;
+  /** Leave accrual start date */
+  leaveAccrualStartDate?: string;
   /** Validation errors for this row */
   errors: string[];
 }

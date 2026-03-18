@@ -100,4 +100,14 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(ContractType)
   contractType?: ContractType;
+
+  @ApiPropertyOptional({
+    example: '2024-01-01',
+    description: 'Leave accrual start date',
+    type: String,
+    format: 'date',
+  })
+  @IsOptional()
+  @IsDateString()
+  leaveAccrualStartDate?: Date;
 }

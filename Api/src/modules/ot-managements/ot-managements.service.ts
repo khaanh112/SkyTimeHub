@@ -225,6 +225,7 @@ export class OtManagementsService {
         .andWhere('lr.startDate <= :otEnd', { otEnd: otEndDate })
         .andWhere('lr.endDate >= :otStart', { otStart: otStartDate })
         .getOne();
+
       if (overlappingLeave) {
         const empUser = empUsers.find((u) => u.id === ft.employeeId);
         throw new AppException(
